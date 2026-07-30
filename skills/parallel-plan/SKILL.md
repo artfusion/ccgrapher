@@ -83,8 +83,13 @@ Rules of thumb while writing it:
 - **`carries:` must name fields that exist in the source's `out` and the
   target's `in`.** Anything else is a fake edge and will be reported.
 - Use `kind: verifier` with `freshContext: true` for anything that checks work,
-  `model: null` for steps that are plain code, and `expects: N` on a step that
-  waits for N results.
+  and `model: null` for steps that are plain code.
+- **Every fan-in needs `expects: N`, and a verifier most of all.** Any step with
+  more than one inbound edge is a fan-in. It is tempting to guard only the final
+  synthesise step, because that is the one that looks like a join — but an
+  unguarded verifier is the expensive miss: lose one upstream branch and it
+  still emits a verdict, and the check passes without having seen the thing it
+  was checking.
 
 ### 2. Run it
 
