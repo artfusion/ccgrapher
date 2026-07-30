@@ -24,6 +24,10 @@
   "bugs": {
     "url": "https://github.com/artfusion/ccgrapher/issues"
   },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "build": "tsc -b",
     "clean": "tsc -b --clean && rm -rf packages/*/dist apps/*/dist",
@@ -31,9 +35,6 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --noEmit false --pretty",
     "ccg": "node --experimental-strip-types apps/cli/src/index.ts"
-  },
-  "engines": {
-    "node": ">=22"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
