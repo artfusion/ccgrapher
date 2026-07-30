@@ -82,26 +82,35 @@ for dir in "${PACKAGES[@]}"; do
     exit 1
   fi
 
+  # Output is deliberately NOT suppressed. Without 2FA enabled, npm answers the
+  # first publish of a session with a one-time browser link and then waits for
+  # you to approve it. Redirecting to /dev/null hides that link while npm is
+  # blocked on it, so the publish can never succeed — and any link printed
+  # afterwards belongs to a process that has already exited, so it is dead on
+  # arrival. Let npm talk.
   if [ -n "$OTP" ]; then
-    ok=$( npm publish "$tgz" --access public --otp="$OTP" >/dev/null 2>&1 && echo yes )
+    npm publish "$tgz" --access public --otp="$OTP"
+    status=$?
   else
-    ok=$( npm publish "$tgz" --access public >/dev/null 2>&1 && echo yes )
+    npm publish "$tgz" --access public
+    status=$?
   fi
 
-  if [ "$ok" = "yes" ]; then
+  if [ "$status" -eq 0 ]; then
     published=$((published + 1))
   else
+    # npm's own error is already on screen above — do not re-run it to "show"
+    # the error, because a second run prints a fresh auth link belonging to a
+    # process that exits immediately, which is unclickable and misleading.
     echo
-    echo
-    echo "  ✗ stopped at $name. Re-run when fixed — the $published already"
-    echo "    published will be skipped, so nothing is lost."
-    if [ -n "$OTP" ]; then
-      echo "    Most likely the code expired; get a fresh one."
-    else
-      echo "    Publishing with a token — check it has write access and is"
-      echo "    in scope for @ccgrapher/*. The error itself:"
+    echo "  ✗ stopped at $name. npm's error is above."
+    echo "    Re-run when resolved — the $published already published will be"
+    echo "    skipped, so nothing is lost and no version is wasted."
+    if [ -z "$OTP" ]; then
+      echo
+      echo "    If it printed an auth link: click it, approve, then run this"
+      echo "    again. The approval lasts a few minutes and covers the rest."
     fi
-    npm publish "$tgz" --access public 2>&1 | grep -iE "error|authenticate" | head -5 | sed 's/^/      /' 
     exit 1
   fi
 done

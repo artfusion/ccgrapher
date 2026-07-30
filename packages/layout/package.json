@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/layout",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Turns a validated workflow graph into positioned nodes and routed edges.",
   "keywords": [
