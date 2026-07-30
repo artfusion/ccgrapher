@@ -19,3 +19,7 @@ dist/
 # The browser transcript that produced the handoff. Kept locally for reference,
 # deliberately not published — see the Provenance section of the README.
 CONVERSATION.md
+
+# Working handoffs are private — they carry Linear links and other project
+# internals. HANDOFF.md (the original drop) is intentionally public.
+HANDOFF-SESSION.md
