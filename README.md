@@ -29,10 +29,14 @@ is just how you see it.
 ## Quickstart
 
 ```bash
-git clone https://github.com/artfusion/ccgrapher.git
-cd ccgrapher
-pnpm install && pnpm build
+npx @ccgrapher/cli lint your-workflow.yaml
+```
 
+Nothing to install. Or from source:
+
+```bash
+git clone https://github.com/artfusion/ccgrapher.git
+cd ccgrapher && pnpm install && pnpm build
 node apps/cli/dist/index.js lint examples/linear-chain.yaml
 ```
 
