@@ -1,0 +1,88 @@
+# examples/research-desk.yaml
+# The fuller diamond: adds the code-only reduce step and three-lens verification.
+# 6 layers. Exercises: a no-model node, a second fan-out below the first, majority voting.
+version: 1
+name: research-desk
+goal: "decision-grade research on <question>"
+
+nodes:
+  - id: plan
+    label: plan the angles
+    kind: split
+    model: strong
+    in:  { question: string }
+    out: { angle: string }
+
+  - id: research
+    label: researcher
+    kind: worker
+    model: cheap
+    fanOut: { over: angle, cap: 5 }     # renders as one stacked node badged x5
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: dedupe
+    label: dedupe by source
+    kind: reduce
+    model: null                          # plain code. no model, no tokens.
+    expects: 5
+    in:  { claim: string, source: url, date: "YYYY-MM-DD" }
+    out: { finding: object }
+
+  - id: skeptic_correct
+    label: is it correct?
+    kind: verifier
+    model: strong
+    freshContext: true
+    in:  { finding: object }
+    out: { vote: "keep|drop", why: string }
+
+  - id: skeptic_current
+    label: is it current?
+    kind: verifier
+    model: strong
+    freshContext: true
+    in:  { finding: object }
+    out: { vote: "keep|drop", why: string }
+
+  - id: skeptic_source
+    label: is the source real?
+    kind: verifier
+    model: strong
+    freshContext: true
+    in:  { finding: object }
+    out: { vote: "keep|drop", why: string }
+
+  - id: vote
+    label: majority survives
+    kind: reduce
+    model: null
+    expects: 3
+    in:  { vote: "keep|drop" }
+    out: { survivor: object }
+
+  - id: report
+    label: one ranked report
+    kind: synthesize
+    model: strong
+    in:  { survivor: object }
+    out: { report: markdown }
+    writes: ["research-report.md"]
+
+  - id: gate
+    label: human approves
+    kind: gate
+    in:  { report: markdown }
+    out: { approved: boolean }
+
+edges:
+  - { from: plan,   to: research, carries: [angle] }
+  - { from: research, to: dedupe, carries: [claim, source, date] }
+  - { from: dedupe, to: skeptic_correct, carries: [finding] }
+  - { from: dedupe, to: skeptic_current, carries: [finding] }
+  - { from: dedupe, to: skeptic_source,  carries: [finding] }
+  - { from: skeptic_correct, to: vote, carries: [vote] }
+  - { from: skeptic_current, to: vote, carries: [vote] }
+  - { from: skeptic_source,  to: vote, carries: [vote] }
+  - { from: vote,   to: report, carries: [survivor] }
+  - { from: report, to: gate,   carries: [report] }

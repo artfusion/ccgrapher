@@ -1,0 +1,45 @@
+# examples/route-auth-audit.yaml
+# The concrete repo job from the article. Exercises fanOut over a glob, a per-file
+# isolated worktree, and the silent-failure guard.
+version: 1
+name: route-auth-audit
+goal: "audit every route file under src/routes/ for missing auth checks"
+
+nodes:
+  - id: discover
+    label: list route files
+    kind: split
+    model: null
+    in:  { glob: string }
+    out: { file: path }
+
+  - id: audit
+    label: audit one route file
+    kind: worker
+    model: cheap
+    fanOut: { over: file, cap: 20 }
+    worktree: true                # isolated space per worker -> no false independence
+    in:  { file: path }
+    out: { file: path, missing_auth: boolean, evidence: string }
+
+  - id: verify
+    label: independent checker
+    kind: verifier
+    model: strong
+    freshContext: true
+    expects: 20                   # ON FAIL: flag any file that doesn't return
+    in:  { file: path, missing_auth: boolean, evidence: string }
+    out: { file: path, confirmed: boolean }
+
+  - id: report
+    label: merged list
+    kind: synthesize
+    model: strong
+    in:  { file: path, confirmed: boolean }
+    out: { report: markdown }
+    writes: ["audit/route-auth.md"]
+
+edges:
+  - { from: discover, to: audit,  carries: [file] }
+  - { from: audit,    to: verify, carries: [file, missing_auth, evidence] }
+  - { from: verify,   to: report, carries: [file, confirmed] }

@@ -1,0 +1,79 @@
+# examples/diamond.yaml
+# Exact reproduction of the "THE DIAMOND: fan out -> reduce -> synthesize" figure
+# https://pbs.twimg.com/media/HN_qHfuXcAAlcLr
+# 4 layers. Workers 1-5 must all land on row 2. This is acceptance criterion #1.
+version: 1
+name: diamond
+goal: "market scan: how do we compare to the top 3 competitors"
+
+nodes:
+  - id: split
+    label: split the job
+    kind: split
+    in:  { question: string }
+    out: { angle: string }
+
+  - id: worker_1
+    label: worker 1
+    kind: worker
+    model: cheap
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: worker_2
+    label: worker 2
+    kind: worker
+    model: cheap
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: worker_3
+    label: worker 3
+    kind: worker
+    model: cheap
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: worker_4
+    label: worker 4
+    kind: worker
+    model: cheap
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: worker_5
+    label: worker 5
+    kind: worker
+    model: cheap
+    in:  { angle: string }
+    out: { claim: string, source: url, date: "YYYY-MM-DD" }
+
+  - id: checker
+    label: checker
+    kind: verifier
+    model: strong
+    freshContext: true          # must be true, else the self-grading lint rule fires
+    expects: 5                  # fan-in guard: flag if fewer than 5 results arrive
+    in:  { claim: string, source: url, date: "YYYY-MM-DD" }
+    out: { claim: string, verdict: "keep|drop", why: string }
+
+  - id: merge
+    label: merge into one answer
+    kind: synthesize
+    model: strong
+    in:  { claim: string, verdict: "keep|drop" }
+    out: { report: markdown }
+    writes: ["reports/market-scan.md"]
+
+edges:
+  - { from: split, to: worker_1, carries: [angle] }
+  - { from: split, to: worker_2, carries: [angle] }
+  - { from: split, to: worker_3, carries: [angle] }
+  - { from: split, to: worker_4, carries: [angle] }
+  - { from: split, to: worker_5, carries: [angle] }
+  - { from: worker_1, to: checker, carries: [claim, source, date] }
+  - { from: worker_2, to: checker, carries: [claim, source, date] }
+  - { from: worker_3, to: checker, carries: [claim, source, date] }
+  - { from: worker_4, to: checker, carries: [claim, source, date] }
+  - { from: worker_5, to: checker, carries: [claim, source, date] }
+  - { from: checker, to: merge, carries: [claim, verdict] }

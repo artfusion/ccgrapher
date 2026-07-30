@@ -1,0 +1,71 @@
+# examples/linear-chain.yaml
+# DELIBERATELY BROKEN. This is the linter's test fixture -- acceptance criterion #2.
+# Written the way people actually type workflows: one long chain, because that is
+# the order the steps occurred to them.
+#
+# Expected lint output:
+#   FAKE_EDGE      review_a -> review_b     (carries: [] -- review_b never reads issues_a)
+#   FAKE_EDGE      review_b -> lint_docs    (carries: [] -- lint_docs never reads issues_b)
+#   MISSING_INPUT  review_b requires 'repo' but no inbound edge carries it
+#   MISSING_INPUT  lint_docs requires 'repo' but no inbound edge carries it
+#   HIDDEN_EDGE    review_a and review_b both write 'notes/findings.md'
+#   Critical path: 6 layers  ->  4 layers after repointing the fake edges to 'setup'
+version: 1
+name: linear-chain
+goal: "review this repo for bugs and doc rot"
+
+nodes:
+  - id: setup
+    label: clone and index repo
+    kind: split
+    model: null
+    in:  { url: string }
+    out: { repo: path }
+
+  - id: review_a
+    label: review file A for bugs
+    kind: worker
+    model: cheap
+    in:  { repo: path }
+    out: { issues_a: "string[]" }
+    writes: ["notes/findings.md"]
+
+  - id: review_b
+    label: review file B for bugs
+    kind: worker
+    model: cheap
+    in:  { repo: path }
+    out: { issues_b: "string[]" }
+    writes: ["notes/findings.md"]     # same file as review_a -> hidden edge
+
+  - id: lint_docs
+    label: check docs for rot
+    kind: worker
+    model: cheap
+    in:  { repo: path }
+    out: { doc_issues: "string[]" }
+
+  - id: collate
+    label: collate everything
+    kind: reduce
+    model: null
+    expects: 3
+    in:  { issues_a: "string[]", issues_b: "string[]", doc_issues: "string[]" }
+    out: { all_issues: "string[]" }
+
+  - id: write_report
+    label: write the report
+    kind: synthesize
+    model: strong
+    in:  { all_issues: "string[]" }
+    out: { report: markdown }
+    writes: ["review.md"]
+
+edges:
+  - { from: setup,     to: review_a,     carries: [repo] }
+  - { from: review_a,  to: review_b,     carries: [] }        # FAKE
+  - { from: review_b,  to: lint_docs,    carries: [] }        # FAKE
+  - { from: review_a,  to: collate,      carries: [issues_a] }
+  - { from: review_b,  to: collate,      carries: [issues_b] }
+  - { from: lint_docs, to: collate,      carries: [doc_issues] }
+  - { from: collate,   to: write_report, carries: [all_issues] }
