@@ -33,7 +33,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
