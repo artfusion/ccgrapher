@@ -1,0 +1,47 @@
+{
+  "name": "ccgrapher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn an agent-workflow spec into a layered hand-drawn graph, lint it for wasted sequencing, and generate the orchestration code.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint",
+    "diagram",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "author": "Michael Guthrie",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean && rm -rf packages/*/dist apps/*/dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b --noEmit false --pretty",
+    "ccg": "node --experimental-strip-types apps/cli/src/index.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^22.10.2",
+    "mermaid": "^11.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wawoff2": "^2.0.1"
+  }
+}

@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>body{background:#FBF7F0;font-family:system-ui;margin:0;padding:16px}
+h3{font:600 13px system-ui;color:#666;margin:12px 0 4px}
+.err{color:#C4442E;font:12px monospace;white-space:pre-wrap}</style></head>
+<body><div id="app"></div>
+<script type="module">
+import mermaid from "../node_modules/mermaid/dist/mermaid.esm.mjs";
+mermaid.initialize({ startOnLoad: false });
+const files = ["diamond","linear-chain","research-desk"];
+const app = document.getElementById("app");
+let ok = 0;
+for (const f of files) {
+  const src = await (await fetch(`../out/${f}.mmd`)).text();
+  const h = document.createElement("h3"); h.textContent = f; app.appendChild(h);
+  const d = document.createElement("div"); app.appendChild(d);
+  try {
+    const { svg } = await mermaid.render(`m-${f}`, src);
+    d.innerHTML = svg; ok++;
+  } catch (e) {
+    d.className = "err"; d.textContent = "FAILED: " + (e?.message ?? e);
+  }
+}
+document.title = `mermaid ${ok}/${files.length} rendered`;
+</script></body></html>

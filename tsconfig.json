@@ -1,0 +1,32 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/lint"
+    },
+    {
+      "path": "./packages/layout"
+    },
+    {
+      "path": "./packages/render-svg"
+    },
+    {
+      "path": "./packages/render-mermaid"
+    },
+    {
+      "path": "./packages/render-excalidraw"
+    },
+    {
+      "path": "./packages/codegen"
+    },
+    {
+      "path": "./packages/ingest"
+    },
+    {
+      "path": "./apps/cli"
+    }
+  ]
+}

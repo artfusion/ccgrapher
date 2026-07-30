@@ -1,0 +1,49 @@
+{
+  "name": "@ccgrapher/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Command line interface for ccgrapher: lint, render, codegen and ingest.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint",
+    "diagram",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "author": "Michael Guthrie",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "bin": {
+    "ccg": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@ccgrapher/codegen": "workspace:*",
+    "@ccgrapher/core": "workspace:*",
+    "@ccgrapher/ingest": "workspace:*",
+    "@ccgrapher/layout": "workspace:*",
+    "@ccgrapher/lint": "workspace:*",
+    "@ccgrapher/render-excalidraw": "workspace:*",
+    "@ccgrapher/render-mermaid": "workspace:*",
+    "@ccgrapher/render-svg": "workspace:*"
+  }
+}

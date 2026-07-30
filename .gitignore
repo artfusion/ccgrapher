@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# Generated diagrams and code. Everything under docs/ is committed on purpose,
+# so the ignore is scoped to the scratch output directory rather than being a
+# blanket *.svg / *.png.
+/out/
+
+# next
+.next/
+.vercel/
+
+# env
+.env
+.env.local
+
+# The browser transcript that produced the handoff. Kept locally for reference,
+# deliberately not published — see the Provenance section of the README.
+CONVERSATION.md

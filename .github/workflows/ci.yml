@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build & test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the floor we claim in engines; 24 is current.
+        node: ["22", "24"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build the web canvas
+        run: pnpm --filter @ccgrapher/web build
+
+      - name: Acceptance criteria
+        run: |
+          set -euo pipefail
+
+          # #2 — the broken fixture lints to the documented findings, and the
+          # critical path collapses. Exit code 1 is expected here.
+          node apps/cli/dist/index.js lint examples/linear-chain.yaml > lint.txt && rc=0 || rc=$?
+          test "$rc" -eq 1
+          grep -q "Critical path: 6 layers -> 4 layers" lint.txt
+          test "$(grep -c 'FAKE_EDGE' lint.txt)" -eq 2
+
+          # The clean fixtures stay clean.
+          node apps/cli/dist/index.js lint \
+            examples/diamond.yaml \
+            examples/research-desk.yaml \
+            examples/route-auth-audit.yaml
+
+          # #1 — diamond renders four layers with five workers on one row.
+          node apps/cli/dist/index.js render examples/diamond.yaml -o diamond.svg
+          test "$(grep -o 'data-rank="1"' diamond.svg | wc -l)" -eq 5
+
+          # The embedded font carries its OFL notice; --no-embed-font does not.
+          grep -q "SIL Open Font" diamond.svg
+          node apps/cli/dist/index.js render examples/diamond.yaml --no-embed-font -o plain.svg
+          ! grep -q "SIL Open Font" plain.svg
+
+          # Every source file is licence-tagged.
+          untagged=$(grep -rL "SPDX-License-Identifier" \
+            --include="*.ts" --include="*.tsx" packages apps \
+            | grep -v "/dist/" | grep -v "next-env" | grep -v "/.next/" || true)
+          test -z "$untagged" || { echo "missing SPDX: $untagged"; exit 1; }

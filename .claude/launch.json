@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ccgrapher-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@ccgrapher/web",
+        "dev"
+      ],
+      "port": 3210
+    }
+  ]
+}

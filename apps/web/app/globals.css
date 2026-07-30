@@ -1,0 +1,334 @@
+@import url("https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&display=swap");
+
+:root {
+  --paper: #fbf7f0;
+  --ink: #2b2724;
+  --accent: #e8763a;
+  --muted: #8a817a;
+  --danger: #c4442e;
+  --rule: #e4dcd0;
+  --hand: "Caveat", "Patrick Hand", cursive;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+header {
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+header h1 {
+  margin: 0;
+  font: 600 30px/1 var(--hand);
+}
+
+header p {
+  margin: 2px 0 10px;
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls select,
+.controls button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.controls button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.controls button:disabled,
+.controls label.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.controls label {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  user-select: none;
+}
+
+main {
+  display: grid;
+  grid-template-columns: minmax(280px, 30%) 1fr;
+  min-height: 0;
+}
+
+.pane {
+  min-height: 0;
+  min-width: 0;
+}
+
+.pane.source {
+  border-right: 1px solid var(--rule);
+}
+
+.pane.source textarea {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  resize: none;
+  padding: 14px 16px;
+  background: #fffdf9;
+  color: var(--ink);
+  font: 12px/1.6 var(--mono);
+  tab-size: 2;
+}
+
+.pane.source textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pane.canvas {
+  position: relative;
+  /* React Flow measures its parent, so the height has to be explicit. */
+  height: 100%;
+  width: 100%;
+  background: var(--paper);
+}
+
+.error {
+  margin: 0;
+  padding: 18px;
+  color: var(--danger);
+  font: 12px/1.6 var(--mono);
+  white-space: pre-wrap;
+}
+
+/* ---- nodes ------------------------------------------------------------- */
+
+.spec-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 0 12px;
+  border: 2px solid var(--ink);
+  font: 17px/1.25 var(--hand);
+  color: var(--ink);
+}
+
+/* Sketchy for an agent: this one costs tokens. */
+.spec-node.style-agent {
+  border-radius: 255px 12px 225px 15px / 15px 225px 12px 255px;
+  border-width: 2px;
+}
+
+/* Sharp for plain code: no model, no tokens. */
+.spec-node.style-code {
+  border-width: 1.5px;
+  border-radius: 0;
+}
+
+.spec-node.style-human {
+  border-width: 1.5px;
+  border-radius: 0;
+  border-style: dashed;
+}
+
+/* An isolated worktree cannot collide with its neighbours. */
+.spec-node.worktree::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border: 1px dashed var(--muted);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.spec-node.flagged {
+  box-shadow: 0 0 0 3px rgba(196, 68, 46, 0.18);
+}
+
+.spec-node .label {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  text-align: center;
+}
+
+.spec-node .badge {
+  position: absolute;
+  top: 2px;
+  right: 7px;
+  color: var(--accent);
+  font: 600 14px var(--hand);
+}
+
+.spec-node .warn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.spec-node .icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  background: currentColor;
+  color: var(--accent);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.spec-node.style-code .icon,
+.spec-node.style-human .icon {
+  color: var(--muted);
+}
+
+.icon-split {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M1.5 8H6M6 8l5-4.5M6 8h5M6 8l5 4.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M1.5 8H6M6 8l5-4.5M6 8h5M6 8l5 4.5'/%3E%3C/svg%3E");
+}
+
+.icon-worker {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='7' cy='7' r='3.8'/%3E%3Cpath d='M9.8 9.8l3.4 3.4'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='7' cy='7' r='3.8'/%3E%3Cpath d='M9.8 9.8l3.4 3.4'/%3E%3C/svg%3E");
+}
+
+.icon-verifier {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M8 2.5v11M3 4.5h10M3 4.5L1.5 8.5h3zM13 4.5l-1.5 4h3zM5 13.5h6'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M8 2.5v11M3 4.5h10M3 4.5L1.5 8.5h3zM13 4.5l-1.5 4h3zM5 13.5h6'/%3E%3C/svg%3E");
+}
+
+.icon-reduce {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 3h12L9.5 8.2v5.3L6.5 12V8.2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 3h12L9.5 8.2v5.3L6.5 12V8.2z'/%3E%3C/svg%3E");
+}
+
+.icon-synthesize {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M4.5 3h7v11h-7zM6.5 3V1.8h3V3M6.3 6.5h3.4M6.3 9h3.4M6.3 11.5h2.1'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M4.5 3h7v11h-7zM6.5 3V1.8h3V3M6.3 6.5h3.4M6.3 9h3.4M6.3 11.5h2.1'/%3E%3C/svg%3E");
+}
+
+.icon-gate {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='8' cy='4.9' r='2.4'/%3E%3Cpath d='M2.8 14a5.2 5.2 0 0110.4 0'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='8' cy='4.9' r='2.4'/%3E%3Cpath d='M2.8 14a5.2 5.2 0 0110.4 0'/%3E%3C/svg%3E");
+}
+
+.icon-goal {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/svg%3E");
+}
+
+.react-flow__handle {
+  opacity: 0;
+}
+
+/* ---- report ------------------------------------------------------------ */
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding: 10px 20px 12px;
+  max-height: 30vh;
+  overflow: auto;
+  background: #fffdf9;
+}
+
+.path {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.path .good {
+  color: #2f7d4f;
+}
+
+.clean {
+  color: #2f7d4f;
+  font-weight: 600;
+}
+
+.findings {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.findings li {
+  font: 12px/1.5 var(--mono);
+}
+
+.findings .rule {
+  display: inline-block;
+  min-width: 140px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.findings li.error .rule {
+  color: var(--danger);
+}
+
+.findings em {
+  color: var(--muted);
+}
+
+.tally,
+.bad {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bad {
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 200px 1fr;
+  }
+
+  .pane.source {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+}

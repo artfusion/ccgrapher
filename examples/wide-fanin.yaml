@@ -1,0 +1,44 @@
+# examples/wide-fanin.yaml
+# Not from the original handoff -- added to exercise CONTEXT_COLLAPSE, which the
+# four shipped fixtures never trip (route-auth-audit's cap of 20 sits under the
+# threshold of 30).
+#
+# 200 raw crawl results poured straight into one synthesis step. The fix the
+# article describes is a layered fan-in: summarise in batches, then combine the
+# summaries -- i.e. put a `reduce` node between the fan-out and the synthesizer.
+#
+# Expected lint output:
+#   CONTEXT_COLLAPSE  summarise takes 200 inbound results with no intermediate reduce layer
+#   Critical path: 3 layers
+version: 1
+name: wide-fanin
+goal: "summarise every page on the site"
+
+nodes:
+  - id: crawl
+    label: list every page
+    kind: split
+    model: null
+    in:  { root: url }
+    out: { page: url }
+
+  - id: read
+    label: read one page
+    kind: worker
+    model: cheap
+    fanOut: { over: page, cap: 200 }
+    in:  { page: url }
+    out: { text: string }
+
+  - id: summarise
+    label: one big summary
+    kind: synthesize
+    model: strong
+    expects: 200
+    in:  { text: string }
+    out: { summary: markdown }
+    writes: ["site-summary.md"]
+
+edges:
+  - { from: crawl, to: read,      carries: [page] }
+  - { from: read,  to: summarise, carries: [text] }

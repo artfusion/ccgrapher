@@ -1,6 +1,8 @@
 # examples/research-desk.yaml
 # The fuller diamond: adds the code-only reduce step and three-lens verification.
-# 6 layers. Exercises: a no-model node, a second fan-out below the first, majority voting.
+# 7 layers (plan/research/dedupe/skeptics/vote/report/gate -- the original handoff
+# comment said 6, which undercounted the human gate).
+# Exercises: a no-model node, a second fan-out below the first, majority voting.
 version: 1
 name: research-desk
 goal: "decision-grade research on <question>"

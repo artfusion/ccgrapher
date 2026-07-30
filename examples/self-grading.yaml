@@ -1,0 +1,60 @@
+# examples/self-grading.yaml
+# Not from the original handoff -- added because every verifier in the drop is
+# correctly freshContext: true, so SELF_GRADING and HIDDEN_EDGE-without-worktree
+# had no fixture.
+#
+# Expected lint output:
+#   SELF_GRADING  verifier check_own is not marked freshContext
+#   HIDDEN_EDGE   draft_a and draft_b run concurrently and both write 'out/draft.md'
+#   Critical path: 4 layers (nothing to repair -- every edge carries real data)
+version: 1
+name: self-grading
+goal: "draft two sections and grade them"
+
+nodes:
+  - id: brief
+    label: write the brief
+    kind: split
+    model: strong
+    in:  { topic: string }
+    out: { section: string }
+
+  - id: draft_a
+    label: draft section A
+    kind: worker
+    model: cheap
+    in:  { section: string }
+    out: { text_a: markdown }
+    writes: ["out/draft.md"]        # same file as draft_b, neither isolated
+
+  - id: draft_b
+    label: draft section B
+    kind: worker
+    model: cheap
+    in:  { section: string }
+    out: { text_b: markdown }
+    writes: ["out/draft.md"]
+
+  - id: check_own
+    label: grade the drafts
+    kind: verifier
+    model: cheap
+    # freshContext deliberately absent -- this is the self-grading case
+    expects: 2
+    in:  { text_a: markdown, text_b: markdown }
+    out: { verdict: "keep|drop" }
+
+  - id: publish
+    label: publish
+    kind: synthesize
+    model: strong
+    in:  { verdict: "keep|drop" }
+    out: { page: html }
+    writes: ["out/page.html"]
+
+edges:
+  - { from: brief,     to: draft_a,   carries: [section] }
+  - { from: brief,     to: draft_b,   carries: [section] }
+  - { from: draft_a,   to: check_own, carries: [text_a] }
+  - { from: draft_b,   to: check_own, carries: [text_b] }
+  - { from: check_own, to: publish,   carries: [verdict] }
