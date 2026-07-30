@@ -1,0 +1,127 @@
+# examples/release-session.yaml
+#
+# Not an agent workflow — a week of human work, modelled the same way.
+#
+# Nine pull requests shipped in one session, each merged after the last, then a
+# release. That is how sessions are usually described: "I did this, then that."
+# It is rarely how the work is actually shaped.
+#
+# Three of these nine have a real dependency. The other six were never waiting
+# on anything; they were sequential because a person can only type one at a
+# time. That distinction is invisible in a changelog and obvious in a graph.
+#
+# The `expects: 9` on the CI node is the part worth studying. It says nine
+# results should reach the check before a release is cut. Count the edges into
+# `ci` and you will find eight — pr_new_site's output never reaches it. A
+# release that looks complete, built on a check that never saw everything.
+#
+# Expected lint output:
+#   FAKE_EDGE       x6   the six PRs that were not waiting on anything
+#   MISSING_INPUT   x6   what each of them actually needed instead
+#   SILENT_FAILURE       ci declares expects: 9 but 8 results arrive
+#   Critical path: 12 layers -> 5 layers
+version: 1
+name: release-session
+goal: "nine pull requests, one release"
+
+nodes:
+  - id: scope
+    label: pick the scope
+    kind: split
+    model: null
+    in:  { backlog: string }
+    out: { brief: string }
+
+  - id: pr_hotfix
+    label: fix the P1
+    kind: worker
+    in:  { brief: string }
+    out: { hotfix: patch }
+
+  - id: pr_landing
+    label: rebuild the landing
+    kind: worker
+    in:  { brief: string }
+    out: { landing: patch, attribution: table }
+
+  # Real dependency: it renders the data the landing work backfilled.
+  - id: pr_credits
+    label: fix the credit line
+    kind: worker
+    in:  { attribution: table }
+    out: { credits: patch }
+
+  - id: pr_new_site
+    label: launch the second site
+    kind: worker
+    in:  { brief: string }
+    out: { site: deployment }
+
+  # Real dependency: copy that lives on a site that has to exist first.
+  - id: pr_copy
+    label: reframe the copy
+    kind: worker
+    in:  { site: deployment }
+    out: { copy: patch }
+
+  - id: pr_pricing
+    label: add a pricing tier
+    kind: worker
+    in:  { brief: string }
+    out: { migration: sql }
+
+  # Real dependency: cannot link to a site that does not exist yet.
+  - id: pr_links
+    label: link across to it
+    kind: worker
+    in:  { site: deployment }
+    out: { links: patch }
+
+  - id: pr_byok
+    label: bring your own key
+    kind: worker
+    in:  { brief: string }
+    out: { byok: patch }
+
+  - id: pr_compare
+    label: compare four at once
+    kind: worker
+    in:  { brief: string }
+    out: { compare: patch }
+
+  - id: ci
+    label: CI on main
+    kind: verifier
+    model: null
+    freshContext: true
+    expects: 9                      # nine went out; count the edges below
+    in:  { hotfix: patch, landing: patch, credits: patch, copy: patch, migration: sql, links: patch, byok: patch, compare: patch }
+    out: { verdict: "pass|fail" }
+
+  - id: release
+    label: cut the release
+    kind: synthesize
+    in:  { verdict: "pass|fail" }
+    out: { tag: string }
+
+# As it ran: one after another.
+edges:
+  - { from: scope,       to: pr_hotfix,  carries: [brief] }
+  - { from: pr_hotfix,   to: pr_landing, carries: [] }
+  - { from: pr_landing,  to: pr_credits, carries: [attribution] }
+  - { from: pr_credits,  to: pr_new_site, carries: [] }
+  - { from: pr_new_site, to: pr_copy,    carries: [site] }
+  - { from: pr_copy,     to: pr_pricing, carries: [] }
+  - { from: pr_pricing,  to: pr_links,   carries: [] }
+  - { from: pr_links,    to: pr_byok,    carries: [] }
+  - { from: pr_byok,     to: pr_compare, carries: [] }
+
+  - { from: pr_hotfix,  to: ci, carries: [hotfix] }
+  - { from: pr_landing, to: ci, carries: [landing] }
+  - { from: pr_credits, to: ci, carries: [credits] }
+  - { from: pr_copy,    to: ci, carries: [copy] }
+  - { from: pr_pricing, to: ci, carries: [migration] }
+  - { from: pr_links,   to: ci, carries: [links] }
+  - { from: pr_byok,    to: ci, carries: [byok] }
+  - { from: pr_compare, to: ci, carries: [compare] }
+  - { from: ci,         to: release, carries: [verdict] }

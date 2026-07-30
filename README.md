@@ -294,6 +294,20 @@ double as the negative controls in the test suite. `linear-chain` is deliberatel
 linter's fixture. `self-grading` and `wide-fanin` were added because nothing in the original drop
 exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`.
 
+`release-session` is the one to read if you want to see why this is worth doing. It is not an agent
+workflow at all — it is a week of human work: nine pull requests shipped one after another, then a
+release. Six of the nine were never waiting on anything, and the CI node declares it expects nine
+results while only eight edges reach it. A release that looks complete, built on a check that never
+saw everything.
+
+```bash
+ccg lint examples/release-session.yaml
+```
+
+| As it ran — 12 layers | What it actually was — 5 layers |
+| --- | --- |
+| <img src="docs/release-session-before.png" alt="Twelve-layer staircase of nine pull requests merged one after another" width="100%"> | <img src="docs/release-session-after.png" alt="Five-layer graph with six of the pull requests side by side on one row" width="100%"> |
+
 ## Provenance
 
 The design came from a handoff document written while reading Anatoli Kopadze's article
