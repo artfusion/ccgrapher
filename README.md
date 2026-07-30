@@ -3,9 +3,41 @@
 [![CI](https://github.com/artfusion/ccgrapher/actions/workflows/ci.yml/badge.svg)](https://github.com/artfusion/ccgrapher/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**A linter for agent workflows.** Describe what your agents do, and it finds the steps that are
-waiting on nothing — then draws the result, generates the orchestration code, and reads existing
-code back into a spec.
+**Your agent does things one at a time that didn't need to be.** ccgrapher finds the steps that
+were never waiting on anything, and runs them together instead.
+
+---
+
+## Start here: the Claude Code skill
+
+If you use Claude Code, this is the whole product in one command:
+
+```bash
+git clone https://github.com/artfusion/ccgrapher.git
+ln -s "$PWD/ccgrapher/skills/parallel-plan" ~/.claude/skills/parallel-plan
+```
+
+Now, before your agent executes a plan of five steps or more, it checks which of them actually
+depend on each other — and runs the independent ones concurrently instead of marching down the
+list.
+
+```
+  wave 1               scope
+  wave 2  ×6 together  fix_auth, rebuild_landing, new_site, pricing, byok, compare
+  wave 3  ×3 together  add_tests, reframe_copy, cross_links
+  wave 4               review
+  wave 5               release
+```
+
+That's a real session: nine pull requests that were shipped one after another. Six of them were
+never waiting on anything. Same work, five waves instead of twelve.
+
+It also catches the failures that aren't about speed — a step that grades its own work, or a
+fan-in that reports success when one branch silently died.
+
+**Why it works:** you have to declare what each step *reads*, not what happened before it. Writing
+that down honestly is what exposes the steps that were never waiting. Everything below is the
+machinery that checks the claim.
 
 ---
 
@@ -250,23 +282,18 @@ collapsed graph without touching your source; **apply repairs** rewrites it. It 
 
 ---
 
-## Claude Code skill
+## More on the skill
 
-`skills/parallel-plan/` is a skill that makes an agent do this to its own plans
-before executing them — model the steps, check which actually depend on each
-other, and run the independent ones concurrently.
+`skills/parallel-plan/` triggers on plans of roughly five steps or more, or whenever work is being
+fanned out to subagents. Below that the ceremony costs more than it saves, and a skill that fires
+on everything gets ignored. `template.yaml` is the starting point it copies.
 
-```bash
-ln -s "$PWD/skills/parallel-plan" ~/.claude/skills/parallel-plan
-```
+Two things worth knowing when reading its output:
 
-It triggers on plans of roughly five steps or more, or when fanning work out to
-subagents. Below that the ceremony costs more than it saves. `template.yaml` is
-the starting point it copies.
-
-The discipline is the point: you have to declare what each step *reads*, not
-what happened before it. Writing `in:` honestly is what exposes the steps that
-were never waiting — the tool only checks the claim for consistency.
+- **Waves are an upper bound, not an instruction.** Six steps in one wave means six *may* run at
+  once — rate limits, cost, or a shared file may say otherwise.
+- **The layer count is only as honest as the `in:` fields.** Declare a dependency that isn't real
+  and you get a chain back. The spec is the argument; the tool checks it for consistency.
 
 ## Architecture
 
