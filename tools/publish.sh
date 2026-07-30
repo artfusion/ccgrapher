@@ -3,19 +3,23 @@
 #
 # Publish every package to npm.
 #
-#   bash tools/publish.sh 123456        <- your 6-digit authenticator code
+#   bash tools/publish.sh 123456     # account has 2FA — pass the current code
+#   bash tools/publish.sh            # publishing via a granular access token
 #
-# npm requires a 2FA code to publish, and the token from `npm login` cannot
-# supply one, so it has to be passed in. Nine uploads may outlive a 30-second
-# code — that is fine. Grab a fresh one and run this again; it checks the
-# registry before each package and skips whatever already landed.
+# npm requires either 2FA or a granular access token with "bypass 2FA" to
+# publish; the plain token from `npm login` is not enough on its own. Check
+# which you have with `npm profile get`.
+#
+# With 2FA, nine uploads may outlive a 30-second code. That is fine — grab a
+# fresh one and run this again. It checks the registry before each package and
+# skips whatever already landed.
 
 set -uo pipefail
 
 OTP="${1:-}"
-if [ -z "$OTP" ]; then
-  echo "usage: bash tools/publish.sh <6-digit-code>" >&2
-  echo "       (from your authenticator app)" >&2
+if [ -n "$OTP" ] && ! [[ "$OTP" =~ ^[0-9]{6}$ ]]; then
+  echo "usage: bash tools/publish.sh [6-digit-code]" >&2
+  echo "       '$OTP' is not a 6-digit code. Omit it if you publish with a token." >&2
   exit 2
 fi
 
@@ -53,7 +57,11 @@ for dir in "${PACKAGES[@]}"; do
   fi
 
   echo "  → publishing $name@$version"
-  if ( cd "$dir" && npm publish --access public --otp="$OTP" >/dev/null 2>&1 ); then
+  # --otp only when there is one; with a granular token it must be omitted.
+  otp_args=()
+  [ -n "$OTP" ] && otp_args=(--otp="$OTP")
+
+  if ( cd "$dir" && npm publish --access public "${otp_args[@]}" >/dev/null 2>&1 ); then
     published=$((published + 1))
   else
     echo
