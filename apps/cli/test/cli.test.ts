@@ -143,11 +143,49 @@ describe("the round trip survives the CLI", () => {
   });
 });
 
+describe("plan", () => {
+  it("collapses waves when the fake edges are repaired", () => {
+    const asWritten = ccg("plan", example("release-session"));
+    const repaired = ccg("plan", example("release-session"), "--fix");
+
+    expect(asWritten.status).toBe(0);
+    // As written it is a staircase: one step per wave.
+    expect(asWritten.stdout).toContain("12 waves for 12 steps");
+    // Repaired, six of the nine stop waiting on anything.
+    expect(repaired.stdout).toContain("5 waves for 12 steps");
+    expect(repaired.stdout).toMatch(/×6 together/);
+  });
+
+  it("warns that fake edges are inflating the count", () => {
+    const run = ccg("plan", example("release-session"));
+    expect(run.stdout).toContain("carry no data, inflating this");
+    expect(run.stdout).toContain("Real shape is 5");
+    // …and says nothing of the sort once repaired.
+    expect(ccg("plan", example("release-session"), "--fix").stdout).not.toContain("inflating");
+  });
+
+  it("reports honestly when there is no parallelism to find", () => {
+    const run = ccg("plan", example("wide-fanin"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).not.toMatch(/together/);
+  });
+
+  it("emits machine-readable waves for tooling", () => {
+    const run = ccg("plan", example("diamond"), "--json");
+    const plan = JSON.parse(run.stdout);
+    expect(plan.name).toBe("diamond");
+    expect(plan.waveCount).toBe(4);
+    const workers = plan.waves.find((w: { concurrent: boolean }) => w.concurrent);
+    expect(workers.nodes).toHaveLength(5);
+    expect(workers.nodes.map((n: { id: string }) => n.id)).toContain("worker_3");
+  });
+});
+
 describe("help", () => {
   it("lists every command", () => {
     const run = ccg("--help");
     expect(run.status).toBe(0);
-    for (const command of ["lint", "render", "codegen", "ingest"]) {
+    for (const command of ["lint", "render", "codegen", "ingest", "plan"]) {
       expect(run.stdout).toContain(`ccg ${command}`);
     }
   });

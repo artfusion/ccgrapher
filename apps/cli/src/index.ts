@@ -4,6 +4,7 @@ import { SpecError } from "@ccgrapher/core";
 import { lintCommand } from "./commands/lint.js";
 import { codegenCommand } from "./commands/codegen.js";
 import { ingestCommand } from "./commands/ingest.js";
+import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
 
 const USAGE = `ccg — graph engineering for agent workflows
@@ -13,6 +14,7 @@ Usage:
   ccg render <spec.yaml> -o out.svg  draw the layered graph (svg, mermaid, excalidraw)
   ccg codegen <spec.yaml> -t <target>  emit the matching orchestration code
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
+  ccg plan <spec.yaml>                 what can run at once, wave by wave
 
 Lint options:
   --json            machine-readable output
@@ -33,6 +35,10 @@ Codegen options:
   -t, --target <t>  claude-code | plain-ts | langgraph (default: claude-code)
   --fix             generate from the repaired graph
   --no-banner       omit the generated-from header comment
+
+Plan options:
+  --fix             plan the repaired graph rather than the graph as written
+  --json            machine-readable waves, for tooling and agents
 
 Ingest options:
   -o, --out <file>  write the reconstructed spec here
@@ -61,6 +67,8 @@ function main(argv: string[]): number {
         return codegenCommand(rest);
       case "ingest":
         return ingestCommand(rest);
+      case "plan":
+        return planCommand(rest);
       default:
         process.stderr.write(`ccg: unknown command '${command}'\n\n${USAGE}`);
         return 2;

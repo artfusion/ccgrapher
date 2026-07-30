@@ -250,6 +250,24 @@ collapsed graph without touching your source; **apply repairs** rewrites it. It 
 
 ---
 
+## Claude Code skill
+
+`skills/parallel-plan/` is a skill that makes an agent do this to its own plans
+before executing them — model the steps, check which actually depend on each
+other, and run the independent ones concurrently.
+
+```bash
+ln -s "$PWD/skills/parallel-plan" ~/.claude/skills/parallel-plan
+```
+
+It triggers on plans of roughly five steps or more, or when fanning work out to
+subagents. Below that the ceremony costs more than it saves. `template.yaml` is
+the starting point it copies.
+
+The discipline is the point: you have to declare what each step *reads*, not
+what happened before it. Writing `in:` honestly is what exposes the steps that
+were never waiting — the tool only checks the claim for consistency.
+
 ## Architecture
 
 | Package | Does |

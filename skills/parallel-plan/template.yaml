@@ -1,0 +1,42 @@
+# Starting point for a session plan. Copy, fill in, delete this comment.
+#
+# The only field that matters is `in:` — what the step READS, not what happened
+# before it. If you cannot name a field, there is no dependency, and the step
+# was never waiting.
+version: 1
+name: session-plan
+goal: "what this session is for"
+
+nodes:
+  - id: scope
+    label: decide the scope
+    kind: split
+    model: null                 # null = plain code / human decision, no tokens
+    out: { brief: string }
+
+  - id: task_a
+    label: first piece of work
+    kind: worker
+    in:  { brief: string }
+    out: { a_result: patch }
+    writes: ["src/thing.ts"]    # two concurrent steps writing this = HIDDEN_EDGE
+
+  - id: task_b
+    label: second piece of work
+    kind: worker
+    in:  { brief: string }      # reads the brief, NOT task_a
+    out: { b_result: patch }
+
+  - id: check
+    label: review the changes
+    kind: verifier
+    freshContext: true          # never let the worker grade its own work
+    expects: 2                  # how many results should arrive
+    in:  { a_result: patch, b_result: patch }
+    out: { verdict: "pass|fail" }
+
+edges:
+  - { from: scope,  to: task_a, carries: [brief] }
+  - { from: scope,  to: task_b, carries: [brief] }
+  - { from: task_a, to: check,  carries: [a_result] }
+  - { from: task_b, to: check,  carries: [b_result] }
