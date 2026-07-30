@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/render-excalidraw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Emits a workflow graph as an editable Excalidraw scene.",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/codegen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Generates orchestration code from a workflow spec.",
   "keywords": [

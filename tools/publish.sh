@@ -25,6 +25,9 @@ fi
 
 cd "$(dirname "$0")/.."
 
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
 # Dependency order, so a published package never references a missing one.
 PACKAGES=(
   packages/core
@@ -57,17 +60,48 @@ for dir in "${PACKAGES[@]}"; do
   fi
 
   echo "  → publishing $name@$version"
-  # --otp only when there is one; with a granular token it must be omitted.
-  otp_args=()
-  [ -n "$OTP" ] && otp_args=(--otp="$OTP")
 
-  if ( cd "$dir" && npm publish --access public "${otp_args[@]}" >/dev/null 2>&1 ); then
+  # Pack with pnpm, upload with npm — each does the half the other cannot.
+  #
+  # Only pnpm understands the workspace: protocol and rewrites `workspace:*`
+  # to a real version at pack time; `npm publish` ships the literal string and
+  # produces packages that die on install with `Unsupported URL Type
+  # "workspace:"`. That shipped once, as 0.1.0.
+  #
+  # But `pnpm publish` cannot complete npm's browser auth non-interactively,
+  # whereas `npm publish <tarball>` can — and uploading a tarball leaves its
+  # contents, including the rewritten deps, untouched.
+  tgz=$( cd "$dir" && pnpm pack --pack-destination "$TMP" 2>/dev/null | tail -1 )
+  if [ -z "$tgz" ] || [ ! -f "$tgz" ]; then
+    echo "  ✗ could not pack $name"; exit 1
+  fi
+
+  # Never ship a tarball that still carries the workspace: protocol.
+  if tar -xzOf "$tgz" package/package.json | grep -q '"workspace:'; then
+    echo "  ✗ $name packed with an unresolved workspace: dependency — refusing to publish"
+    exit 1
+  fi
+
+  if [ -n "$OTP" ]; then
+    ok=$( npm publish "$tgz" --access public --otp="$OTP" >/dev/null 2>&1 && echo yes )
+  else
+    ok=$( npm publish "$tgz" --access public >/dev/null 2>&1 && echo yes )
+  fi
+
+  if [ "$ok" = "yes" ]; then
     published=$((published + 1))
   else
     echo
-    echo "  ✗ stopped at $name."
-    echo "    Most likely the code expired. Get a fresh one and run this again —"
-    echo "    the $published already published will be skipped."
+    echo
+    echo "  ✗ stopped at $name. Re-run when fixed — the $published already"
+    echo "    published will be skipped, so nothing is lost."
+    if [ -n "$OTP" ]; then
+      echo "    Most likely the code expired; get a fresh one."
+    else
+      echo "    Publishing with a token — check it has write access and is"
+      echo "    in scope for @ccgrapher/*. The error itself:"
+    fi
+    npm publish "$tgz" --access public 2>&1 | grep -iE "error|authenticate" | head -5 | sed 's/^/      /' 
     exit 1
   fi
 done

@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/render-svg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Renders a workflow graph as a hand-drawn, self-contained SVG.",
   "keywords": [
