@@ -90,7 +90,11 @@ describe("what survives the trip", () => {
   });
 });
 
-describe("hand-written code, not just our own output", () => {
+// Named for what it actually covers. This source was not generated, but it does
+// follow the `<id>Result` naming codegen emits — which is the only shape edge
+// recovery currently understands. `styles it cannot read yet`, below, holds the
+// cases this block was once mistaken for covering.
+describe("code we did not generate, written in the Result convention", () => {
   // The point of reading code back is auditing a workflow nobody drew.
   const handWritten = `
 // Spec: nightly
@@ -171,11 +175,103 @@ export async function runNightly(args: FetchIn): Promise<unknown> {
   });
 });
 
+/**
+ * Styles a person actually writes that edge recovery cannot read yet. These are
+ * characterisation tests, not endorsements — they pin current behaviour so the
+ * limits are visible in the suite rather than discovered in someone's repo.
+ *
+ * When edges are recovered from dataflow instead of from variable names, these
+ * should start failing. Rewrite them as real expectations then; do not relax
+ * them.
+ */
+describe("styles it cannot read yet", () => {
+  const nodes = `
+export interface AIn { url: string; }
+export interface AOut { brief: string; }
+export interface BIn { brief: string; }
+export interface BOut { done: boolean; }
+`;
+
+  it("loses every dependency when the runner destructures the result", () => {
+    const { spec, warnings } = ingest(`${nodes}
+/** step a — split, plain code. */
+export async function a(input: AIn): Promise<AOut> { void input; throw new Error("todo"); }
+
+/** step b — worker. */
+export async function b(input: BIn): Promise<BOut> { void input; throw new Error("todo"); }
+
+export async function runProbe(args: AIn): Promise<unknown> {
+  const { brief } = await a(args);
+  return b({ brief });
+}
+`);
+
+    expect(spec.nodes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(spec.edges).toEqual([]);
+    // b genuinely reads what a produced. Without the warning this graph lints
+    // clean and plans as a single wave.
+    expect(warnings.join(" ")).toContain("no dependencies");
+  });
+
+  it("does not see nodes declared as exported arrow consts", () => {
+    const { spec, warnings } = ingest(`${nodes}
+/** step a — split, plain code. */
+export const a = async (input: AIn): Promise<AOut> => { void input; throw new Error("todo"); };
+
+export async function runProbe(args: AIn): Promise<unknown> {
+  const aResult = await a(args);
+  return aResult;
+}
+`);
+
+    expect(spec.nodes).toEqual([]);
+    expect(warnings.join(" ")).toContain("no exported node functions");
+  });
+});
+
 describe("degrades honestly", () => {
   it("warns rather than throwing on something that is not orchestration code", () => {
     const { spec, warnings } = ingest("export const x = 1;\n");
     expect(spec.nodes).toEqual([]);
     expect(warnings.join(" ")).toContain("no exported node functions");
+  });
+
+  // The dangerous shape: nodes parse, the runner parses, but the awaits use
+  // natural variable names, so no edge is recovered. The result lints clean and
+  // plans as one wave — the most flattering answer, and wrong.
+  it("warns when it finds nodes but recovers no dependencies", () => {
+    const naturallyNamed = `
+export interface ScopeIn { url: string; }
+export interface ScopeOut { brief: string; }
+export interface ReportIn { brief: string; }
+export interface ReportOut { report: string; }
+
+/** pick the scope — split, plain code. */
+export async function scope(input: ScopeIn): Promise<ScopeOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** write it up — synthesize. */
+export async function report(input: ReportIn): Promise<ReportOut> {
+  void input;
+  throw new Error("todo");
+}
+
+export async function runIt(args: ScopeIn): Promise<unknown> {
+  const brief = await scope(args);
+  return report(brief as unknown as ReportIn);
+}
+`;
+    const { spec, warnings } = ingest(naturallyNamed);
+
+    expect(spec.nodes).toHaveLength(2);
+    expect(spec.edges).toEqual([]);
+    expect(warnings.join(" ")).toContain("no dependencies");
+  });
+
+  it("stays quiet when the dependencies are genuinely there", () => {
+    expect(roundTrip("linear-chain").warnings).toEqual([]);
   });
 
   it("warns when the spec name was not recorded", () => {

@@ -186,6 +186,18 @@ function collectEdges(
     }
   }
 
+  // An edgeless graph is legal, so nothing downstream objects to one: it lints
+  // clean and plans as a single wave. That is also what a runner written
+  // without the `Result` convention produces — so silence here would report
+  // "everything is independent" with the same confidence as a real answer.
+  if (edges.length === 0 && known.size > 0) {
+    warnings.push(
+      `found ${known.size} nodes but no dependencies — every step will look independent and the ` +
+        "graph will lint clean; a result variable must be named `<nodeId>Result` for an await to " +
+        "count as an edge",
+    );
+  }
+
   return edges;
 }
 
