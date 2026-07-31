@@ -1,0 +1,68 @@
+[
+  {
+    "number": 30,
+    "title": "Deep-return: land back on the intended page after signup/signin (YOG-192)",
+    "mergedAt": "2026-07-20T15:03:38Z",
+    "headRefName": "feature/yog-192-deep-return",
+    "body": "Practice-gate CTAs carry the run URL through the magic link. Builds on YOG-190; part of YOG-189.",
+    "files": [
+      { "path": "app/src/runner/PracticeGate.tsx", "additions": 12, "deletions": 3 },
+      { "path": "app/src/features/account/returnPath.ts", "additions": 40, "deletions": 0 },
+      { "path": "app/src/shared/analytics.ts", "additions": 8, "deletions": 7 }
+    ]
+  },
+  {
+    "number": 29,
+    "title": "Require free account to practice (main app) + Free-card auth states (YOG-190/191)",
+    "mergedAt": "2026-07-20T12:47:57Z",
+    "headRefName": "feature/yog-190-191-practice-gate",
+    "body": "Part of YOG-189.",
+    "files": [
+      { "path": "app/scripts/prerender.mjs" },
+      { "path": "app/src/features/welcome/WelcomePage.tsx" },
+      { "path": "app/src/runner/PracticeGate.tsx" }
+    ]
+  },
+  {
+    "number": 28,
+    "title": "New-visitor funnel: welcome gate + pricing/signup visibility (YOG-186/187/188)",
+    "mergedAt": "2026-07-20T07:28:58Z",
+    "headRefName": "feature/yog-186-188-welcome-funnel",
+    "body": "Part of YOG-189.",
+    "files": [
+      { "path": "app/scripts/prerender.mjs" },
+      { "path": "app/src/features/welcome/WelcomePage.tsx" },
+      { "path": "app/public/sitemap.xml" }
+    ]
+  },
+  {
+    "number": 27,
+    "title": "Fix typo in footer",
+    "mergedAt": "2026-07-10T15:09:08Z",
+    "headRefName": "fix/footer-typo",
+    "body": "",
+    "files": [{ "path": "app/src/components/Footer.tsx", "changeType": "MODIFIED" }]
+  },
+  {
+    "number": 26,
+    "title": "YOG-61 + YOG-62: embed growth loop — gated attribution + referral analytics",
+    "mergedAt": "2026-07-10T14:58:14Z",
+    "headRefName": "artfusion/yog-61-62-embed-growth-loop",
+    "body": "",
+    "files": [
+      { "path": "app/src/embed/EmbedFrame.tsx" },
+      { "path": "app/src/shared/analytics.ts" }
+    ]
+  },
+  {
+    "number": 25,
+    "title": "Cookie consent — GA4 Consent Mode v2 + banner (YOG-158)",
+    "mergedAt": "2026-07-10T14:04:57Z",
+    "headRefName": "artfusion/yog-158-consent-mode-banner",
+    "body": "",
+    "files": [
+      { "path": "app/src/consent/Banner.tsx" },
+      { "path": "app/src/shared/analytics.ts" }
+    ]
+  }
+]

@@ -6,6 +6,7 @@ import { codegenCommand } from "./commands/codegen.js";
 import { ingestCommand } from "./commands/ingest.js";
 import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
+import { retroCommand } from "./commands/retro.js";
 
 const USAGE = `ccg — graph engineering for agent workflows
 
@@ -15,6 +16,7 @@ Usage:
   ccg codegen <spec.yaml> -t <target>  emit the matching orchestration code
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
   ccg plan <spec.yaml>                 what can run at once, wave by wave
+  ccg retro <owner/repo>               rebuild the as-merged workflow from a repo's PR history
 
 Lint options:
   --json            machine-readable output
@@ -45,6 +47,12 @@ Ingest options:
   --name <name>     spec name, if the source does not record one
   --lint            audit the reconstructed graph instead of printing it
 
+Retro options:
+  --limit <n>       how many merged PRs to read (default 15, max 50)
+  -o, --out <file>  write the reconstructed spec here
+  --lint            audit the as-merged graph instead of printing it
+  --from-json <f>   build from saved \`gh pr list\` JSON instead of calling gh
+
 Exit codes:
   0  clean    1  lint errors found    2  bad usage or unreadable spec
 `;
@@ -69,6 +77,8 @@ function main(argv: string[]): number {
         return ingestCommand(rest);
       case "plan":
         return planCommand(rest);
+      case "retro":
+        return retroCommand(rest);
       default:
         process.stderr.write(`ccg: unknown command '${command}'\n\n${USAGE}`);
         return 2;

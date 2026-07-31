@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -181,11 +181,57 @@ describe("plan", () => {
   });
 });
 
+describe("retro", () => {
+  const fixture = join(root, "apps/cli/test/fixtures/flowsequencer-prs.json");
+  const repo = "artfusion/flowsequencer";
+
+  it("rebuilds the as-merged spec from saved gh output", () => {
+    const run = ccg("retro", repo, "--from-json", fixture);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain(`name: ${repo}`);
+    expect(run.stdout).toContain("id: pr_28");
+  });
+
+  // The harness only captures stderr on a failing run, so the summary and
+  // wrote lines are asserted here, where --lint exits 1.
+  it("--lint audits history rather than printing it", () => {
+    const run = ccg("retro", repo, "--from-json", fixture, "--lint");
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("Critical path: 6 layers -> 3 layers");
+    expect(run.stderr).toContain("6 merged PRs");
+  });
+
+  it("-o writes the spec", () => {
+    const file = join(out, "retro.yaml");
+    const run = ccg("retro", repo, "--from-json", fixture, "-o", file, "--lint");
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`wrote ${file}`);
+    expect(readFileSync(file, "utf8")).toContain("id: pr_25");
+  });
+
+  it("2 without a repository", () => {
+    expect(ccg("retro").status).toBe(2);
+  });
+
+  it("2 on a limit outside 1..50", () => {
+    expect(ccg("retro", repo, "--from-json", fixture, "--limit", "0").status).toBe(2);
+  });
+
+  it("2 on malformed JSON, without a stack trace", () => {
+    const bad = join(out, "bad.json");
+    writeFileSync(bad, "not json", "utf8");
+    const run = ccg("retro", repo, "--from-json", bad);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("not valid JSON");
+    expect(run.stderr).not.toContain("at ");
+  });
+});
+
 describe("help", () => {
   it("lists every command", () => {
     const run = ccg("--help");
     expect(run.status).toBe(0);
-    for (const command of ["lint", "render", "codegen", "ingest", "plan"]) {
+    for (const command of ["lint", "render", "codegen", "ingest", "plan", "retro"]) {
       expect(run.stdout).toContain(`ccg ${command}`);
     }
   });

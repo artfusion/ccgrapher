@@ -268,6 +268,27 @@ fixture, which the test suite asserts. Descriptors TypeScript would flatten to `
 — kind, model tier, fresh context, worktree, guards — lives in the doc comment above each function.
 Both read as ordinary documentation.
 
+## Retrospective mode
+
+History is a workflow too. `retro` rebuilds the graph of a repo's last N merged pull requests —
+nobody writes a line of YAML:
+
+```bash
+ccg retro owner/repo --lint            # audit the as-merged history directly
+ccg retro owner/repo -o history.yaml   # or keep the spec for render / plan
+```
+
+One node per PR, labelled with its ticket IDs, `writes:` filled from the changed files. The
+merge-order chain is the claim under audit: an edge carries data only where there is *evidence* of
+coupling — two PRs touched the same file. Everything the repair pass then drops had **no detectable
+dependency**, which is a smaller claim than *independent*, and the one the data supports.
+
+Rendered before and after, a fortnight of sequential merges usually collapses from a staircase to a
+few short chains — the same picture `examples/release-session.yaml` draws by hand, recovered from
+any repo automatically. Requires the [GitHub CLI](https://cli.github.com) (`gh`) and whatever access
+to the repo your `gh auth` already has; `--from-json` replays a saved `gh pr list` dump instead, for
+offline runs and tests.
+
 ## The web canvas
 
 ```bash
