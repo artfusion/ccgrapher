@@ -105,7 +105,27 @@ wave has no dependency on anything else in it.
 Use `--json` on either when you want to consume the result programmatically
 rather than read it.
 
-### 3. Execute in waves, not in order
+### 3. Draw it, before and after
+
+```bash
+npx @ccgrapher/cli render plan.yaml -o before.svg
+npx @ccgrapher/cli render plan.yaml --fix -o after.svg
+```
+
+Fake edges come out red. `-f mermaid` instead of an `.svg` path gives you
+something that pastes into a pull request or a ticket comment.
+
+Two habits make the picture worth having:
+
+- **Put the ticket ID at the front of `label:`.** `YOG-164 Stripe live-mode
+  cutover`, not `Stripe cutover`. It costs nothing while you are writing the
+  spec, and it is the difference between a nice diagram and one you can act on
+  — the shapes become the board.
+- **Keep both renders.** The as-written graph shows what you believed; the
+  repaired one shows what was true. The pair is the argument. A lone `--fix`
+  render just looks like a plan somebody drew.
+
+### 4. Execute in waves, not in order
 
 Run each wave concurrently, then move on. In Claude Code that means one
 `parallel()` per wave, or several `Agent` calls in a single message.
