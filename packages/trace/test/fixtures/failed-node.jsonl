@@ -1,0 +1,9 @@
+{"v":1,"type":"run_started","runId":"run-failed","seq":0,"ts":"2026-08-01T10:00:00.000Z","spec":{"name":"route-auth-audit"},"source":"custom","args":{"repo":"artfusion/ccgrapher"}}
+{"v":1,"type":"node_started","runId":"run-failed","seq":1,"ts":"2026-08-01T10:00:00.010Z","node":"build"}
+{"v":1,"type":"node_finished","runId":"run-failed","seq":2,"ts":"2026-08-01T10:00:12.500Z","node":"build","durationMs":12490}
+{"v":1,"type":"node_started","runId":"run-failed","seq":3,"ts":"2026-08-01T10:00:12.510Z","node":"audit"}
+{"v":1,"type":"node_log","runId":"run-failed","seq":4,"ts":"2026-08-01T10:00:13.000Z","node":"audit","line":"scanning 41 routes"}
+{"v":1,"type":"node_log","runId":"run-failed","seq":5,"ts":"2026-08-01T10:00:14.000Z","node":"audit","line":"routes/admin.ts: no auth guard"}
+{"v":1,"type":"node_failed","runId":"run-failed","seq":6,"ts":"2026-08-01T10:00:14.200Z","node":"audit","durationMs":1690,"error":"1 unguarded route"}
+{"v":1,"type":"node_started","runId":"run-failed","seq":7,"ts":"2026-08-01T10:00:14.210Z","node":"report"}
+{"v":1,"type":"run_finished","runId":"run-failed","seq":8,"ts":"2026-08-01T10:00:14.900Z","ok":false,"error":"audit failed","durationMs":14900}
