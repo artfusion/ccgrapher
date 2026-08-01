@@ -335,6 +335,53 @@ describe("the expects guard", () => {
     const result = await execute(fanIn, executorOf(), { runId: "r1", emit, now: frozen });
     expect(result.ok).toBe(true);
   });
+
+  /**
+   * The other half of the same rule, and the half that is easy to get wrong: a
+   * surplus is a stale count, not missing data. Refusing to run on inputs that
+   * all arrived would be a worse failure than the count the linter is already
+   * warning about at spec time. Codegen holds the matching test for the guards
+   * it emits — see `NodeSpec.expects` in `@ccgrapher/core`.
+   */
+  it("runs on a surplus: a stale count is the linter's problem, not the run's", async () => {
+    const graph = graphOf(
+      [worker("a"), worker("b"), worker("c"), worker("join", { kind: "reduce", expects: 2 })],
+      [
+        { from: "a", to: "join", carries: ["x"] },
+        { from: "b", to: "join", carries: ["x"] },
+        { from: "c", to: "join", carries: ["x"] },
+      ],
+    );
+    const seen: string[] = [];
+    const { emit } = collect();
+
+    const result = await execute(graph, executorOf({}, seen), {
+      runId: "r1",
+      emit,
+      now: frozen,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(seen).toContain("join");
+  });
+
+  it("counts three arrivals from one over-capped fanOut as a surplus, not a shortfall", async () => {
+    const graph = graphOf(
+      [
+        worker("split", { kind: "split" }),
+        worker("fan", { fanOut: { over: "items", cap: 3 } }),
+        worker("join", { kind: "reduce", expects: 2 }),
+      ],
+      [
+        { from: "split", to: "fan", carries: ["items"] },
+        { from: "fan", to: "join", carries: ["x"] },
+      ],
+    );
+    const { emit } = collect();
+
+    const result = await execute(graph, executorOf(), { runId: "r1", emit, now: frozen });
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("gates", () => {

@@ -237,8 +237,8 @@ const [worker_1, worker_2, worker_3, worker_4, worker_5] = await parallel([
 
 phase("Checker")
 const checkerInputs = [worker_1, worker_2, worker_3, worker_4, worker_5].filter(Boolean)
-if (checkerInputs.length !== 5) {
-  log(`checker: expected 5 results, got ${checkerInputs.length}`)
+if (checkerInputs.length < 5) {
+  log(`checker: expected at least 5 results, got ${checkerInputs.length}`)
 }
 // checker runs in a fresh context — it must not share one with the work it grades
 const checker = await agent(…)
@@ -247,6 +247,10 @@ const checker = await agent(…)
 `fanOut` becomes a capped `parallel` map, `worktree` becomes `isolation: "worktree"`, and `expects`
 becomes a guard on the results that *arrived* — because a dead upstream node otherwise slips through
 and the synthesis step reports on partial data as though it were whole.
+
+The generated guard is a floor rather than an equality: at run time a shortfall is the failure, and a
+count that overshoots means the guard is stale rather than that anything is missing. `SILENT_FAILURE`
+is the stricter of the two, and polices the exact count at spec time, where it can still be fixed.
 
 Pass `--fix` to generate from the repaired graph. Generating from a spec with known fake edges bakes
 the wasted waits into your runtime, so the CLI warns when you do.

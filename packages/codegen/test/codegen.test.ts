@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
-import { withEdges } from "@ccgrapher/core";
+import { buildGraph, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { lint } from "@ccgrapher/lint";
 import ts from "typescript";
@@ -119,7 +119,7 @@ describe("claude-code — the structure matches the graph", () => {
     expect(code).toContain(
       "const checkerInputs = [worker_1, worker_2, worker_3, worker_4, worker_5].filter(Boolean)",
     );
-    expect(code).toContain("if (checkerInputs.length !== 5)");
+    expect(code).toContain("if (checkerInputs.length < 5)");
     expect(code).not.toContain("checker.length");
   });
 
@@ -152,8 +152,8 @@ describe("claude-code — fanOut and worktree", () => {
     expect(codegen(fixture("diamond"), "claude-code")).not.toContain("const toList =");
   });
 
-  it("guards the fan-in against the cap", () => {
-    expect(code).toContain("if (audit.length !== 20)");
+  it("guards the fan-in against the cap, testing for a shortfall", () => {
+    expect(code).toContain("if (audit.length < 20)");
   });
 });
 
@@ -268,6 +268,75 @@ describe("plain-ts", () => {
 
   it("renders array descriptors as arrays", () => {
     expect(codegen(fixture("linear-chain"), "plain-ts")).toContain("issues_a: string[];");
+  });
+});
+
+/**
+ * A guard that fires on a surplus refuses to run data that is all present, which
+ * is a worse error than the stale count it is complaining about. The rule and
+ * the reasoning live on `NodeSpec.expects` in `@ccgrapher/core`; these tests are
+ * the codegen half of what stops the two runtimes drifting apart from it, and
+ * from `@ccgrapher/runner`, again.
+ */
+describe("the expects guard in generated code — a floor, not an equality", () => {
+  /** No shipped example declares a stale count, because lint would flag it. */
+  const staleGuard = (name: string, id: string, expects: number): Graph => {
+    const graph = fixture(name);
+    return buildGraph({
+      ...graph.spec,
+      nodes: graph.spec.nodes.map((node) => (node.id === id ? { ...node, expects } : node)),
+    });
+  };
+
+  /** The guard on its own: from the `if` to the first line that is nothing but a brace. */
+  function guardOf(code: string, variable: string): string {
+    const lines = code.split("\n");
+    const open = lines.findIndex((line) => line.includes(`if (${variable}.length`));
+    expect(open, `no guard on ${variable}`).toBeGreaterThan(-1);
+    const close = lines.findIndex((line, i) => i > open && line.trim() === "}");
+    return lines.slice(open, close + 1).join("\n");
+  }
+
+  /** Evaluates the guard, so these assert on behaviour rather than on the text of a condition. */
+  function runGuard(code: string, variable: string, arrivals: number): string[] {
+    const logged: string[] = [];
+    new Function(variable, "log", "mark", guardOf(code, variable))(
+      Array.from({ length: arrivals }, (_, i) => i),
+      (line: unknown) => logged.push(String(line)),
+      () => {},
+    );
+    return logged;
+  }
+
+  // diamond's checker takes five worker edges; the spec below claims four.
+  const claudeCode = codegen(staleGuard("diamond", "checker", 4), "claude-code");
+  // research's fanOut is capped at 5, and the spec below claims four of them.
+  const plainTs = codegen(staleGuard("research-desk", "research", 4), "plain-ts");
+
+  it("claude-code says nothing when more arrive than were declared", () => {
+    expect(runGuard(claudeCode, "checkerInputs", 5)).toEqual([]);
+  });
+
+  it("claude-code still reports a shortfall, and says which way the test runs", () => {
+    expect(runGuard(claudeCode, "checkerInputs", 3)).toEqual([
+      "checker: expected at least 4 results, got 3",
+    ]);
+  });
+
+  it("plain-ts lets a surplus through rather than throwing on data that is present", () => {
+    expect(() => runGuard(plainTs, "researchResult", 5)).not.toThrow();
+  });
+
+  it("plain-ts still throws on a shortfall", () => {
+    expect(() => runGuard(plainTs, "researchResult", 3)).toThrow(
+      "research: expected at least 4, got 3",
+    );
+  });
+
+  it.each(ALL)("%s: no target emits an equality count test", (name) => {
+    for (const target of TARGETS) {
+      expect(codegen(fixture(name), target), target).not.toMatch(/\.length !== \d/);
+    }
   });
 });
 
