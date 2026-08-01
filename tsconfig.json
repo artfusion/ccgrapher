@@ -8,6 +8,9 @@
       "path": "./packages/trace"
     },
     {
+      "path": "./packages/runner"
+    },
+    {
       "path": "./packages/lint"
     },
     {

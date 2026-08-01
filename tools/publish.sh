@@ -37,6 +37,7 @@ trap 'rm -rf "$TMP"' EXIT
 PACKAGES=(
   packages/core
   packages/trace
+  packages/runner
   packages/layout
   packages/lint
   packages/render-svg
