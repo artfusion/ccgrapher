@@ -114,6 +114,25 @@ function asOutput(node: string, value: unknown): NodeOutput | undefined {
 }
 
 /**
+ * Ask on the terminal, one gate at a time.
+ *
+ * Two gates on one rank run concurrently, because that is what the rank says
+ * about them, and two readline interfaces reading one stdin would each take
+ * half the keystrokes. So the terminal is serialised even though the graph is
+ * not: the run is still parallel, only the asking is queued.
+ */
+function terminalGate(): GateResolver {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (node, payload) => {
+    const asked = queue.then(() => promptGate(node, payload));
+    // The queue itself must never reject, or every gate after a failed one
+    // would inherit that failure instead of getting its turn.
+    queue = asked.catch(() => undefined);
+    return asked;
+  };
+}
+
+/**
  * Ask on the terminal.
  *
  * The payload is printed first, because a gate whose prompt cannot show what is
@@ -324,7 +343,7 @@ export async function runSpec(options: RunOptions): Promise<number> {
         new Promise<GateDecision>((settle) => {
           pending.set(node.id, settle);
         })
-    : promptGate;
+    : terminalGate();
 
   const gateHint = (node: string): void => {
     if (!server) return;
