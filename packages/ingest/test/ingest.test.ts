@@ -16,6 +16,9 @@ const ALL = [
   "linear-chain",
   "self-grading",
   "wide-fanin",
+  // The one with a finding worth keeping: `ci` declares expects: 9 and eight
+  // results reach it. If ingest dropped an edge that would quietly become nine.
+  "release-session",
 ] as const;
 
 const roundTrip = (name: string) => ingest(codegen(fixture(name), "plain-ts"));
@@ -90,10 +93,9 @@ describe("what survives the trip", () => {
   });
 });
 
-// Named for what it actually covers. This source was not generated, but it does
-// follow the `<id>Result` naming codegen emits — which is the only shape edge
-// recovery currently understands. `styles it cannot read yet`, below, holds the
-// cases this block was once mistaken for covering.
+// This source was not generated, but it does follow the `<id>Result` naming
+// codegen emits. It has to keep reading cleanly now that edges come from
+// dataflow: the convention is one shape among many, not a shape that was lost.
 describe("code we did not generate, written in the Result convention", () => {
   // The point of reading code back is auditing a workflow nobody drew.
   const handWritten = `
@@ -176,56 +178,212 @@ export async function runNightly(args: FetchIn): Promise<unknown> {
 });
 
 /**
- * Styles a person actually writes that edge recovery cannot read yet. These are
- * characterisation tests, not endorsements — they pin current behaviour so the
- * limits are visible in the suite rather than discovered in someone's repo.
+ * Styles a person actually writes. None of these name a variable `<id>Result`,
+ * and every one of them used to come back as four nodes and no edges — a graph
+ * that lints clean because it says nothing.
  *
- * When edges are recovered from dataflow instead of from variable names, these
- * should start failing. Rewrite them as real expectations then; do not relax
- * them.
+ * The edge has to come from the value reaching the next call, whatever the
+ * binding holding it is called.
  */
-describe("styles it cannot read yet", () => {
+describe("styles a person actually writes", () => {
   const nodes = `
 export interface AIn { url: string; }
 export interface AOut { brief: string; }
 export interface BIn { brief: string; }
 export interface BOut { done: boolean; }
-`;
 
-  it("loses every dependency when the runner destructures the result", () => {
-    const { spec, warnings } = ingest(`${nodes}
 /** step a — split, plain code. */
-export async function a(input: AIn): Promise<AOut> { void input; throw new Error("todo"); }
+export async function a(input: AIn): Promise<AOut> {
+  void input;
+  throw new Error("todo");
+}
 
 /** step b — worker. */
-export async function b(input: BIn): Promise<BOut> { void input; throw new Error("todo"); }
+export async function b(input: BIn): Promise<BOut> {
+  void input;
+  throw new Error("todo");
+}
+`;
 
+  const edgeAtoB = [{ from: "a", to: "b", carries: ["brief"] }];
+
+  it("follows a plainly named binding into the next call", () => {
+    const { spec, warnings } = ingest(`${nodes}
+export async function runProbe(args: AIn): Promise<unknown> {
+  const brief = await a(args);
+  return b(brief as unknown as BIn);
+}
+`);
+
+    expect(spec.nodes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(spec.edges).toEqual(edgeAtoB);
+    expect(warnings.join(" ")).not.toContain("no dependencies");
+  });
+
+  it("follows a destructured result", () => {
+    const { spec } = ingest(`${nodes}
 export async function runProbe(args: AIn): Promise<unknown> {
   const { brief } = await a(args);
   return b({ brief });
 }
 `);
 
-    expect(spec.nodes.map((n) => n.id)).toEqual(["a", "b"]);
-    expect(spec.edges).toEqual([]);
-    // b genuinely reads what a produced. Without the warning this graph lints
-    // clean and plans as a single wave.
-    expect(warnings.join(" ")).toContain("no dependencies");
+    expect(spec.edges).toEqual(edgeAtoB);
   });
 
-  it("does not see nodes declared as exported arrow consts", () => {
-    const { spec, warnings } = ingest(`${nodes}
-/** step a — split, plain code. */
-export const a = async (input: AIn): Promise<AOut> => { void input; throw new Error("todo"); };
-
+  it("follows a binding through a rename", () => {
+    const { spec } = ingest(`${nodes}
 export async function runProbe(args: AIn): Promise<unknown> {
-  const aResult = await a(args);
-  return aResult;
+  const scoped = await a(args);
+  const passed = scoped;
+  return b(passed as unknown as BIn);
 }
 `);
 
-    expect(spec.nodes).toEqual([]);
-    expect(warnings.join(" ")).toContain("no exported node functions");
+    expect(spec.edges).toEqual(edgeAtoB);
+  });
+
+  it("reads nodes declared as exported arrow consts, runner included", () => {
+    const { spec, warnings } = ingest(`
+export interface AIn { url: string; }
+export interface AOut { brief: string; }
+export interface BIn { brief: string; }
+export interface BOut { done: boolean; }
+
+/** step a — split, plain code. */
+export const a = async (input: AIn): Promise<AOut> => { void input; throw new Error("todo"); };
+
+/** step b — worker. */
+export const b = async (input: BIn): Promise<BOut> => { void input; throw new Error("todo"); };
+
+export const runProbe = async (args: AIn): Promise<unknown> => {
+  const brief = await a(args);
+  return b(brief as unknown as BIn);
+};
+`);
+
+    expect(spec.nodes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(spec.nodes[0]!.kind).toBe("split");
+    expect(spec.edges).toEqual(edgeAtoB);
+    expect(warnings.join(" ")).not.toContain("no exported node functions");
+  });
+
+  it("takes the field named on a property access as what the edge carries", () => {
+    const { spec } = ingest(`
+export interface ScopeIn { url: string; }
+export interface ScopeOut { brief: string; notes: string; }
+export interface ReviewIn { brief: string; notes: string; }
+export interface ReviewOut { verdict: string; }
+
+/** pick the scope — split, plain code. */
+export async function scope(input: ScopeIn): Promise<ScopeOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** review it — verifier. */
+export async function reviewCode(input: ReviewIn): Promise<ReviewOut> {
+  void input;
+  throw new Error("todo");
+}
+
+export async function runReview(args: ScopeIn): Promise<unknown> {
+  const scoped = await scope(args);
+  return reviewCode({ brief: scoped.brief, notes: "" } as unknown as ReviewIn);
+}
+`);
+
+    // Both shapes share `notes` too, but the code only ever reads `brief`, and
+    // what the code does outranks what the types happen to have in common.
+    expect(spec.edges).toEqual([{ from: "scope", to: "reviewCode", carries: ["brief"] }]);
+  });
+
+  it("reads a hand-written Promise.all wave, naturally named", () => {
+    const { spec, warnings } = ingest(`
+export interface SplitIn { url: string; }
+export interface SplitOut { brief: string; }
+export interface LeftIn { brief: string; }
+export interface LeftOut { left: boolean; }
+export interface RightIn { brief: string; }
+export interface RightOut { right: boolean; }
+export interface JoinIn { left: boolean; right: boolean; }
+export interface JoinOut { ok: boolean; }
+
+/** split it — split, plain code. */
+export async function split(input: SplitIn): Promise<SplitOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** left — worker. */
+export async function left(input: LeftIn): Promise<LeftOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** right — worker. */
+export async function right(input: RightIn): Promise<RightOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** join — gate. */
+export async function join(input: JoinIn): Promise<JoinOut> {
+  void input;
+  throw new Error("todo");
+}
+
+export async function runWave(args: SplitIn): Promise<unknown> {
+  const brief = await split(args);
+  const [first, second] = await Promise.all([
+    left(brief as unknown as LeftIn),
+    right(brief as unknown as RightIn),
+  ]);
+  return join({ ...first, ...second } as unknown as JoinIn);
+}
+`);
+
+    expect(warnings.join(" ")).not.toContain("no dependencies");
+    expect(spec.edges).toEqual([
+      { from: "split", to: "left", carries: ["brief"] },
+      { from: "split", to: "right", carries: ["brief"] },
+      { from: "left", to: "join", carries: ["left"] },
+      { from: "right", to: "join", carries: ["right"] },
+    ]);
+
+    const { rank, layerCount } = rankGraph(buildGraph(spec));
+    expect(layerCount).toBe(3);
+    expect(rank.get("left")).toBe(1);
+    expect(rank.get("right")).toBe(1);
+  });
+
+  it("reads a hand-written fan-out over a mapped list", () => {
+    const { spec } = ingest(`
+export interface ListIn { url: string; }
+export interface ListOut { file: string; } // path
+export interface AuditIn { file: string; } // path
+export interface AuditOut { finding: string; }
+
+/** list the files — split, plain code. */
+export async function listFiles(input: ListIn): Promise<ListOut> {
+  void input;
+  throw new Error("todo");
+}
+
+/** audit one file — worker. Runs once per file. */
+export async function audit(input: AuditIn): Promise<AuditOut> {
+  void input;
+  throw new Error("todo");
+}
+
+export async function runAudit(args: ListIn): Promise<unknown> {
+  const listing = await listFiles(args);
+  const files = Array.isArray(listing) ? listing : [listing];
+  return Promise.all(files.map((file) => audit(file as unknown as AuditIn)));
+}
+`);
+
+    expect(spec.edges).toEqual([{ from: "listFiles", to: "audit", carries: ["file"] }]);
   });
 });
 
@@ -236,11 +394,12 @@ describe("degrades honestly", () => {
     expect(warnings.join(" ")).toContain("no exported node functions");
   });
 
-  // The dangerous shape: nodes parse, the runner parses, but the awaits use
-  // natural variable names, so no edge is recovered. The result lints clean and
-  // plans as one wave — the most flattering answer, and wrong.
-  it("warns when it finds nodes but recovers no dependencies", () => {
-    const naturallyNamed = `
+  // The dangerous shape: nodes parse, the runner parses, and the result really
+  // does reach the second step — but it goes through a mutable bag, so there is
+  // no binding to follow. Guessing an edge here would be guessing; the honest
+  // answer is to recover nothing and say so, because a graph with no edges
+  // lints clean and plans as one wave, which is flattering and wrong.
+  const throughAMutableBag = `
 export interface ScopeIn { url: string; }
 export interface ScopeOut { brief: string; }
 export interface ReportIn { brief: string; }
@@ -259,11 +418,14 @@ export async function report(input: ReportIn): Promise<ReportOut> {
 }
 
 export async function runIt(args: ScopeIn): Promise<unknown> {
-  const brief = await scope(args);
-  return report(brief as unknown as ReportIn);
+  const bag: Record<string, unknown> = {};
+  bag.scoped = await scope(args);
+  return report(bag.scoped as unknown as ReportIn);
 }
 `;
-    const { spec, warnings } = ingest(naturallyNamed);
+
+  it("warns when it finds nodes but recovers no dependencies", () => {
+    const { spec, warnings } = ingest(throughAMutableBag);
 
     expect(spec.nodes).toHaveLength(2);
     expect(spec.edges).toEqual([]);
