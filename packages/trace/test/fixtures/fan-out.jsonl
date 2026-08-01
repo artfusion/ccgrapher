@@ -1,0 +1,12 @@
+{"v":1,"type":"run_started","runId":"run-fanout","seq":0,"ts":"2026-08-01T12:00:00.000Z","spec":{"name":"diamond","hash":"77ab30"},"source":"ccg-run"}
+{"v":1,"type":"node_started","runId":"run-fanout","seq":1,"ts":"2026-08-01T12:00:00.010Z","node":"split"}
+{"v":1,"type":"node_finished","runId":"run-fanout","seq":2,"ts":"2026-08-01T12:00:00.510Z","node":"split","durationMs":500,"output":{"claims":3}}
+{"v":1,"type":"node_started","runId":"run-fanout","seq":3,"ts":"2026-08-01T12:00:00.520Z","node":"worker","instance":0,"of":3}
+{"v":1,"type":"node_started","runId":"run-fanout","seq":4,"ts":"2026-08-01T12:00:00.521Z","node":"worker","instance":1,"of":3}
+{"v":1,"type":"node_started","runId":"run-fanout","seq":5,"ts":"2026-08-01T12:00:00.522Z","node":"worker","instance":2,"of":3}
+{"v":1,"type":"node_log","runId":"run-fanout","seq":6,"ts":"2026-08-01T12:00:01.000Z","node":"worker","line":"instance 1: checking the second claim"}
+{"v":1,"type":"node_finished","runId":"run-fanout","seq":7,"ts":"2026-08-01T12:00:02.520Z","node":"worker","instance":1,"durationMs":2000,"usage":{"model":"claude-haiku-4","inputTokens":600,"outputTokens":90,"costUsd":0.0009}}
+{"v":1,"type":"node_finished","runId":"run-fanout","seq":8,"ts":"2026-08-01T12:00:03.520Z","node":"worker","instance":0,"durationMs":3000,"usage":{"model":"claude-haiku-4","inputTokens":700,"outputTokens":110,"costUsd":0.0011}}
+{"v":1,"type":"node_retried","runId":"run-fanout","seq":9,"ts":"2026-08-01T12:00:03.600Z","node":"worker","instance":2,"attempt":2}
+{"v":1,"type":"node_failed","runId":"run-fanout","seq":10,"ts":"2026-08-01T12:00:04.020Z","node":"worker","instance":2,"durationMs":3500,"error":"source returned 404"}
+{"v":1,"type":"run_finished","runId":"run-fanout","seq":11,"ts":"2026-08-01T12:00:04.030Z","ok":false,"error":"1 of 3 workers failed","durationMs":4030}

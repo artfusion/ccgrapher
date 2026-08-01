@@ -1,0 +1,8 @@
+{"v":1,"type":"run_started","runId":"run-gate","seq":0,"ts":"2026-08-01T11:00:00.000Z","spec":{"name":"publish","hash":"44de01"},"source":"claude-code-watch"}
+{"v":1,"type":"node_started","runId":"run-gate","seq":1,"ts":"2026-08-01T11:00:00.010Z","node":"draft"}
+{"v":1,"type":"node_finished","runId":"run-gate","seq":2,"ts":"2026-08-01T11:00:09.000Z","node":"draft","durationMs":8990,"usage":{"model":"claude-sonnet-4","inputTokens":2200,"outputTokens":1400,"costUsd":0.0271}}
+{"v":1,"type":"gate_waiting","runId":"run-gate","seq":3,"ts":"2026-08-01T11:00:09.010Z","node":"approval","payload":{"diff":"+ 42 lines"}}
+{"v":1,"type":"gate_resolved","runId":"run-gate","seq":4,"ts":"2026-08-01T11:04:31.000Z","node":"approval","decision":"approve","note":"reads fine"}
+{"v":1,"type":"node_started","runId":"run-gate","seq":5,"ts":"2026-08-01T11:04:31.010Z","node":"publish"}
+{"v":1,"type":"node_finished","runId":"run-gate","seq":6,"ts":"2026-08-01T11:04:31.900Z","node":"publish","durationMs":890}
+{"v":1,"type":"run_finished","runId":"run-gate","seq":7,"ts":"2026-08-01T11:04:31.910Z","ok":true,"durationMs":271910}

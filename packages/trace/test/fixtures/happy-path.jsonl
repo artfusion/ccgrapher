@@ -1,0 +1,11 @@
+{"v":1,"type":"run_started","runId":"run-happy","seq":0,"ts":"2026-08-01T09:00:00.000Z","spec":{"name":"research-desk","hash":"9f2c1a"},"source":"ccg-run"}
+{"v":1,"type":"node_started","runId":"run-happy","seq":1,"ts":"2026-08-01T09:00:00.010Z","node":"plan"}
+{"v":1,"type":"node_log","runId":"run-happy","seq":2,"ts":"2026-08-01T09:00:00.400Z","node":"plan","line":"reading the brief"}
+{"v":1,"type":"node_log","runId":"run-happy","seq":3,"ts":"2026-08-01T09:00:00.900Z","node":"plan","line":"three questions worth asking"}
+{"v":1,"type":"node_finished","runId":"run-happy","seq":4,"ts":"2026-08-01T09:00:01.210Z","node":"plan","durationMs":1200,"output":{"questions":3},"usage":{"model":"claude-haiku-4","inputTokens":900,"outputTokens":120,"costUsd":0.0021}}
+{"v":1,"type":"node_started","runId":"run-happy","seq":5,"ts":"2026-08-01T09:00:01.220Z","node":"research"}
+{"v":1,"type":"node_log","runId":"run-happy","seq":6,"ts":"2026-08-01T09:00:02.000Z","line":"run-scoped line, belongs to no node"}
+{"v":1,"type":"node_finished","runId":"run-happy","seq":7,"ts":"2026-08-01T09:00:04.100Z","node":"research","durationMs":2880}
+{"v":1,"type":"node_started","runId":"run-happy","seq":8,"ts":"2026-08-01T09:00:04.110Z","node":"write"}
+{"v":1,"type":"node_finished","runId":"run-happy","seq":9,"ts":"2026-08-01T09:00:05.400Z","node":"write","durationMs":1290,"usage":{"model":"claude-sonnet-4","inputTokens":4100,"outputTokens":800}}
+{"v":1,"type":"run_finished","runId":"run-happy","seq":10,"ts":"2026-08-01T09:00:05.410Z","ok":true,"durationMs":5410}
