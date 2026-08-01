@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { EdgeSpec, NodeSpec, WorkflowSpec } from "@ccgrapher/core";
-import { Node, Project, SyntaxKind, type FunctionDeclaration, type SourceFile } from "ts-morph";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type ArrowFunction,
+  type BindingElement,
+  type CallExpression,
+  type FunctionDeclaration,
+  type Identifier,
+  type JSDocableNode,
+  type ParameterDeclaration,
+  type SourceFile,
+} from "ts-morph";
 import { descriptorFor } from "./descriptors.js";
 import { parseTraits } from "./traits.js";
 
@@ -10,7 +22,9 @@ export interface IngestResult {
 }
 
 const RESULT_SUFFIX = "Result";
-const ITEMS_SUFFIX = "Items";
+
+/** Callbacks whose parameter is one element of the receiver. */
+const PER_ITEM = new Set(["map", "flatMap", "forEach", "filter"]);
 
 /**
  * Reconstructs a spec from TypeScript orchestration code — the other direction.
@@ -74,6 +88,47 @@ function collectInterfaces(file: SourceFile): Map<string, Record<string, string>
   return out;
 }
 
+/** An async function that could be a node or the runner, however it is written. */
+interface Declared {
+  readonly id: string;
+  readonly fn: FunctionDeclaration | ArrowFunction;
+  readonly doc: string;
+  readonly exported: boolean;
+}
+
+/**
+ * Every declared function in source order. Codegen emits `function` declarations,
+ * but `export const step = async (input) => {}` is just as common in code someone
+ * wrote by hand, and a node is a node either way.
+ */
+function declaredFunctions(file: SourceFile): Declared[] {
+  const out: Declared[] = [];
+
+  for (const statement of file.getStatements()) {
+    if (Node.isFunctionDeclaration(statement)) {
+      const id = statement.getName();
+      if (id) {
+        out.push({ id, fn: statement, doc: jsDoc(statement), exported: statement.isExported() });
+      }
+      continue;
+    }
+    if (!Node.isVariableStatement(statement)) continue;
+
+    for (const declaration of statement.getDeclarations()) {
+      const initialiser = declaration.getInitializer();
+      if (!initialiser || !Node.isArrowFunction(initialiser)) continue;
+      // The doc comment sits on the statement, not on the arrow itself.
+      out.push({
+        id: declaration.getName(),
+        fn: initialiser,
+        doc: jsDoc(statement),
+        exported: statement.isExported(),
+      });
+    }
+  }
+  return out;
+}
+
 function collectNodes(
   file: SourceFile,
   interfaces: Map<string, Record<string, string>>,
@@ -81,12 +136,9 @@ function collectNodes(
 ): NodeSpec[] {
   const nodes: NodeSpec[] = [];
 
-  for (const fn of file.getFunctions()) {
-    if (!fn.isExported() || !fn.isAsync()) continue;
-    if (fn.getName()?.startsWith("run")) continue;
-
-    const id = fn.getName();
-    if (!id) continue;
+  for (const { id, fn, doc, exported } of declaredFunctions(file)) {
+    if (!exported || !fn.isAsync()) continue;
+    if (id.startsWith("run")) continue;
 
     const inName = fn.getParameters()[0]?.getTypeNode()?.getText();
     const outName = returnTypeName(fn);
@@ -95,7 +147,7 @@ function collectNodes(
       continue;
     }
 
-    const traits = parseTraits(docOf(fn), id);
+    const traits = parseTraits(doc, id);
     nodes.push({
       id,
       label: traits.label,
@@ -115,125 +167,310 @@ function collectNodes(
 }
 
 /** `Promise<FooOut>` -> `FooOut` */
-function returnTypeName(fn: FunctionDeclaration): string | undefined {
+function returnTypeName(fn: FunctionDeclaration | ArrowFunction): string | undefined {
   const node = fn.getReturnTypeNode();
   if (!node) return undefined;
   const match = /^Promise<(.+)>$/.exec(node.getText().trim());
   return match?.[1]?.trim();
 }
 
-function docOf(fn: FunctionDeclaration): string {
-  return fn
+function jsDoc(node: JSDocableNode): string {
+  return node
     .getJsDocs()
     .map((doc) => doc.getInnerText())
     .join(" ");
 }
 
 /**
- * Walks the runner. Every await names the node it calls, and the result
- * variables inside its arguments name that node's dependencies — which is the
- * edge set, recovered from what the code does rather than what a diagram claims.
+ * Which node results reach an expression, and the fields the code named on the
+ * way. An empty field set means the whole result travelled.
  */
-function collectEdges(
-  file: SourceFile,
-  known: Set<string>,
-  warnings: string[],
-): Array<{ from: string; to: string }> {
-  const runner = file.getFunctions().find((fn) => fn.getName()?.startsWith("run"));
+type Flow = Map<string, Set<string>>;
+
+/** An edge before `carries` is worked out. */
+interface Recovered {
+  readonly from: string;
+  readonly to: string;
+  readonly fields: Set<string>;
+}
+
+/**
+ * Walks the runner. Every call to a node function is a step, and whatever flows
+ * into its arguments names that step's dependencies — recovered from what the
+ * values do rather than from what the variables holding them are called.
+ *
+ * Naming is a convention; dataflow is the program. A runner that writes
+ * `const brief = await scope(args)` describes exactly the same graph as one that
+ * writes `const scopeResult`, and both have to read back the same.
+ */
+function collectEdges(file: SourceFile, known: Set<string>, warnings: string[]): Recovered[] {
+  const runner = declaredFunctions(file).find((d) => d.id.startsWith("run"))?.fn;
   if (!runner) {
     warnings.push("no run* function found — edges could not be recovered");
     return [];
   }
 
-  const edges: Array<{ from: string; to: string }> = [];
-  const seen = new Set<string>();
-  const add = (from: string, to: string) => {
-    const key = `${from}->${to}`;
-    if (from === to || seen.has(key) || !known.has(from) || !known.has(to)) return;
-    seen.add(key);
-    edges.push({ from, to });
+  const flowOf = dataflow(known);
+  const edges: Recovered[] = [];
+  const byKey = new Map<string, Recovered>();
+
+  const add = (from: string, to: string, fields: Set<string>) => {
+    if (from === to || !known.has(from) || !known.has(to)) return;
+    const existing = byKey.get(`${from}->${to}`);
+    if (existing) {
+      for (const field of fields) existing.fields.add(field);
+      return;
+    }
+    const edge: Recovered = { from, to, fields: new Set(fields) };
+    byKey.set(`${from}->${to}`, edge);
+    edges.push(edge);
   };
 
-  for (const statement of runner.getStatements()) {
-    if (!Node.isVariableStatement(statement)) continue;
-
-    for (const declaration of statement.getDeclarations()) {
-      const initialiser = declaration.getInitializer();
-      if (!initialiser) continue;
-
-      const nameNode = declaration.getNameNode();
-
-      // const fooItems = toList(barResult).slice(0, 20)
-      if (Node.isIdentifier(nameNode) && nameNode.getText().endsWith(ITEMS_SUFFIX)) {
-        const target = trimSuffix(nameNode.getText(), ITEMS_SUFFIX);
-        for (const source of resultsIn(initialiser)) add(source, target);
-        continue;
-      }
-
-      // const [aResult, bResult] = await Promise.all([a(x), b(x)])
-      if (Node.isArrayBindingPattern(nameNode)) {
-        for (const call of callsIn(initialiser, known)) {
-          for (const source of resultsIn(call)) add(source, call.getExpression().getText());
-        }
-        continue;
-      }
-
-      // const fooResult = await foo(barResult)
-      if (Node.isIdentifier(nameNode) && nameNode.getText().endsWith(RESULT_SUFFIX)) {
-        const target = trimSuffix(nameNode.getText(), RESULT_SUFFIX);
-        for (const source of resultsIn(initialiser)) add(source, target);
-      }
+  for (const call of runner.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const to = call.getExpression().getText();
+    if (!known.has(to)) continue;
+    for (const argument of call.getArguments()) {
+      for (const [from, fields] of flowOf(argument)) add(from, to, fields);
     }
   }
 
   // An edgeless graph is legal, so nothing downstream objects to one: it lints
-  // clean and plans as a single wave. That is also what a runner written
-  // without the `Result` convention produces — so silence here would report
-  // "everything is independent" with the same confidence as a real answer.
+  // clean and plans as a single wave — the most flattering answer, and the one
+  // we produce when the values travel by a route this cannot follow.
   if (edges.length === 0 && known.size > 0) {
     warnings.push(
-      `found ${known.size} nodes but no dependencies — every step will look independent and the ` +
-        "graph will lint clean; a result variable must be named `<nodeId>Result` for an await to " +
-        "count as an edge",
+      `found ${known.size} nodes but no dependencies — every step will look independent and ` +
+        "the graph will lint clean; no awaited result could be traced into another node's " +
+        "arguments, so either the steps really are unrelated or the values move somewhere opaque",
     );
   }
 
   return edges;
 }
 
-/** Identifiers like `splitResult` inside an expression, as node ids. */
-function resultsIn(node: Node): string[] {
-  return node
-    .getDescendantsOfKind(SyntaxKind.Identifier)
-    .map((identifier) => identifier.getText())
-    .filter((text) => text.endsWith(RESULT_SUFFIX))
-    .map((text) => trimSuffix(text, RESULT_SUFFIX));
+/**
+ * Resolves what flows into an expression, following bindings through the symbol
+ * table rather than pattern-matching their names. Memoised per declaration: a
+ * runner is a straight line of consts and the same one is read many times.
+ */
+function dataflow(known: Set<string>): (expr: Node) => Flow {
+  const memo = new Map<Node, Flow>();
+
+  const flowOf = (expr: Node): Flow => {
+    // A call to a node function *is* the value here; nothing further inside it
+    // reaches the caller, so the walk stops rather than descending into args.
+    const calls = outermostNodeCalls(expr, known);
+    if (calls.length > 0) {
+      const out: Flow = new Map();
+      for (const call of calls) out.set(call.getExpression().getText(), new Set());
+      return out;
+    }
+    return referencesIn(expr);
+  };
+
+  /** Union of everything the expression reads, in source order. */
+  const referencesIn = (expr: Node): Flow => {
+    const out: Flow = new Map();
+
+    const visit = (node: Node): void => {
+      if (Node.isPropertyAccessExpression(node)) {
+        const receiver = flowOf(node.getExpression());
+        // `brief.summary` says which field travels. `items.map(...)` says
+        // nothing — it is a method, not a field — so only a read counts.
+        absorb(out, isCallee(node) ? receiver : withField(receiver, node.getName()));
+        return;
+      }
+      if (Node.isIdentifier(node)) {
+        absorb(out, fromIdentifier(node));
+        return;
+      }
+      node.forEachChild(visit);
+    };
+
+    visit(expr);
+    return out;
+  };
+
+  const fromIdentifier = (identifier: Identifier): Flow => {
+    for (const declaration of declarationsOf(identifier)) {
+      const flow = fromDeclaration(declaration);
+      if (flow.size > 0) return flow;
+    }
+
+    // Codegen names its results `<nodeId>Result`, and that is worth something
+    // when the binding itself is unreachable — a value handed in from another
+    // module, say. A name is weaker evidence than dataflow, so it is only ever
+    // consulted after dataflow has come back empty, never instead of it.
+    const text = identifier.getText();
+    if (text.endsWith(RESULT_SUFFIX)) {
+      const candidate = text.slice(0, -RESULT_SUFFIX.length);
+      if (known.has(candidate)) return new Map([[candidate, new Set<string>()]]);
+    }
+    return new Map();
+  };
+
+  const fromDeclaration = (declaration: Node): Flow => {
+    const cached = memo.get(declaration);
+    if (cached) return cached;
+    // Seed empty first: a self-referential binding resolves to nothing rather
+    // than recursing forever.
+    memo.set(declaration, new Map());
+
+    let flow: Flow = new Map();
+    if (Node.isVariableDeclaration(declaration)) {
+      const initialiser = declaration.getInitializer();
+      // A node written as `export const step = async () => {}` is a function,
+      // not a value: naming it does not make its body's calls flow anywhere.
+      const isFunction =
+        initialiser !== undefined &&
+        (Node.isArrowFunction(initialiser) || Node.isFunctionExpression(initialiser));
+      flow = initialiser && !isFunction ? flowOf(initialiser) : new Map();
+    } else if (Node.isBindingElement(declaration)) {
+      flow = fromBindingElement(declaration);
+    } else if (Node.isParameterDeclaration(declaration)) {
+      flow = fromParameter(declaration);
+    }
+
+    memo.set(declaration, flow);
+    return flow;
+  };
+
+  /** `const { brief } = ...` and `const [a, b] = await Promise.all([...])`. */
+  const fromBindingElement = (element: BindingElement): Flow => {
+    const pattern = element.getParent();
+    const owner = pattern.getParent();
+    const initialiser = Node.isVariableDeclaration(owner) ? owner.getInitializer() : undefined;
+    const source: Flow = initialiser
+      ? flowOf(initialiser)
+      : Node.isBindingElement(owner)
+        ? fromDeclaration(owner)
+        : new Map();
+
+    if (Node.isArrayBindingPattern(pattern)) {
+      // A rank compiles to one wave, so position in the pattern lines up with
+      // position in the array. Index into the literal when there is one.
+      const at = waveElements(initialiser)?.[pattern.getElements().indexOf(element)];
+      return at ? flowOf(at) : source;
+    }
+
+    // The property name is the field that travels out of the source.
+    const field = element.getPropertyNameNode()?.getText() ?? element.getName();
+    return withField(source, field);
+  };
+
+  /**
+   * `items.map((item) => audit(item))` — the callback's parameter is one of the
+   * items, so it carries whatever produced the list. That is the only reason a
+   * fanOut rank reads back as an edge from its source at all.
+   */
+  const fromParameter = (parameter: ParameterDeclaration): Flow => {
+    const fn = parameter.getParent();
+    if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return new Map();
+
+    const call = fn.getParent();
+    if (!Node.isCallExpression(call)) return new Map();
+
+    const callee = call.getExpression();
+    if (!Node.isPropertyAccessExpression(callee)) return new Map();
+    if (!PER_ITEM.has(callee.getName())) return new Map();
+    return flowOf(callee.getExpression());
+  };
+
+  return flowOf;
 }
 
-/** Direct calls to known node functions inside an expression. */
-function callsIn(node: Node, known: Set<string>) {
-  return node
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .filter((call) => known.has(call.getExpression().getText()));
+/**
+ * `{ brief }` resolves to the property it defines, not to the binding it copies,
+ * so that one shape needs the language service to say what it means.
+ */
+function declarationsOf(identifier: Identifier): Node[] {
+  if (Node.isShorthandPropertyAssignment(identifier.getParent())) {
+    return identifier.getDefinitionNodes();
+  }
+  return identifier.getSymbol()?.getDeclarations() ?? [];
 }
+
+/** Calls to node functions that are not themselves inside another such call. */
+function outermostNodeCalls(expr: Node, known: Set<string>): CallExpression[] {
+  const isNodeCall = (call: CallExpression) => known.has(call.getExpression().getText());
+  if (Node.isCallExpression(expr) && isNodeCall(expr)) return [expr];
+
+  const found = expr.getDescendantsOfKind(SyntaxKind.CallExpression).filter(isNodeCall);
+  return found.filter((call) => !found.some((other) => other !== call && isAncestor(other, call)));
+}
+
+const isAncestor = (ancestor: Node, node: Node) =>
+  node.getFirstAncestor((candidate) => candidate === ancestor) !== undefined;
+
+const isCallee = (node: Node) => {
+  const parent = node.getParent();
+  return parent !== undefined && Node.isCallExpression(parent) && parent.getExpression() === node;
+};
+
+/** `await Promise.all([...])`, `parallel([...])` — the array a rank compiles to. */
+function waveElements(expr: Node | undefined): Node[] | undefined {
+  const value = unwrap(expr);
+  if (!value) return undefined;
+  if (Node.isArrayLiteralExpression(value)) return value.getElements();
+
+  if (Node.isCallExpression(value)) {
+    for (const argument of value.getArguments()) {
+      const inner = unwrap(argument);
+      if (inner && Node.isArrayLiteralExpression(inner)) return inner.getElements();
+    }
+  }
+  return undefined;
+}
+
+/** Strips the wrappers that do not change the value: await, parens, casts. */
+function unwrap(node: Node | undefined): Node | undefined {
+  let current = node;
+  while (
+    current &&
+    (Node.isAwaitExpression(current) ||
+      Node.isParenthesizedExpression(current) ||
+      Node.isAsExpression(current) ||
+      Node.isNonNullExpression(current) ||
+      Node.isTypeAssertion(current))
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+const withField = (flow: Flow, field: string): Flow => {
+  const out: Flow = new Map();
+  for (const [id, fields] of flow) out.set(id, new Set([...fields, field]));
+  return out;
+};
+
+const absorb = (target: Flow, source: Flow) => {
+  for (const [id, fields] of source) {
+    const existing = target.get(id);
+    if (existing) for (const field of fields) existing.add(field);
+    else target.set(id, new Set(fields));
+  }
+};
 
 /**
  * An edge carries whatever the source declares and the target consumes — which
  * is the definition the linter uses, so recovering it this way reproduces the
  * original `carries` exactly, including the empty list on a fake edge.
  */
-function withCarries(
-  edges: Array<{ from: string; to: string }>,
-  nodes: NodeSpec[],
-): EdgeSpec[] {
+function withCarries(edges: Recovered[], nodes: NodeSpec[]): EdgeSpec[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  return edges.map(({ from, to }) => {
+  return edges.map(({ from, to, fields }) => {
     const source = byId.get(from);
     const target = byId.get(to);
+    if (!source || !target) return { from, to, carries: [] };
+
+    const declared = Object.keys(source.out);
+    // A field the code named — `brief.summary`, or `const { brief } =` — is a
+    // stronger statement than two shapes happening to share a key, so it wins
+    // where it applies. Generated code names none and falls through.
+    const named = declared.filter((field) => fields.has(field));
     const carries =
-      source && target
-        ? Object.keys(source.out).filter((field) => Object.hasOwn(target.in, field))
-        : [];
+      named.length > 0 ? named : declared.filter((field) => Object.hasOwn(target.in, field));
     return { from, to, carries };
   });
 }
@@ -245,9 +482,7 @@ function readBanner(source: string): { name?: string; goal?: string } {
 }
 
 function runnerName(file: SourceFile): string | undefined {
-  const runner = file.getFunctions().find((fn) => fn.getName()?.startsWith("run"));
-  const name = runner?.getName()?.slice(3);
+  const runner = declaredFunctions(file).find((d) => d.id.startsWith("run"));
+  const name = runner?.id.slice(3);
   return name ? name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase() : undefined;
 }
-
-const trimSuffix = (text: string, suffix: string) => text.slice(0, -suffix.length);
