@@ -1,0 +1,51 @@
+{
+  "name": "@ccgrapher/runner",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The pure execution engine: walks a workflow graph rank by rank, enforces the fan-in guards, and emits the trace contract.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint",
+    "diagram",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "author": "artfusion",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git",
+    "directory": "packages/runner"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@ccgrapher/core": "workspace:*",
+    "@ccgrapher/trace": "workspace:*"
+  }
+}

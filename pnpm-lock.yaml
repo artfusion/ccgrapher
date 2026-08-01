@@ -173,6 +173,15 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
 
+  packages/runner:
+    dependencies:
+      '@ccgrapher/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ccgrapher/trace':
+        specifier: workspace:*
+        version: link:../trace
+
   packages/trace:
     dependencies:
       zod:
