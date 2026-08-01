@@ -7,6 +7,7 @@ import { ingestCommand } from "./commands/ingest.js";
 import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
 import { retroCommand } from "./commands/retro.js";
+import { runCommand } from "./commands/run.js";
 import { serveCommand } from "./commands/serve.js";
 import { traceCommand } from "./commands/trace.js";
 
@@ -19,6 +20,7 @@ Usage:
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
   ccg plan <spec.yaml>                 what can run at once, wave by wave
   ccg retro <owner/repo>               rebuild the as-merged workflow from a repo's PR history
+  ccg run <spec.yaml> --impl <module>  execute the spec and write a trace
   ccg serve <trace-dir>                stream a run's trace over SSE
   ccg trace stats <run.jsonl|dir>      summarise a trace's durations and cost
 
@@ -59,6 +61,13 @@ Retro options:
   --heat <file>     write a HeatData overlay here, keyed by the same pr_<n> ids
   --metric <m>      pr-duration-hours | pr-size-lines (default: pr-duration-hours)
 
+Run options:
+  --impl <module>   JS module exporting one function per node id (required)
+  --trace <file>    write the trace here (default: runs/<run-id>.jsonl)
+  --serve           embed the trace server: watch live, answer gates over HTTP
+  --port <n>        port for --serve (default 3211; 0 asks the OS)
+  --timeout <s>     give up on any one node after this many seconds
+
 Serve options:
   --port <n>        0 asks the OS for a free port (default 3211)
   --host <host>     interface to bind (default 127.0.0.1)
@@ -70,7 +79,8 @@ Trace stats options:
   --metric <m>      duration-ms | cost-usd (default: duration-ms)
 
 Exit codes:
-  0  clean    1  lint errors found    2  bad usage or unreadable spec
+  0  clean    1  lint errors found, or a run that failed    2  bad usage or unreadable spec
+  3  a run stopped at a rejected gate
 `;
 
 function main(argv: string[]): number {
@@ -95,6 +105,8 @@ function main(argv: string[]): number {
         return planCommand(rest);
       case "retro":
         return retroCommand(rest);
+      case "run":
+        return runCommand(rest);
       case "serve":
         return serveCommand(rest);
       case "trace":
