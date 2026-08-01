@@ -15,6 +15,8 @@ export interface Emitter {
   readonly target: Target;
   readonly extension: string;
   emit(graph: Graph, options: EmitOptions): string;
+  /** What this target cannot honour about this graph, in plain words. */
+  warnings?(graph: Graph): string[];
 }
 
 /** A rank's worth of nodes: everything here can run at once. */

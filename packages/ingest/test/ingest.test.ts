@@ -93,6 +93,36 @@ describe("what survives the trip", () => {
   });
 });
 
+/**
+ * The claude-code target narrates itself with `ccg:` marker lines for a watcher
+ * to read. Nothing stops that habit reaching orchestration code ingest is later
+ * pointed at, and a marker is a log call, not a dependency: it has to stay inert
+ * here however many node results it names.
+ */
+describe("ccg: marker lines are inert", () => {
+  const plain = codegen(fixture("diamond"), "plain-ts");
+  const marked = plain.replace(
+    /^( *)(const (\w+)Result = await .*)$/gm,
+    (_match: string, indent: string, statement: string, id: string) =>
+      [
+        `${indent}log("ccg:" + JSON.stringify({ type: "node_started", node: "${id}" }));`,
+        `${indent}${statement}`,
+        `${indent}log("ccg:" + JSON.stringify({ type: "node_finished", node: "${id}", output: ${id}Result }));`,
+      ].join("\n"),
+  );
+
+  it("is a fair test — the source really does carry markers", () => {
+    expect([...marked.matchAll(/"ccg:"/g)].length).toBeGreaterThan(1);
+  });
+
+  it("reads back the same spec, marked or not", () => {
+    const { spec, warnings } = ingest(marked);
+
+    expect(warnings).toEqual([]);
+    expect(spec).toEqual(fixture("diamond").spec);
+  });
+});
+
 // This source was not generated, but it does follow the `<id>Result` naming
 // codegen emits. It has to keep reading cleanly now that edges come from
 // dataflow: the convention is one shape among many, not a shape that was lost.
