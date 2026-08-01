@@ -24,3 +24,6 @@ CONVERSATION.md
 # internals. HANDOFF.md (the original drop) is intentionally public.
 HANDOFF-SESSION.md
 CLAUDE.local.md
+
+# agent worktrees created by the harness
+.claude/worktrees/
