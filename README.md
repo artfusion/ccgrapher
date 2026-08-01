@@ -7,8 +7,6 @@
 workflows for the joins that pass while a branch lies dead and the verifiers grading their own
 work. It also finds every step that was never waiting, and runs those together.
 
-Where this is heading, and why the roadmap is itself a linted ccgrapher spec: [VISION.md](VISION.md).
-
 ---
 
 ## Start here: the Claude Code skill
