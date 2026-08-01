@@ -16,7 +16,10 @@ script is exactly the concurrency the diagram shows.
 `fanOut` becomes a capped parallel map, `worktree` becomes isolation, and
 `expects` becomes a guard on the results that *arrived* — a dead upstream node
 otherwise slips through and the synthesis step reports on partial data as though
-it were whole.
+it were whole. The guard is a floor, matching `@ccgrapher/runner`: a shortfall is
+the failure, while more arrivals than declared means the count is stale, which
+lint reports at spec time. `NodeSpec.expects` in `@ccgrapher/core` carries the
+reasoning.
 
 The `claude-code` script narrates itself. It logs a `ccg:` marker line at each
 phase, around each node, and on an `expects` miss, using the field names

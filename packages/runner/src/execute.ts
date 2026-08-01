@@ -217,6 +217,8 @@ export async function execute(
      * Only a shortfall stops the run. More arrivals than declared means the
      * guard itself is miscounted, which is a defect in the spec for the linter
      * to report and not a reason to refuse to run data that is all present.
+     * Both emitted guards test the same floor; `NodeSpec.expects` in
+     * `@ccgrapher/core` is the statement all three answer to.
      */
     if (node.expects !== undefined && inputs.length < node.expects) {
       throw new ExpectsError(node.id, node.expects, inputs.length);

@@ -53,7 +53,31 @@ export const NodeSpec = z.object({
   writes: z.array(z.string()).optional(),
   /** A verifier that shares context with the worker it grades is self-grading. */
   freshContext: z.boolean().optional(),
-  /** Fan-in count guard. Must equal the effective inbound count — see `effectiveInboundCount`. */
+  /**
+   * Fan-in count guard: how many results this node needs before it may run.
+   *
+   * The comparison is deliberately not the same at spec time as at run time,
+   * and this is the one place that says why.
+   *
+   * **Spec time** — the linter demands equality. `expects` must equal
+   * `effectiveInboundCount`, or SILENT_FAILURE fires. A count that disagrees
+   * with the graph is a defect in the spec whichever way it is wrong, and spec
+   * time is the moment it can still be corrected.
+   *
+   * **Run time** — only a shortfall is a violation: `arrivals < expects`.
+   * Fewer arrivals than declared means data is genuinely missing, and
+   * synthesising on it is precisely the silent failure the guard exists to
+   * prevent, so it is fatal. More arrivals than declared means the guard is
+   * stale or was miscounted; nothing is missing, and refusing to run on data
+   * that is all present is a different and worse error than the stale count —
+   * which the linter already reports, where it can be fixed.
+   *
+   * The run-time implementations — `execute` in `@ccgrapher/runner`, and the
+   * guards the `claude-code` and `plain-ts` targets emit — cannot share a
+   * predicate: one is a live engine and the others are strings of source for
+   * runtimes this repository never executes. They are held level by tests on
+   * either side that pin the surplus case, not by an abstraction.
+   */
   expects: z.number().int().nonnegative().optional(),
   fanOut: FanOut.optional(),
   /** Isolated worktree per instance, so parallel workers cannot collide on disk. */

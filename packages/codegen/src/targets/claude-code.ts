@@ -136,6 +136,11 @@ function concurrent(graph: Graph, nodes: readonly NodeSpec[]): string[] {
  * to build it — and the fan-in count guard, which has to test the results that
  * *arrived*, not the node's own output. Without it one dead upstream node slips
  * through and the synthesis step reports on partial data as though it were whole.
+ *
+ * The guard is a floor, `< expects`, matching the runner and the `plain-ts`
+ * target: a surplus means the count is stale, not that anything is missing, and
+ * the linter is the one that complains about that. See `NodeSpec.expects` in
+ * `@ccgrapher/core` for why the two times compare differently.
  */
 function inputPrelude(graph: Graph, node: NodeSpec): { lines: string[]; expr: string } {
   const name = identifier(node.id);
@@ -157,8 +162,8 @@ function inputPrelude(graph: Graph, node: NodeSpec): { lines: string[]; expr: st
 
   if (node.expects !== undefined) {
     lines.push(
-      `if (${expr}.length !== ${node.expects}) {`,
-      `  const note = \`expected ${node.expects} results, got \${${expr}.length}\``,
+      `if (${expr}.length < ${node.expects}) {`,
+      `  const note = \`expected at least ${node.expects} results, got \${${expr}.length}\``,
       `  log(\`${node.id}: \${note}\`)`,
       `  mark({ type: "node_log", node: ${quote(node.id)}, line: note })`,
       "}",

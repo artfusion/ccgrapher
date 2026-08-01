@@ -136,12 +136,18 @@ function concurrent(graph: Graph, nodes: readonly NodeSpec[]): string[] {
  * Only a fanOut produces a count that can vary at runtime, so that is the only
  * place a real guard belongs. A static fan-in either resolves all its inputs or
  * Promise.all rejects, so the count is noted rather than tested.
+ *
+ * A floor, `< expects`, matching the runner and the `claude-code` target: an
+ * uncapped fanOut, or one capped above the declared count, can legitimately
+ * hand back more than `expects`, and throwing on data that is all present would
+ * be worse than the stale count the linter already reports. See
+ * `NodeSpec.expects` in `@ccgrapher/core`.
  */
 function fanOutGuard(node: NodeSpec, result: string): string[] {
   if (node.expects === undefined) return [];
   return [
-    `  if (${result}.length !== ${node.expects}) {`,
-    `    throw new Error(\`${node.id}: expected ${node.expects}, got \${${result}.length}\`);`,
+    `  if (${result}.length < ${node.expects}) {`,
+    `    throw new Error(\`${node.id}: expected at least ${node.expects}, got \${${result}.length}\`);`,
     "  }",
   ];
 }

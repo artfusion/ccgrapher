@@ -180,6 +180,12 @@ export function contextCollapse(graph: Graph, phase: Phase): Finding[] {
  * A fan-in without a count guard silently synthesises on partial data when one
  * upstream node dies. Only applies to real fan-ins — a single inbound edge
  * needs no guard, which is why diamond's merge stays clean.
+ *
+ * This is the strict end of the `expects` rule: equality, not a floor. A guard
+ * that overshoots the graph is stale, and stale is a spec defect worth a
+ * warning even though nothing is missing at run time — where the same guard
+ * only tests for a shortfall. The whole reasoning lives on `NodeSpec.expects`
+ * in `@ccgrapher/core`; read it there before changing either comparison.
  */
 export function silentFailure(graph: Graph, phase: Phase): Finding[] {
   const out: Finding[] = [];
