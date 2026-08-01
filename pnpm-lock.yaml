@@ -56,6 +56,9 @@ importers:
       '@ccgrapher/render-svg':
         specifier: workspace:*
         version: link:../../packages/render-svg
+      '@ccgrapher/trace':
+        specifier: workspace:*
+        version: link:../../packages/trace
 
   apps/site: {}
 

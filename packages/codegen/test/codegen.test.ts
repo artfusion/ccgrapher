@@ -5,7 +5,15 @@ import { loadGraph } from "@ccgrapher/core/node";
 import { lint } from "@ccgrapher/lint";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { codegen, jsonSchemaFor, objectSchema, stages, TARGETS, tsType } from "../src/index.js";
+import {
+  codegen,
+  codegenWarnings,
+  jsonSchemaFor,
+  objectSchema,
+  stages,
+  TARGETS,
+  tsType,
+} from "../src/index.js";
 
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
 const fixture = (name: string) => loadGraph(`${examples}${name}.yaml`);
@@ -146,6 +154,101 @@ describe("claude-code — fanOut and worktree", () => {
 
   it("guards the fan-in against the cap", () => {
     expect(code).toContain("if (audit.length !== 20)");
+  });
+});
+
+/**
+ * The watcher matches a journal record back to a graph node by its label and
+ * nothing else, so the label being the node id is a contract. It has been true
+ * by luck; this is what makes it true on purpose.
+ */
+describe("claude-code — label is the join key", () => {
+  it.each(ALL)("%s: every agent() label is exactly a node id", (name) => {
+    const graph = fixture(name);
+    const found = [...codegen(graph, "claude-code").matchAll(/label: (?:"([^"]*)"|`([^`]*)`)/g)].map(
+      (m) => m[1] ?? m[2],
+    );
+    // A fanOut instance is `id:i`, so the watcher can split one off the other.
+    const expected = graph.spec.nodes.map((n) => (n.fanOut ? `${n.id}:\${i}` : n.id));
+
+    expect(found.sort()).toEqual(expected.sort());
+  });
+
+  it.each(ALL)("%s: the marker around each call names the same node", (name) => {
+    const graph = fixture(name);
+    const code = codegen(graph, "claude-code");
+
+    for (const node of graph.spec.nodes) {
+      expect(code).toContain(
+        node.fanOut
+          ? `step({ node: ${JSON.stringify(node.id)}, instance: i, of: `
+          : `step({ node: ${JSON.stringify(node.id)} }, () =>`,
+      );
+    }
+  });
+});
+
+describe("claude-code — ccg: markers", () => {
+  const code = codegen(fixture("research-desk"), "claude-code");
+
+  it("writes every marker through one log() call", () => {
+    expect(code).toContain('const mark = (event) => log("ccg:" + JSON.stringify(event))');
+    // One shape to parse, and only one place the prefix is spelled.
+    expect([...code.matchAll(/"ccg:"/g)]).toHaveLength(1);
+  });
+
+  it("announces every phase", () => {
+    expect(
+      [...code.matchAll(/^mark\(\{ type: "node_log", line: "phase: /gm)],
+    ).toHaveLength(stages(fixture("research-desk")).length);
+  });
+
+  it("brackets a node, and says how many fanOut instances to wait for", () => {
+    expect(code).toContain('mark({ type: "node_started", ...node })');
+    expect(code).toContain('mark({ type: "node_finished", ...node })');
+    expect(code).toContain('step({ node: "research", instance: i, of: researchItems.length }');
+  });
+
+  it("marks an expects miss as well as logging it in prose", () => {
+    expect(code).toContain("log(`dedupe: ${note}`)");
+    expect(code).toContain('mark({ type: "node_log", node: "dedupe", line: note })');
+  });
+
+  it("borrows the trace contract's field names rather than inventing a dialect", () => {
+    const payloads = [...code.matchAll(/(?:mark|step)\(\{([^}]*)\}/g)].map((m) => m[1]!);
+    const keys = new Set(
+      // Keys only: a value like "phase: Researcher" is not a field name.
+      payloads.flatMap((p) => [...p.matchAll(/(?:^|,)\s*(\w+):/g)].map((k) => k[1]!)),
+    );
+
+    expect([...keys].sort()).toEqual(["instance", "line", "node", "of", "type"]);
+  });
+
+  it("emits no marker a real event could not be made from", () => {
+    const types = [...code.matchAll(/type: "([^"]+)"/g)].map((m) => m[1]!);
+    expect(new Set(types)).toEqual(new Set(["node_log", "node_started", "node_finished"]));
+  });
+});
+
+describe("claude-code — the gates it cannot honour", () => {
+  it("warns by name, and only where there is a gate", () => {
+    const warnings = codegenWarnings(fixture("research-desk"), "claude-code");
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("'gate'");
+    expect(warnings[0]).toContain("will not wait for approval");
+    expect(codegenWarnings(fixture("diamond"), "claude-code")).toEqual([]);
+  });
+
+  it("says so in the generated file, without faking a gate_waiting marker", () => {
+    const code = codegen(fixture("research-desk"), "claude-code");
+
+    expect(code).toContain("// gate is a gate, and this target cannot pause for a human");
+    expect(code).not.toContain("gate_waiting");
+  });
+
+  it("is a claude-code problem, not everyone's", () => {
+    expect(codegenWarnings(fixture("research-desk"), "plain-ts")).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,14 +17,11 @@ interface Run {
   stderr: string;
 }
 
+// spawnSync rather than execFileSync: a warning on a successful run is still a
+// warning, and execFileSync only hands back stderr when the command failed.
 function ccg(...args: string[]): Run {
-  try {
-    const stdout = execFileSync("node", [cli, ...args], { encoding: "utf8", stdio: "pipe" });
-    return { status: 0, stdout, stderr: "" };
-  } catch (error) {
-    const e = error as { status: number; stdout: string; stderr: string };
-    return { status: e.status, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
-  }
+  const run = spawnSync("node", [cli, ...args], { encoding: "utf8" });
+  return { status: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }
 
 describe("exit codes", () => {
@@ -143,6 +140,22 @@ describe("the round trip survives the CLI", () => {
   });
 });
 
+describe("codegen warns about what the target cannot do", () => {
+  it("names the gate the claude-code script will run straight past", () => {
+    const run = ccg("codegen", example("research-desk"), "-t", "claude-code");
+
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain("'gate' is a gate");
+    expect(run.stderr).toContain("will not wait for approval");
+    // The code is still generated: the warning is on the side, as the fake-edge one is.
+    expect(run.stdout).toContain('label: "gate"');
+  });
+
+  it("says nothing when the spec has no gate", () => {
+    expect(ccg("codegen", example("diamond"), "-t", "claude-code").stderr).toBe("");
+  });
+});
+
 describe("plan", () => {
   it("collapses waves when the fake edges are repaired", () => {
     const asWritten = ccg("plan", example("release-session"));
@@ -192,8 +205,9 @@ describe("retro", () => {
     expect(run.stdout).toContain("id: pr_28");
   });
 
-  // The harness only captures stderr on a failing run, so the summary and
-  // wrote lines are asserted here, where --lint exits 1.
+  // The summary and wrote lines are asserted on the --lint run because that is
+  // the one that exits 1, which is the behaviour under test here. The harness
+  // captures stderr either way now.
   it("--lint audits history rather than printing it", () => {
     const run = ccg("retro", repo, "--from-json", fixture, "--lint");
     expect(run.status).toBe(1);
