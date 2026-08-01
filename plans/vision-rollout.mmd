@@ -1,0 +1,88 @@
+---
+config:
+  look: handDrawn
+  theme: base
+  themeVariables:
+    primaryColor: '#FFFFFF'
+    primaryTextColor: '#2B2724'
+    primaryBorderColor: '#2B2724'
+    lineColor: '#E8763A'
+    fontFamily: 'Caveat, Patrick Hand, cursive'
+---
+flowchart TD
+  %% ship the dual-track vision: OSS live-execution stack + the ccgrapher Cloud seed
+  frontdoor[/"E1 front door: VISION.md, discipline, ticket briefs"\]
+  t1_trace["T1 @ccgrapher/trace: event contract + reducer"]
+  art159_ingest["ART-159 ingest: edges from dataflow, not names"]
+  art161_publish{"ART-161 publish 0.3.0 (Michael: npm auth)"}
+  s3_readme["S3 README hero: correctness over speed"]
+  c2_dns{"C2 ccgrapher.artfusion.com DNS (Michael)"}
+  c4_retro_tl["C4 retro on timelanes: second demo artifact"]
+  c1_landing["C1 landing page draft (apps/site)"]
+  t2_runner["T2 @ccgrapher/runner: execute() engine"]
+  t4_server["T4 ccg serve: SSE replay/follow + gate POST"]
+  t8_markers["T8 claude-code target: ccg trace markers + gate warning"]
+  t10_stats["T10 heat/stats producers: retro --heat, ccg trace stats"]
+  c5_landing_live["C5 landing live on the subdomain"]
+  t3_run["T3 ccg run: execute a spec with trace emission"]
+  t9_watch["T9 ccg watch: Claude Code journal -#gt; trace (spike first)"]
+  cloud_mvp["E4 hosted control plane: runner behind a queue (capture)"]
+  c3_audit["C3 paid workflow audit v1, offer live"]
+  t5_live["T5 canvas live overlay: connect, seam, status"]
+  t13_worktrees["T13 runner worktree isolation at runtime"]
+  t6_popover["T6 node pop-over: status, tail, usage"]
+  t7_gate_ui["T7 gate approve/reject in the canvas"]
+  t11_heatmap["T11 heatmap overlay: retro + trace thermal tint"]
+  t12_pareto["T12 Pareto simulator: tier swaps, honest projections"]
+  t14_docs(["T14 front-door docs: README, docs/trace.md, CHANGELOG"])
+  publish_040{"0.4.0 publish train (Michael or CI via ART-157)"}
+  frontdoor -->|"briefs"| t1_trace
+  frontdoor -->|"briefs"| art159_ingest
+  frontdoor -->|"briefs"| art161_publish
+  frontdoor -->|"vision"| s3_readme
+  frontdoor -->|"briefs"| c2_dns
+  frontdoor -->|"briefs"| c4_retro_tl
+  frontdoor -->|"vision"| c1_landing
+  t1_trace -->|"trace_contract"| t2_runner
+  t1_trace -->|"trace_contract"| t4_server
+  t1_trace -->|"trace_contract"| t8_markers
+  t1_trace -->|"trace_contract"| t10_stats
+  t1_trace -->|"trace_contract"| t3_run
+  t1_trace -->|"trace_contract"| t9_watch
+  t1_trace -->|"trace_contract"| t5_live
+  t1_trace -->|"trace_contract"| cloud_mvp
+  t2_runner -->|"runner_engine"| t3_run
+  t2_runner -->|"runner_engine"| t13_worktrees
+  t2_runner -->|"runner_engine"| cloud_mvp
+  t8_markers -->|"marked_workflows"| t9_watch
+  t4_server -->|"sse_endpoints"| t5_live
+  t4_server -->|"sse_endpoints"| t7_gate_ui
+  t4_server -->|"sse_endpoints"| t14_docs
+  t3_run -->|"sample_trace"| t5_live
+  t3_run -->|"run_cmd"| t13_worktrees
+  t3_run -->|"run_cmd"| t14_docs
+  t10_stats -->|"heat_data"| t11_heatmap
+  t10_stats -->|"run_stats"| t12_pareto
+  c1_landing -->|"landing_draft"| c5_landing_live
+  c2_dns -->|"subdomain"| c5_landing_live
+  c5_landing_live -->|"landing_live"| c3_audit
+  c4_retro_tl -->|"retro_demo"| c3_audit
+  t5_live -->|"overlay_seam"| t6_popover
+  t5_live -->|"overlay_seam"| t7_gate_ui
+  t5_live -->|"overlay_seam"| t11_heatmap
+  t5_live -->|"overlay_seam"| t12_pareto
+  t5_live -->|"live_ui"| t14_docs
+  t6_popover -->|"popover"| t14_docs
+  t7_gate_ui -->|"gate_ui"| t14_docs
+  t9_watch -->|"watch_cmd"| t14_docs
+  t11_heatmap -->|"heatmap_ui"| t14_docs
+  t12_pareto -->|"pareto_ui"| t14_docs
+  t13_worktrees -->|"isolation"| t14_docs
+  t14_docs -->|"frontdoor_docs"| publish_040
+  art161_publish -->|"npm_030"| publish_040
+
+  classDef agent fill:#FFFFFF,stroke:#2B2724,stroke-width:2px;
+  classDef code fill:#F1EEE9,stroke:#2B2724,stroke-width:1.5px;
+  classDef human fill:#F6F0DC,stroke:#2B2724,stroke-width:1.5px,stroke-dasharray:5 3;
+  class frontdoor,t1_trace,art159_ingest,s3_readme,c4_retro_tl,c1_landing,t2_runner,t4_server,t8_markers,t10_stats,c5_landing_live,t3_run,t9_watch,cloud_mvp,c3_audit,t5_live,t13_worktrees,t6_popover,t7_gate_ui,t11_heatmap,t12_pareto,t14_docs agent;
+  class art161_publish,c2_dns,publish_040 human;
