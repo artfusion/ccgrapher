@@ -620,6 +620,191 @@ main {
   color: var(--danger);
 }
 
+/* ---- heat --------------------------------------------------------------- */
+
+/*
+ * The thermal overlay tints and captions a card. Like run status, nothing here
+ * sets a width, a height, a margin or a transform on the node box: the caption
+ * is an absolutely positioned pseudo-element hanging outside the card, so a node
+ * cannot grow because somebody measured it.
+ *
+ * `--heat-fill` and `--heat-label` are set per node in lib/heat.ts. The kind tint
+ * is painted inline by the node component, so the wash has to outrank it — that
+ * is the only reason for the `!important` below, and it is why the wash replaces
+ * the kind tint rather than sitting on top of it at some opacity. In heat view,
+ * fill means heat and nothing else; kind is still readable from the icon and the
+ * border, which heat does not touch.
+ */
+
+.react-flow__node.heat-node .spec-node {
+  background: var(--heat-fill) !important;
+}
+
+/* Hatched, not pale. A node with no measurement is off the ramp entirely, and
+   this hatch appears nowhere else in the drawing. */
+.react-flow__node.heat-unmeasured .spec-node {
+  border-style: dotted;
+  color: #6f6660;
+}
+
+.react-flow__node.heat-node .spec-node::after {
+  content: var(--heat-label);
+  position: absolute;
+  right: -3px;
+  bottom: -13px;
+  padding: 0 3px;
+  background: var(--paper);
+  color: var(--muted);
+  font: 600 12px/1 var(--hand);
+  pointer-events: none;
+}
+
+.react-flow__node.heat-unmeasured .spec-node::after {
+  font-style: italic;
+}
+
+.controls.heat {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--rule);
+  font-size: 13px;
+}
+
+.heat-label {
+  font: 600 18px/1 var(--hand);
+  color: var(--accent);
+}
+
+.controls.heat .filepick {
+  padding: 5px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.controls.heat .filepick input {
+  display: none;
+}
+
+.heat-hint,
+.heat-state {
+  color: var(--muted);
+}
+
+.heat-hint code {
+  font: 11px var(--mono);
+}
+
+.heat-state em {
+  font-style: normal;
+  color: var(--danger);
+}
+
+.heat-state.warn {
+  color: var(--waiting);
+}
+
+.heat-state.bad {
+  color: var(--danger);
+}
+
+.pane.canvas.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.drop-hint {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--accent);
+  font: 600 16px/1.2 var(--hand);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.heat-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  width: 210px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow: 0 1px 4px rgba(43, 39, 36, 0.08);
+}
+
+.heat-legend-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font: 600 16px/1.2 var(--hand);
+}
+
+.heat-legend-head span {
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.heat-scale {
+  display: flex;
+  margin-top: 6px;
+  border: 1px solid var(--rule);
+}
+
+.heat-scale .heat-swatch {
+  flex: 1;
+  height: 12px;
+}
+
+.heat-ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.heat-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rule);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.heat-legend-row .heat-swatch {
+  flex: none;
+  width: 22px;
+  height: 12px;
+  border: 1px dotted var(--muted);
+}
+
+.heat-note,
+.heat-source {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.heat-source {
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.8;
+}
+
 /* ---- report ------------------------------------------------------------ */
 
 footer {
