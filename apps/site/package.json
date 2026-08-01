@@ -1,0 +1,29 @@
+{
+  "name": "@ccgrapher/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Static marketing site: the open toolkit, and the managed service beside it.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint"
+  ],
+  "license": "Apache-2.0",
+  "author": "artfusion",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git",
+    "directory": "apps/site"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "scripts": {
+    "dev": "python3 -m http.server 4173 -d ."
+  }
+}

@@ -10,6 +10,16 @@
         "dev"
       ],
       "port": 3210
+    },
+    {
+      "name": "ccgrapher-site",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@ccgrapher/site",
+        "dev"
+      ],
+      "port": 4173
     }
   ]
 }
