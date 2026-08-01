@@ -2,10 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { formatSpec } from "@ccgrapher/core";
+import { HeatData } from "@ccgrapher/trace";
 import { Background, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { buildModel, type Model } from "../lib/graph-model";
 import { applyRunState } from "../lib/overlay";
+import {
+  applyHeat,
+  formatHeat,
+  HEAT_UNMEASURED_FILL,
+  type HeatLegend as HeatLegendData,
+} from "../lib/heat";
 import { DEFAULT_FIXTURE, FIXTURES } from "../lib/fixtures";
 import {
   DEFAULT_SERVER_URL,
@@ -28,6 +35,14 @@ export function Editor() {
   const server = useTraceServer(serverUrl);
   const connection = useRunState(serverUrl, runId);
 
+  // Heat files, keyed by the metric they measure, so loading a second file of the
+  // same metric replaces it rather than growing a duplicate entry in the toggle.
+  const [heatFiles, setHeatFiles] = useState<Record<string, HeatData>>({});
+  const [metric, setMetric] = useState<string>();
+  const [heatError, setHeatError] = useState<string>();
+  const [dropping, setDropping] = useState(false);
+  const heat = metric === undefined ? undefined : heatFiles[metric];
+
   // The live UI does not exist until a trace server answers. With nothing
   // serving, this is the local YAML scratchpad it has always been. Once a server
   // has been seen the bar stays, so a URL typed at a server that is now down
@@ -43,14 +58,53 @@ export function Editor() {
 
   // ── the overlay seam ──────────────────────────────────────────────────────
   // Layout has already run at this point and its output is not touched below.
-  // See lib/overlay.ts: run state may add to `data` and nothing else.
-  const view = useMemo(
-    () =>
-      model.ok
-        ? applyRunState(model.nodes, model.edges, connection?.run)
-        : { nodes: [], edges: [] },
-    [model, connection?.run],
-  );
+  // See lib/overlay.ts and lib/heat.ts: an overlay may add to `data` and nothing
+  // else. Neither of them is allowed to move anything.
+  //
+  // Run state and heat are alternative readings of the same nodes, not layers.
+  // Two arguments, and the second is the one that decided it:
+  //
+  //   - They answer different questions from different times. Run state is "what
+  //     is happening now"; heat is "what this has historically cost". Drawn at
+  //     once, a reader has no way to tell which colour is answering which, and
+  //     the picture implies a relationship between them that does not exist.
+  //   - They collide in hue, not in channel. Run status is drawn in the border
+  //     and the corner mark; heat washes the card. Those would coexist happily —
+  //     except that heat's hot end *is* `--accent`, the same orange the ring
+  //     around a running node uses. On a card this size a fill and a ring in one
+  //     hue read as one signal, so a hot node would look like a busy one.
+  //
+  // So heat wins the canvas outright while it is showing, run state is not
+  // merged at all, and the heat bar says so in words rather than letting the
+  // reader notice the live tint went missing.
+  const view = useMemo(() => {
+    if (!model.ok) return { nodes: [], edges: [], legend: undefined };
+    if (heat) {
+      const { nodes, legend } = applyHeat(model.nodes, heat);
+      // Heat is keyed by node; it has nothing to say about an edge.
+      return { nodes, edges: model.edges, legend };
+    }
+    const overlaid = applyRunState(model.nodes, model.edges, connection?.run);
+    return { ...overlaid, legend: undefined };
+  }, [model, connection?.run, heat]);
+
+  const loadHeat = async (files: readonly File[]) => {
+    const loaded: Record<string, HeatData> = {};
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        const parsed = HeatData.parse(JSON.parse(await file.text()));
+        loaded[parsed.metric] = parsed;
+      } catch (cause) {
+        failures.push(`${file.name}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
+    setHeatError(failures.length === 0 ? undefined : failures.join("; "));
+    const metrics = Object.keys(loaded);
+    if (metrics.length === 0) return;
+    setHeatFiles((current) => ({ ...current, ...loaded }));
+    setMetric(metrics[0]);
+  };
 
   const applyRepairs = () => {
     if (!model.ok) return;
@@ -115,6 +169,16 @@ export function Editor() {
             specName={model.ok ? model.graph.spec.name : undefined}
           />
         )}
+
+        <HeatBar
+          files={heatFiles}
+          metric={metric}
+          onMetric={setMetric}
+          onFiles={loadHeat}
+          error={heatError}
+          legend={view.legend}
+          hidingRun={heat !== undefined && connection?.run !== undefined}
+        />
       </header>
 
       <main>
@@ -129,7 +193,25 @@ export function Editor() {
           />
         </section>
 
-        <section className="pane canvas">
+        <section
+          className={`pane canvas${dropping ? " dropping" : ""}`}
+          onDragOver={(e) => {
+            // Only a file drag. Dragging a node around the canvas is React Flow's.
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setDropping(true);
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return;
+            setDropping(false);
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setDropping(false);
+            void loadHeat([...e.dataTransfer.files]);
+          }}
+        >
           {!model.ok ? (
             <pre className="error">{model.error}</pre>
           ) : (
@@ -150,6 +232,9 @@ export function Editor() {
               <Controls showInteractive={false} />
             </ReactFlow>
           )}
+
+          {view.legend && <HeatLegend legend={view.legend} />}
+          {dropping && <div className="drop-hint">drop a heat file to tint the graph</div>}
         </section>
       </main>
 
@@ -287,6 +372,148 @@ function settled(run: NonNullable<RunConnection["run"]>): string {
   if (failed > 0) parts.push(`${failed} failed`);
   if (active > 0) parts.push(`${active} in flight`);
   return parts.join(", ");
+}
+
+/**
+ * Loading a heat file, and choosing between the ones already loaded.
+ *
+ * Two ways in, because one of them is undiscoverable on its own: a file picker
+ * that is visible whether or not anything is loaded, and a drop anywhere on the
+ * canvas. Both take several files at once, which is how the metric toggle comes
+ * to have more than one thing in it.
+ */
+function HeatBar({
+  files,
+  metric,
+  onMetric,
+  onFiles,
+  error,
+  legend,
+  hidingRun,
+}: {
+  files: Record<string, HeatData>;
+  metric: string | undefined;
+  onMetric: (metric: string | undefined) => void;
+  onFiles: (files: readonly File[]) => void;
+  error: string | undefined;
+  legend: HeatLegendData | undefined;
+  hidingRun: boolean;
+}) {
+  const metrics = Object.keys(files);
+
+  return (
+    <div className="controls heat">
+      <span className="heat-label">heat</span>
+
+      <label className="filepick">
+        <input
+          type="file"
+          accept="application/json,.json"
+          multiple
+          onChange={(e) => {
+            onFiles([...(e.target.files ?? [])]);
+            // So loading the same file twice in a row still fires a change.
+            e.target.value = "";
+          }}
+        />
+        {metrics.length === 0 ? "choose a heat file…" : "add another…"}
+      </label>
+
+      {metrics.length === 0 ? (
+        <span className="heat-hint">
+          or drop one on the canvas — <code>ccg trace stats … --heat</code>,{" "}
+          <code>ccg retro … --heat</code>
+        </span>
+      ) : (
+        <select
+          value={metric ?? ""}
+          aria-label="heat metric"
+          onChange={(e) => onMetric(e.target.value === "" ? undefined : e.target.value)}
+        >
+          <option value="">off — show the run instead</option>
+          {metrics.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {legend && (
+        <span className="heat-state">
+          {legend.measured} of {legend.measured + legend.unmeasured} nodes measured
+          {legend.unmatched > 0 && (
+            <em>
+              {" "}
+              · {legend.unmatched} entr{legend.unmatched === 1 ? "y" : "ies"} in the file match no
+              node here
+            </em>
+          )}
+        </span>
+      )}
+
+      {/* Not left for the reader to notice by the tint going missing. */}
+      {hidingRun && <span className="heat-state warn">the live run tint is hidden while heat is shown</span>}
+
+      {error && <span className="heat-state bad">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * What the colours mean, in the file's own unit, plus the one entry that is not
+ * a colour on the ramp at all.
+ *
+ * The unmeasured swatch is set apart rather than sitting at the cold end of the
+ * row, because the whole point of the sparse map is that "not measured" is not a
+ * low value. Its hatch appears nowhere else in the drawing.
+ */
+function HeatLegend({ legend }: { legend: HeatLegendData }) {
+  return (
+    <div className="heat-legend">
+      <div className="heat-legend-head">
+        <strong>{legend.metric}</strong>
+        <span>{legend.unit}</span>
+      </div>
+
+      {legend.bands.length > 0 ? (
+        <>
+          <div className="heat-scale">
+            {legend.bands.map((band, i) => (
+              <span
+                key={i}
+                className="heat-swatch"
+                style={{ background: band.fill }}
+                title={`${formatHeat(band.from, legend.unit)} – ${formatHeat(band.to, legend.unit)}`}
+              />
+            ))}
+          </div>
+          <div className="heat-ends">
+            <span>{formatHeat(legend.bands[0]!.from, legend.unit)}</span>
+            <span>{formatHeat(legend.bands.at(-1)!.to, legend.unit)}</span>
+          </div>
+          {/* Stated, because a ramp anchored at its own minimum and one anchored
+              at zero look identical and mean different things. */}
+          <p className="heat-note">scale runs from zero, banded in five</p>
+          {/* A wall of one colour looks like a finding. It is not one. */}
+          {legend.flat && (
+            <p className="heat-note">every measured node reads the same — no spread here</p>
+          )}
+        </>
+      ) : legend.measured === 0 ? (
+        <p className="heat-note">no node on this graph is measured by this file</p>
+      ) : (
+        <p className="heat-note">every measured node reads zero</p>
+      )}
+
+      <div className="heat-legend-row">
+        <span className="heat-swatch" style={{ background: HEAT_UNMEASURED_FILL }} />
+        <span>no data — never measured, not a low value</span>
+      </div>
+
+      <p className="heat-source">{legend.source}</p>
+    </div>
+  );
 }
 
 function Report({ model }: { model: Model }) {

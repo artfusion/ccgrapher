@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { emptyRunState, reduceRun, type RunState, type TraceEvent } from "@ccgrapher/trace";
 import type { Edge, Node } from "@xyflow/react";
+import { HeatData } from "@ccgrapher/trace";
 import { describe, expect, it } from "vitest";
 import { applyRunState } from "../lib/overlay";
+import { applyHeat } from "../lib/heat";
 import { buildModel } from "../lib/graph-model";
 import { FIXTURES } from "../lib/fixtures";
 
@@ -44,6 +46,19 @@ const finish = (node: string, seq: number): TraceEvent => ({
   durationMs: 4,
 });
 
+/** Everything an overlay is forbidden to be a function of. */
+const geometry = (nodes: Node[]) =>
+  nodes.map(({ id, position, width, height, type }) => ({ id, position, width, height, type }));
+
+/** Real output of `ccg trace stats --heat`, trimmed to the two nodes of SPEC. */
+const heat = HeatData.parse({
+  v: 1,
+  metric: "duration-ms",
+  unit: "ms",
+  source: "ccg trace stats examples/traces/live-demo.jsonl",
+  values: { a: 42 },
+});
+
 describe("the overlay seam", () => {
   it("moves nothing", () => {
     const before = positioned();
@@ -53,10 +68,40 @@ describe("the overlay seam", () => {
     // The whole invariant, in one assertion: strip `data` and the graph is
     // byte-identical to what layout produced. No position, size, order or rank
     // is a function of what the run did.
-    const geometry = (nodes: Node[]) =>
-      nodes.map(({ id, position, width, height, type }) => ({ id, position, width, height, type }));
     expect(geometry(after.nodes)).toEqual(geometry(before.nodes));
     expect(after.nodes.map((n) => n.id)).toEqual(before.nodes.map((n) => n.id));
+  });
+
+  it("moves nothing for heat either, measured or not", () => {
+    const before = positioned();
+    const after = applyHeat(before.nodes, heat);
+
+    // `a` is measured and `b` is not, so both halves of the overlay are in this
+    // assertion: neither a tint nor a hatch is allowed to resize a card.
+    expect(geometry(after.nodes)).toEqual(geometry(before.nodes));
+    expect(after.nodes.map((n) => n.id)).toEqual(before.nodes.map((n) => n.id));
+  });
+
+  it("moves nothing when heat is drawn over a run either", () => {
+    // The canvas shows one or the other, but the seam must not depend on that:
+    // composing them in either order still has to leave layout's output alone.
+    const before = positioned();
+    const run = fold(start("a", 0), finish("a", 1), start("b", 2));
+
+    const heatFirst = applyRunState(applyHeat(before.nodes, heat).nodes, before.edges, run);
+    const runFirst = applyHeat(applyRunState(before.nodes, before.edges, run).nodes, heat);
+
+    expect(geometry(heatFirst.nodes)).toEqual(geometry(before.nodes));
+    expect(geometry(runFirst.nodes)).toEqual(geometry(before.nodes));
+  });
+
+  it("keeps heat out of the edges entirely", () => {
+    // A heat file is keyed by node id. It has nothing to say about an edge, and
+    // `applyHeat` does not take them, so it cannot invent a reading for one.
+    const before = positioned();
+    const after = applyHeat(before.nodes, heat);
+    expect(after).not.toHaveProperty("edges");
+    expect(before.edges[0]!.animated).toBe(false);
   });
 
   it("attaches each node's own run state and nothing else's", () => {
