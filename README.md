@@ -3,8 +3,9 @@
 [![CI](https://github.com/artfusion/ccgrapher/actions/workflows/ci.yml/badge.svg)](https://github.com/artfusion/ccgrapher/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**Your agent does things one at a time that didn't need to be.** ccgrapher finds the steps that
-were never waiting on anything, and runs them together instead.
+**Your verification step is not checking what you think it is checking.** ccgrapher lints agent
+workflows for the joins that pass while a branch lies dead and the verifiers grading their own
+work. It also finds every step that was never waiting, and runs those together.
 
 Where this is heading, and why the roadmap is itself a linted ccgrapher spec: [VISION.md](VISION.md).
 
@@ -34,8 +35,8 @@ list.
 That's a real session: nine pull requests that were shipped one after another. Six of them were
 never waiting on anything. Same work, five waves instead of twelve.
 
-It also catches the failures that aren't about speed — a step that grades its own work, or a
-fan-in that reports success when one branch silently died.
+The speed is the bonus. The reason to run it is the failures it catches: a step that grades its
+own work, or a fan-in that reports success when one branch silently died.
 
 **Why it works:** you have to declare what each step *reads*, not what happened before it. Writing
 that down honestly is what exposes the steps that were never waiting. Everything below is the
