@@ -8,6 +8,7 @@ import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
 import { retroCommand } from "./commands/retro.js";
 import { serveCommand } from "./commands/serve.js";
+import { traceCommand } from "./commands/trace.js";
 
 const USAGE = `ccg — graph engineering for agent workflows
 
@@ -19,6 +20,7 @@ Usage:
   ccg plan <spec.yaml>                 what can run at once, wave by wave
   ccg retro <owner/repo>               rebuild the as-merged workflow from a repo's PR history
   ccg serve <trace-dir>                stream a run's trace over SSE
+  ccg trace stats <run.jsonl|dir>      summarise a trace's durations and cost
 
 Lint options:
   --json            machine-readable output
@@ -54,6 +56,18 @@ Retro options:
   -o, --out <file>  write the reconstructed spec here
   --lint            audit the as-merged graph instead of printing it
   --from-json <f>   build from saved \`gh pr list\` JSON instead of calling gh
+  --heat <file>     write a HeatData overlay here, keyed by the same pr_<n> ids
+  --metric <m>      pr-duration-hours | pr-size-lines (default: pr-duration-hours)
+
+Serve options:
+  --port <n>        0 asks the OS for a free port (default 3211)
+  --host <host>     interface to bind (default 127.0.0.1)
+  --origin <origin> the one origin CORS allows to read the trace
+
+Trace stats options:
+  --json            machine-readable RunStats output
+  --heat <file>     write a HeatData overlay here, keyed by node id
+  --metric <m>      duration-ms | cost-usd (default: duration-ms)
 
 Exit codes:
   0  clean    1  lint errors found    2  bad usage or unreadable spec
@@ -83,6 +97,8 @@ function main(argv: string[]): number {
         return retroCommand(rest);
       case "serve":
         return serveCommand(rest);
+      case "trace":
+        return traceCommand(rest);
       default:
         process.stderr.write(`ccg: unknown command '${command}'\n\n${USAGE}`);
         return 2;
