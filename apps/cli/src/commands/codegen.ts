@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { withEdges } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
-import { codegen, isTarget, TARGETS } from "@ccgrapher/codegen";
+import { codegen, codegenWarnings, isTarget, TARGETS } from "@ccgrapher/codegen";
 import { lint } from "@ccgrapher/lint";
 
 export function codegenCommand(args: string[]): number {
@@ -46,6 +46,11 @@ export function codegenCommand(args: string[]): number {
   }
 
   const graph = values.fix ? withEdges(original, result.repairedEdges) : original;
+
+  for (const warning of codegenWarnings(graph, target)) {
+    process.stderr.write(`ccg codegen: ${spec}: ${warning}\n`);
+  }
+
   const code = codegen(graph, target, { banner: values.banner, specPath: spec });
 
   if (values.out) {

@@ -17,6 +17,15 @@ export function codegen(graph: Graph, target: Target, options: EmitOptions = {})
   return emitter.emit(graph, options);
 }
 
+/**
+ * What the chosen target will quietly fail to do with this graph. Generating is
+ * still the right answer — the caller asked for code — so these are warnings on
+ * the side, alongside the fake-edge one.
+ */
+export function codegenWarnings(graph: Graph, target: Target): string[] {
+  return EMITTERS[target].warnings?.(graph) ?? [];
+}
+
 export function isTarget(value: string): value is Target {
   return (TARGETS as readonly string[]).includes(value);
 }
