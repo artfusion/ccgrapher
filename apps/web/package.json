@@ -34,6 +34,7 @@
     "@ccgrapher/core": "workspace:*",
     "@ccgrapher/layout": "workspace:*",
     "@ccgrapher/lint": "workspace:*",
+    "@ccgrapher/trace": "workspace:*",
     "@xyflow/react": "^12.3.5",
     "next": "^15.1.3",
     "react": "^19.0.0",
