@@ -170,6 +170,12 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
 
+  packages/trace:
+    dependencies:
+      zod:
+        specifier: ^4.0.5
+        version: 4.4.3
+
 packages:
 
   '@antfu/install-pkg@1.1.0':

@@ -1,0 +1,54 @@
+{
+  "name": "@ccgrapher/trace",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The versioned JSONL event contract for workflow runs, and the pure fold that turns it into state.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint",
+    "diagram",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "author": "artfusion",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git",
+    "directory": "packages/trace"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "zod": "^4.0.5"
+  }
+}
