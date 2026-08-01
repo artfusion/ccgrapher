@@ -40,6 +40,14 @@ export interface NodeRunState {
   readonly usage?: Usage;
   readonly tail: readonly string[];
   readonly error?: string;
+  /**
+   * What a waiting gate is asking a human to approve.
+   *
+   * Kept because this fold is what an approve/reject prompt binds to, and a
+   * prompt that cannot show the thing being approved is asking for a rubber
+   * stamp. Absent unless the node is, or has been, `waiting`.
+   */
+  readonly gatePayload?: unknown;
 }
 
 export interface RunState {
@@ -192,6 +200,7 @@ export function reduceRun(state: RunState, event: TraceLine): RunState {
         ...node,
         status: "waiting",
         startedAt: node.startedAt ?? event.ts,
+        gatePayload: event.payload ?? node.gatePayload,
       }));
 
     case "gate_resolved":

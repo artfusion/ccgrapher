@@ -47,13 +47,23 @@ export type Usage = z.infer<typeof Usage>;
 /**
  * Who wrote the trace.
  *
- * Closed on purpose, so the value means something. The cost is real and worth
- * stating: a reader on this version turns an event from a future writer with a
- * fourth source into an unknown line, and loses the run it describes. Anything
- * outside this list should say `custom` until the list grows.
+ * Open, and it has to be. The envelope above promises this contract is additive
+ * only within `v: 1`, and adding a source is exactly the kind of additive change
+ * that promise covers. A closed enum here would break it in the worst possible
+ * place: `run_started` is the only event carrying the spec, so a reader that
+ * rejected an unfamiliar source would not merely skip a line, it would lose the
+ * identity of the whole run.
+ *
+ * The known values are still named, so writers get autocomplete and a reader can
+ * branch on them. They are a vocabulary, not a gate.
  */
-export const TraceSource = z.enum(["ccg-run", "claude-code-watch", "custom"]);
-export type TraceSource = z.infer<typeof TraceSource>;
+export const KNOWN_TRACE_SOURCES = ["ccg-run", "claude-code-watch", "custom"] as const;
+export type KnownTraceSource = (typeof KNOWN_TRACE_SOURCES)[number];
+
+export const TraceSource = z.string().min(1);
+// eslint-disable-next-line @typescript-eslint/ban-types -- the `string & {}` keeps
+// autocomplete on the known values while still accepting anything a future writer sends.
+export type TraceSource = KnownTraceSource | (string & {});
 
 /** The run began. First event of a stream, and the only one carrying the spec. */
 export const RunStarted = z.object({

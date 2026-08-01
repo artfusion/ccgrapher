@@ -2,6 +2,8 @@
 export {
   Usage,
   TraceSource,
+  KNOWN_TRACE_SOURCES,
+  type KnownTraceSource,
   RunStarted,
   NodeStarted,
   NodeLog,

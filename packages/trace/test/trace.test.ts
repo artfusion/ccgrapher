@@ -153,6 +153,20 @@ describe("parseTraceLine tolerance", () => {
     // The line is kept verbatim, so a reader can forward what it cannot read.
     expect(isTraceEvent(parsed) ? "" : parsed.raw).toBe(line);
   });
+
+  it("keeps the run when a newer writer names a source it has never heard of", () => {
+    // `run_started` is the only event carrying the spec, so rejecting it over an
+    // unfamiliar source would lose the identity of the whole run. Adding a source
+    // is an additive change, and additive changes are what `v: 1` promises to survive.
+    const line =
+      '{"v":1,"type":"run_started","runId":"r","seq":0,"ts":"t","spec":{"name":"w"},"source":"github-action"}';
+    const parsed = parseTraceLine(line);
+
+    expect(parsed.type).toBe("run_started");
+    expect(isTraceEvent(parsed) && parsed.type === "run_started" ? parsed.source : "").toBe(
+      "github-action",
+    );
+  });
 });
 
 describe("reduceRun — happy path", () => {
@@ -233,7 +247,16 @@ describe("reduceRun — a run with a gate", () => {
       status: "waiting",
       startedAt: "2026-08-01T11:00:09.010Z",
       tail: [],
+      gatePayload: { diff: "+ 42 lines" },
     });
+  });
+
+  it("keeps what the human is being asked to approve", () => {
+    // A prompt that cannot show the thing being approved is asking for a rubber
+    // stamp, so the payload has to survive the fold, not just the file.
+    const waiting = fold("gate.jsonl", "run-gate", 4);
+
+    expect(waiting.nodes.get("approval")?.gatePayload).toEqual({ diff: "+ 42 lines" });
   });
 
   it("closes the gate on approval and lets the rest of the run proceed", () => {
