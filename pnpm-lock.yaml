@@ -57,6 +57,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/render-svg
 
+  apps/site: {}
+
   apps/web:
     dependencies:
       '@ccgrapher/core':
