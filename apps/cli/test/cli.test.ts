@@ -205,8 +205,9 @@ describe("retro", () => {
     expect(run.stdout).toContain("id: pr_28");
   });
 
-  // The harness only captures stderr on a failing run, so the summary and
-  // wrote lines are asserted here, where --lint exits 1.
+  // The summary and wrote lines are asserted on the --lint run because that is
+  // the one that exits 1, which is the behaviour under test here. The harness
+  // captures stderr either way now.
   it("--lint audits history rather than printing it", () => {
     const run = ccg("retro", repo, "--from-json", fixture, "--lint");
     expect(run.status).toBe(1);
