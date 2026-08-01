@@ -48,6 +48,7 @@
     "@ccgrapher/render-excalidraw": "workspace:*",
     "@ccgrapher/render-mermaid": "workspace:*",
     "@ccgrapher/render-svg": "workspace:*",
+    "@ccgrapher/runner": "workspace:*",
     "@ccgrapher/trace": "workspace:*"
   }
 }

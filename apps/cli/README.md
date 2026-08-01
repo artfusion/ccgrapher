@@ -13,6 +13,7 @@ ccg codegen <spec.yaml> -t <target>   emit orchestration code
 ccg ingest  <orchestration.ts>        reconstruct a spec from existing code
 ccg plan    <spec.yaml>               what can run at once, wave by wave
 ccg retro   <owner/repo>              rebuild the as-merged workflow from PR history
+ccg run     <spec.yaml> --impl <mod>  execute the spec and write a trace
 ```
 
 An edge only exists if real data passes along it. Most workflows are typed as a

@@ -1,0 +1,32 @@
+# A three-node chain that always succeeds. `beta` sleeps long enough that a
+# small --timeout can be made to fire on it, which is the other thing this
+# fixture is for.
+version: 1
+name: run-clean
+goal: "the smallest spec ccg run can execute"
+
+nodes:
+  - id: alpha
+    label: alpha
+    kind: split
+    model: cheap
+    in:  { topic: string }
+    out: { seed: string }
+
+  - id: beta
+    label: beta
+    kind: worker
+    model: cheap
+    in:  { seed: string }
+    out: { body: markdown }
+
+  - id: gamma
+    label: gamma
+    kind: synthesize
+    model: null
+    in:  { body: markdown }
+    out: { page: markdown }
+
+edges:
+  - { from: alpha, to: beta,  carries: [seed] }
+  - { from: beta,  to: gamma, carries: [body] }

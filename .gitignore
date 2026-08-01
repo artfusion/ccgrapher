@@ -8,6 +8,10 @@ dist/
 # blanket *.svg / *.png.
 /out/
 
+# Where `ccg run` writes a trace when --trace does not say otherwise. The one
+# committed sample lives in examples/traces/ and is not covered by this.
+/runs/
+
 # next
 .next/
 .vercel/

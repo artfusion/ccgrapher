@@ -294,6 +294,48 @@ any repo automatically. Requires the [GitHub CLI](https://cli.github.com) (`gh`)
 to the repo your `gh auth` already has; `--from-json` replays a saved `gh pr list` dump instead, for
 offline runs and tests.
 
+## Running a spec
+
+The spec is not only a picture. `ccg run` executes it, one rank at a time, and writes a trace of
+what actually happened:
+
+```bash
+ccg run examples/live-demo.yaml --impl examples/live-demo.impl.mjs
+```
+
+`--impl` is an ordinary JS module. Every node id in the spec needs an exported function of the same
+name, and a node that has none is an error **before the run starts**, naming all of them at once.
+Finding that out halfway through is the kind of failure this project exists to prevent. Gates are
+the exception: a gate is answered by a human, never executed, so it needs no implementation.
+
+A node is handed a `NodeContext` and returns `{ output?, usage? }`, or nothing. `context.inputs`
+holds only the results that genuinely arrived, never padded and never holed, so a node can always
+tell what reached it. `context.log(line)` writes a `node_log` event against that node.
+
+The trace lands in `runs/<run-id>.jsonl`, or wherever `--trace` says. The run id and the filename
+are the same fact, which is what lets `ccg serve` stream a file and the fold key on it. A run never
+appends to a trace that already exists: two runs in one file would number two sequences from zero,
+and a trace is a record rather than something to write over.
+
+```bash
+ccg run spec.yaml --impl impl.mjs --serve         # a canvas can watch, and answer gates over HTTP
+ccg run spec.yaml --impl impl.mjs --timeout 300   # give up on any one node after five minutes
+```
+
+**Gates.** With `--serve` the run embeds the trace server in its own process and a gate waits for a
+`POST /runs/<id>/gates/<node>`. Without it, the run asks on the terminal. If neither is possible,
+no terminal and no server, the run refuses to start rather than approving the gate for you. An
+unattended gate that approves itself is exactly the lie the rest of this tool exists to find.
+
+Exit codes are `0` for a run where everything completed, `1` for one that failed, `2` for bad usage
+or an implementation that does not cover the spec, and `3` for a run stopped at a rejected gate.
+The rejection has its own code because the engine already distinguishes it from a failure: a script
+needs to be able to tell "the workflow broke" from "a human said no".
+
+`examples/traces/live-demo.jsonl` is the trace the demo above produces, committed so the canvas has
+a sample run to develop against. `ccg trace stats` summarises it; `ccg serve examples/traces`
+replays it.
+
 ## The web canvas
 
 ```bash
@@ -333,7 +375,9 @@ Two things worth knowing when reading its output:
 | [`render-excalidraw`](packages/render-excalidraw) | Scene JSON with bound arrows |
 | [`codegen`](packages/codegen) | Spec → Claude Code / plain TS / LangGraph |
 | [`ingest`](packages/ingest) | ts-morph: orchestration code → spec |
-| [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest` |
+| [`trace`](packages/trace) | The event contract, the JSONL writer, and the fold every reader shares |
+| [`runner`](packages/runner) | Walks the ranks, enforces the guards, emits the trace |
+| [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest · run · serve` |
 | [`apps/web`](apps/web) | Next.js + React Flow canvas |
 
 **The one invariant.** `core` computes *ranks*; `layout` computes *pixels*. The "6 layers → 4" figure
@@ -367,7 +411,8 @@ you could contribute.
 `diamond`, `research-desk` and `route-auth-audit` are clean — every edge carries real data, so they
 double as the negative controls in the test suite. `linear-chain` is deliberately broken and is the
 linter's fixture. `self-grading` and `wide-fanin` were added because nothing in the original drop
-exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`.
+exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`. `live-demo` is the one that executes: it lints
+clean, sleeps rather than calling a model, fails one node on purpose and stops at a human gate.
 
 `release-session` is the one to read if you want to see why this is worth doing. It is not an agent
 workflow at all — it is a week of human work: nine pull requests shipped one after another, then a

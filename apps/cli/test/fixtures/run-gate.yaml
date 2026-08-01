@@ -1,0 +1,30 @@
+# A gate with nothing else wrong, so an approval and a rejection are the only
+# things that can decide how the run ends.
+version: 1
+name: run-gate
+goal: "one human decision, and what happens on either side of it"
+
+nodes:
+  - id: draft
+    label: draft
+    kind: worker
+    model: cheap
+    in:  { topic: string }
+    out: { text: markdown }
+
+  - id: review
+    label: review
+    kind: gate
+    in:  { text: markdown }
+    out: { text: markdown }
+
+  - id: ship
+    label: ship
+    kind: worker
+    model: null
+    in:  { text: markdown }
+    out: { done: boolean }
+
+edges:
+  - { from: draft,  to: review, carries: [text] }
+  - { from: review, to: ship,   carries: [text] }
