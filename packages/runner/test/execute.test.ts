@@ -630,6 +630,24 @@ describe("what the engine refuses to do", () => {
     expect(flags).toEqual({ isolated: true, shared: false });
   });
 
+  it("will not relabel a node that worked as one that failed", async () => {
+    const graph = graphOf([worker("only")]);
+    const { events, emit } = collect();
+
+    // Negative tokens cannot go into the trace contract. The node itself did its
+    // job, so reporting it as `node_failed` with a schema complaint attached
+    // would be the engine telling a lie about the run.
+    await expect(
+      execute(graph, async () => ({ output: "fine", usage: { inputTokens: -1 } }), {
+        runId: "r1",
+        emit,
+        now: frozen,
+      }),
+    ).rejects.toThrow();
+
+    expect(lines(events).filter((line) => line.startsWith("node_failed"))).toEqual([]);
+  });
+
   it("uses the injected clock for durations, never a clock of its own", async () => {
     let ticks = 0;
     const graph = graphOf([worker("only")]);

@@ -13,6 +13,7 @@ import type {
   ExecuteOptions,
   NodeContext,
   NodeExecutor,
+  NodeOutput,
   NodeReport,
   RunResult,
 } from "./types.js";
@@ -112,22 +113,14 @@ export async function execute(
       log: (line) => emit({ type: "node_log", node: node.id, line }),
     };
 
+    let result: NodeOutput | void;
     try {
-      const result = await withTimeout(
+      result = await withTimeout(
         executor(context),
         options.timeoutMs,
         () => new NodeTimeoutError(node.id, options.timeoutMs ?? 0, instance),
         controller,
       );
-      emit({
-        type: "node_finished",
-        node: node.id,
-        instance,
-        durationMs: now() - nodeStartedAt,
-        output: result?.output,
-        usage: result?.usage,
-      });
-      return { ok: true, output: result?.output };
     } catch (error) {
       const message = messageOf(error);
       emit({
@@ -139,6 +132,21 @@ export async function execute(
       });
       return { ok: false, error: message };
     }
+
+    // Outside the catch on purpose. A node that succeeded but whose usage figures
+    // will not pass the trace contract is an executor bug, and it should surface
+    // as one: caught here it would be emitted as `node_failed` on a node that
+    // did its job, which is precisely the kind of mislabelling this repo exists
+    // to stop.
+    emit({
+      type: "node_finished",
+      node: node.id,
+      instance,
+      durationMs: now() - nodeStartedAt,
+      output: result?.output,
+      usage: result?.usage,
+    });
+    return { ok: true, output: result?.output };
   };
 
   /**
