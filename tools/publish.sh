@@ -29,8 +29,14 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 # Dependency order, so a published package never references a missing one.
+#
+# Every publishable package belongs in this list. A package missing from it is
+# not an error anyone sees: the script publishes the rest, prints a success, and
+# the gap only surfaces when someone installs a version that cannot resolve.
+# The check below the loop exists to make that impossible.
 PACKAGES=(
   packages/core
+  packages/trace
   packages/layout
   packages/lint
   packages/render-svg
@@ -40,6 +46,27 @@ PACKAGES=(
   packages/ingest
   apps/cli
 )
+
+# Does the list above still describe the repository?
+#
+# A publishable package is any workspace package not marked private. Adding one
+# and forgetting this list is the quiet failure: nine of ten publish, the script
+# exits 0, and the tenth is missing until an install fails somewhere else.
+missing=""
+for dir in packages/*/ apps/*/; do
+  dir=${dir%/}
+  [ -f "$dir/package.json" ] || continue
+  node -p "require('./$dir/package.json').private === true" | grep -q true && continue
+  case " ${PACKAGES[*]} " in
+    *" $dir "*) ;;
+    *) missing="$missing $dir" ;;
+  esac
+done
+if [ -n "$missing" ]; then
+  echo "publishable but not in PACKAGES:$missing" >&2
+  echo "add it in dependency order, or mark it private. Nothing published." >&2
+  exit 1
+fi
 
 echo "Building and testing first — never publish something unverified."
 pnpm build >/dev/null || { echo "build failed, nothing published" >&2; exit 1; }
