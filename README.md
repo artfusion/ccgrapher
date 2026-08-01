@@ -6,6 +6,8 @@
 **Your agent does things one at a time that didn't need to be.** ccgrapher finds the steps that
 were never waiting on anything, and runs them together instead.
 
+Where this is heading, and why the roadmap is itself a linted ccgrapher spec: [VISION.md](VISION.md).
+
 ---
 
 ## Start here: the Claude Code skill
