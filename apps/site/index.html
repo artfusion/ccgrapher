@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ccgrapher, a linter for agent workflows</title>
+<meta name="description" content="ccgrapher lints agent workflows for unguarded fan-ins and self-grading verifiers, then draws the plan you actually have. Apache-2.0, with a managed service beside it.">
+<style>
+  :root {
+    --bg: #fafaf8; --ink: #1b1b1f; --muted: #565660; --accent: #a62c2c;
+    --paper: #ffffff; --line: rgba(20,20,25,.14); --panel: #f1f0ec;
+    --code-bg: #1b1b1f; --code-ink: #e8e7e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0e12; --ink: #ecebe6; --muted: #a3a3ad; --accent: #d95757;
+      --paper: #ffffff; --line: rgba(235,235,240,.16); --panel: #16161c;
+      --code-bg: #16161c; --code-ink: #dddcd6;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 17px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  header { border-bottom: 1px solid var(--line); }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .wordmark { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; font-size: 1.05rem; text-decoration: none; letter-spacing: -0.01em; }
+  .wordmark span { color: var(--accent); }
+  .nav a.navlink { text-decoration: none; color: var(--muted); font-size: .95rem; transition: color .2s ease; }
+  .nav a.navlink:hover { color: var(--ink); }
+
+  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; padding: 72px 0 88px; }
+  .hero h1 { font-size: clamp(2.1rem, 4.6vw, 3.3rem); line-height: 1.06; letter-spacing: -0.03em; font-weight: 700; }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero p { margin-top: 20px; color: var(--muted); max-width: 34rem; }
+  .cta-row { margin-top: 32px; }
+  .btn {
+    display: inline-block; background: var(--accent); color: #fff; text-decoration: none;
+    padding: 12px 22px; border-radius: 10px; font-weight: 600; font-size: .98rem;
+    transition: transform .15s ease, filter .15s ease;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px) scale(.99); }
+
+  .paper { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px; box-shadow: 0 12px 32px rgba(20,16,12,.10); }
+  .paper img { display: block; width: 100%; height: auto; border-radius: 6px; }
+  figcaption { margin-top: 10px; font-size: .88rem; color: var(--muted); padding: 0 4px 4px; }
+
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(1.5rem, 2.8vw, 2.1rem); letter-spacing: -0.02em; line-height: 1.15; }
+  .lede { margin-top: 14px; color: var(--muted); max-width: 40rem; }
+
+  .rules { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 64px; }
+  .rule { padding: 18px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: baseline; }
+  .rule code { font-size: .85rem; color: var(--accent); font-weight: 600; }
+  .rule p { color: var(--muted); font-size: .95rem; }
+
+  .pair { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 10px;
+    padding: 18px 20px; overflow-x: auto; font-size: .9rem; line-height: 1.7;
+    border: 1px solid var(--line);
+  }
+  pre .c { opacity: .55; }
+
+  .cloud { background: var(--panel); border-top: 1px solid var(--line); }
+  .cloud-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; padding: 80px 0; align-items: start; }
+  .cloud h2 { font-size: clamp(1.7rem, 3.2vw, 2.4rem); }
+  .cloud p { margin-top: 16px; color: var(--muted); }
+  .offer { border: 1px solid var(--line); border-radius: 10px; padding: 28px; background: var(--bg); }
+  .offer h3 { font-size: 1.15rem; letter-spacing: -0.01em; }
+  .offer p { margin-top: 10px; color: var(--muted); font-size: .96rem; }
+  .offer .btn { margin-top: 20px; }
+
+  footer { border-top: 1px solid var(--line); }
+  .foot { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; color: var(--muted); font-size: .9rem; }
+  .foot a { color: var(--muted); transition: color .2s ease; }
+  .foot a:hover { color: var(--ink); }
+  .foot-links { display: flex; gap: 24px; }
+
+  @media (max-width: 820px) {
+    .hero, .pair, .split, .cloud-grid { grid-template-columns: 1fr; gap: 32px; }
+    .hero { padding: 48px 0 56px; }
+    .rules { grid-template-columns: 1fr; gap: 0; }
+    .rule { grid-template-columns: 1fr; gap: 6px; }
+    section { padding: 56px 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="wordmark" href="/">ccgrapher<span>.</span></a>
+    <a class="navlink" href="#cloud">Cloud</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <h1>Your verifier passed work it <em>never saw.</em></h1>
+      <p>ccgrapher lints agent workflows for unguarded fan-ins and self-grading verifiers, then draws the plan you actually have. Open source, Apache-2.0.</p>
+      <div class="cta-row">
+        <a class="btn" href="https://github.com/artfusion/ccgrapher">Read it on GitHub</a>
+      </div>
+    </div>
+    <figure class="paper">
+      <img src="assets/release-session-after.png" alt="A hand-drawn workflow graph laid out in five wide waves instead of a tall chain" width="1200" height="900">
+      <figcaption>A real session, drawn as it actually was: five waves, not twelve layers.</figcaption>
+    </figure>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Six ways a plan lies</h2>
+      <p class="lede">You declare what each step reads and writes. The linter checks the claim. Speed falls out of it, but the point is the checks that were not checking.</p>
+      <div class="rules">
+        <div class="rule"><code>SILENT_FAILURE</code><p>A join with no count guard. One branch dies quietly and the result still says done.</p></div>
+        <div class="rule"><code>SELF_GRADING</code><p>A verifier marking its own homework, in the same context that did the work.</p></div>
+        <div class="rule"><code>FAKE_EDGE</code><p>The step was never waiting. The edge carries no data, only habit.</p></div>
+        <div class="rule"><code>MISSING_INPUT</code><p>A step reads something nothing upstream supplies. Usually the real dependency you missed.</p></div>
+        <div class="rule"><code>HIDDEN_EDGE</code><p>Two concurrent steps writing the same file, with no isolation between them.</p></div>
+        <div class="rule"><code>CONTEXT_COLLAPSE</code><p>Thirty results landing on one reader with no reduce step in front of it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>The same work, drawn honestly</h2>
+      <p class="lede">Nine pull requests, shipped one after another. Six of them were never waiting on anything. Nothing about the work changed, only the claim about its shape.</p>
+      <div class="pair">
+        <figure class="paper">
+          <img src="assets/release-session-before.png" alt="A tall twelve-layer chain of steps with red dashed edges that carry no data" width="1200" height="1600">
+          <figcaption>As written: twelve layers. The red edges carry nothing.</figcaption>
+        </figure>
+        <figure class="paper">
+          <img src="assets/release-session-after.png" alt="The same steps regrouped into five wide waves" width="1200" height="900">
+          <figcaption>As it actually is: five waves.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div>
+        <h2>It reads your history, not your intentions</h2>
+        <p class="lede">Retrospective mode rebuilds the graph from your merged pull requests, with edges only where two changes touched the same files. First live run on one of our own repos went from fifteen layers to five, and nobody wrote any YAML.</p>
+      </div>
+      <pre><code><span class="c"># the as-merged workflow of any repo</span>
+npx @ccgrapher/cli retro your-org/your-repo --lint
+
+<span class="c"># what is wrong with the shape of a plan</span>
+npx @ccgrapher/cli lint plan.yaml
+npx @ccgrapher/cli plan plan.yaml --fix</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <figure class="paper">
+        <img src="assets/web-canvas.png" alt="The ccgrapher web canvas, YAML editor on the left and the drawn graph beside it" width="1400" height="900">
+        <figcaption>The local canvas. It re-lints on every keystroke.</figcaption>
+      </figure>
+      <div>
+        <h2>The picture is the argument</h2>
+        <p class="lede">YAML on the left, the graph beside it, findings underneath. Nodes are not draggable on purpose: the drawing is a consequence of what each step declares, so the picture cannot be arranged into a lie.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cloud" id="cloud" style="border-top:none; padding:0;">
+    <div class="wrap cloud-grid">
+      <div>
+        <h2>Free to read, paid to run.</h2>
+        <p>The toolkit is Apache-2.0 and stays that way. ccgrapher Cloud is the managed service beside it: you bring the spec, we run the queue, the worktrees, the timeouts, the trace store, and the gate that waits for a human to click approve.</p>
+        <p>It will run on the same open packages, unchanged: whatever the service uses to execute a graph, you can read and run yourself. Those parts are being built in the open now, in <a href="https://github.com/artfusion/ccgrapher">the repository</a>.</p>
+      </div>
+      <div class="offer">
+        <h3>The first paid thing is small: a workflow audit</h3>
+        <p>We run retrospective mode against your merged pull requests and show you which steps were never waiting, and which of your checks never checked anything. No codebase access needed, only public history.</p>
+        <a class="btn" href="mailto:artfusion@gmail.com?subject=ccgrapher%20workflow%20audit">Ask for an audit</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>An artfusion project</span>
+    <div class="foot-links">
+      <a href="https://github.com/artfusion/ccgrapher">GitHub</a>
+      <a href="https://github.com/artfusion/ccgrapher/blob/main/LICENSE">Apache-2.0</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
