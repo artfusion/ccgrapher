@@ -7,6 +7,12 @@
   --muted: #8a817a;
   --danger: #c4442e;
   --rule: #e4dcd0;
+  /* Run status. Three inks that already belong to the drawing: the orange
+     accent for work in progress, a pencil green for settled, the same red the
+     linter uses for a failure. The gate gets an amber of its own, because
+     "someone is being asked" is not a shade of "something is happening". */
+  --done: #2f7d4f;
+  --waiting: #b07d21;
   --hand: "Caveat", "Patrick Hand", cursive;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
@@ -258,6 +264,169 @@ main {
 
 .react-flow__handle {
   opacity: 0;
+}
+
+/* ---- run status --------------------------------------------------------- */
+
+/*
+ * Status is a tint, never a measurement: nothing here sets width, height,
+ * margin or transform on the node box, so a node cannot move or resize because
+ * of what a run did. Corner marks are absolutely positioned outside the flow.
+ *
+ * Shape carries the meaning as well as colour, and the gate says its state in
+ * words, so nothing important is conveyed by hue or by motion alone.
+ */
+
+/* `pending` has no rule on purpose: a node the run has not reached yet looks
+   exactly as it does with no run attached. */
+
+.spec-node.run-running,
+.spec-node.run-partial {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(232, 118, 58, 0.22);
+}
+
+.spec-node.run-running {
+  animation: node-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(232, 118, 58, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(232, 118, 58, 0.28);
+  }
+}
+
+/* Deliberately still. A gate is not working; it is waiting to be answered. */
+.spec-node.run-waiting {
+  border-color: var(--waiting) !important;
+  box-shadow: 0 0 0 3px rgba(176, 125, 33, 0.18);
+}
+
+.spec-node.run-done {
+  border-color: rgba(47, 125, 79, 0.75) !important;
+}
+
+.spec-node.run-failed {
+  border-color: var(--danger) !important;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 4px rgba(196, 68, 46, 0.16);
+}
+
+.spec-node .run-mark {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 13px/1 var(--hand);
+  pointer-events: none;
+}
+
+.spec-node .run-mark > span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: var(--paper);
+}
+
+.spec-node .run-mark em {
+  font-style: normal;
+  white-space: nowrap;
+  background: var(--paper);
+  padding: 0 3px;
+}
+
+.mark-running,
+.mark-partial {
+  color: var(--accent);
+}
+
+.mark-waiting {
+  color: var(--waiting);
+}
+
+.mark-done {
+  color: var(--done);
+}
+
+.mark-failed {
+  color: var(--danger);
+}
+
+/* An edge only animates while data is genuinely moving along it. */
+.react-flow__edge.edge-flowing .react-flow__edge-path {
+  stroke-width: 2.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The pulse becomes the ring it pulses to. Status is still legible by colour,
+     by the corner mark and, at a gate, by the word next to it. */
+  .spec-node.run-running {
+    animation: none;
+    box-shadow: 0 0 0 5px rgba(232, 118, 58, 0.26);
+  }
+
+  .react-flow__edge-path {
+    animation: none !important;
+    stroke-dasharray: none !important;
+  }
+}
+
+/* ---- live bar ----------------------------------------------------------- */
+
+.controls.live {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--rule);
+  font-size: 13px;
+}
+
+.live-label {
+  font: 600 18px/1 var(--hand);
+  color: var(--accent);
+}
+
+.live-url {
+  font: 12px var(--mono);
+  padding: 5px 8px;
+  width: 22ch;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.controls.live button.ghost {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--rule);
+  font-weight: 400;
+}
+
+.live-state {
+  color: var(--muted);
+}
+
+.live-state.connected {
+  color: var(--done);
+}
+
+.live-state.connecting,
+.live-state.reconnecting {
+  color: var(--waiting);
+}
+
+.live-state.closed,
+.live-state.off {
+  color: var(--danger);
 }
 
 /* ---- report ------------------------------------------------------------ */

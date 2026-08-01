@@ -194,6 +194,72 @@ edges:
   - { from: draft_b,   to: check_own, carries: [text_b] }
   - { from: check_own, to: publish,   carries: [verdict] }
 `,
+
+  // The spec behind examples/traces/live-demo.jsonl. Load this one and point the
+  // live bar at a server holding that trace, and the canvas has something real
+  // to tint: a branch that fails, a node skipped for want of an input, and a gate.
+  "live-demo": `version: 1
+name: live-demo
+goal: "summarise a change: two parallel readers, one that fails, and a human gate"
+
+nodes:
+  - id: plan
+    label: plan the work
+    kind: split
+    model: cheap
+    in:  { topic: string }
+    out: { docs_url: url, code_path: string }
+
+  - id: fetch_docs
+    label: read the docs
+    kind: worker
+    model: cheap
+    in:  { docs_url: url }
+    out: { notes: markdown }
+
+  - id: fetch_code
+    label: read the source
+    kind: worker
+    model: cheap
+    in:  { code_path: string }
+    out: { symbols: "string[]" }
+
+  - id: count_lines
+    label: count what changed
+    kind: worker
+    model: null
+    in:  { symbols: "string[]" }
+    out: { total: number }
+
+  - id: summarise
+    label: write the summary
+    kind: synthesize
+    model: strong
+    in:  { notes: markdown }
+    out: { summary: markdown }
+
+  - id: review
+    label: a human reads it
+    kind: gate
+    in:  { summary: markdown }
+    out: { summary: markdown }
+
+  - id: publish
+    label: publish the summary
+    kind: worker
+    model: null
+    in:  { summary: markdown }
+    out: { path: string }
+    writes: ["out/live-demo.md"]
+
+edges:
+  - { from: plan,       to: fetch_docs,  carries: [docs_url] }
+  - { from: plan,       to: fetch_code,  carries: [code_path] }
+  - { from: fetch_docs, to: summarise,   carries: [notes] }
+  - { from: fetch_code, to: count_lines, carries: [symbols] }
+  - { from: summarise,  to: review,      carries: [summary] }
+  - { from: review,     to: publish,     carries: [summary] }
+`,
 };
 
 export const DEFAULT_FIXTURE = "linear-chain";
