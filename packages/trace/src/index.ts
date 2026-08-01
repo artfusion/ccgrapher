@@ -35,4 +35,11 @@ export {
   type InstanceCounts,
 } from "./reduce.js";
 
-export { HeatData, type Aggregate, type RunStats } from "./stats.js";
+export {
+  HeatData,
+  statsFromLines,
+  heatFromRunStats,
+  type Aggregate,
+  type RunStats,
+  type TraceHeatMetric,
+} from "./stats.js";

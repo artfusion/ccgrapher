@@ -241,11 +241,133 @@ describe("retro", () => {
   });
 });
 
+describe("retro --heat", () => {
+  const fixture = join(root, "apps/cli/test/fixtures/flowsequencer-prs.json");
+  const repo = "artfusion/flowsequencer";
+
+  it("writes a HeatData file keyed by the same pr_<n> ids as the spec", () => {
+    const file = join(out, "retro-heat.json");
+    const run = ccg("retro", repo, "--from-json", fixture, "--heat", file);
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain(`wrote ${file}`);
+
+    const heat = JSON.parse(readFileSync(file, "utf8"));
+    expect(heat.metric).toBe("pr-duration-hours");
+    expect(heat.unit).toBe("hours");
+    expect(heat.values.pr_30).toBe(28);
+    // pr_27 has no createdAt in the fixture — no entry, never a 0.
+    expect(heat.values).not.toHaveProperty("pr_27");
+  });
+
+  it("--metric pr-size-lines keys by additions + deletions", () => {
+    const file = join(out, "retro-heat-size.json");
+    const run = ccg("retro", repo, "--from-json", fixture, "--heat", file, "--metric", "pr-size-lines");
+    expect(run.status).toBe(0);
+
+    const heat = JSON.parse(readFileSync(file, "utf8"));
+    expect(heat.metric).toBe("pr-size-lines");
+    expect(heat.unit).toBe("lines");
+    expect(heat.values.pr_27).toBe(2);
+    // pr_26 has no additions/deletions in the fixture — no entry, never a 0.
+    expect(heat.values).not.toHaveProperty("pr_26");
+  });
+
+  it("2 on an unknown metric", () => {
+    const run = ccg("retro", repo, "--from-json", fixture, "--heat", join(out, "x.json"), "--metric", "bogus");
+    expect(run.status).toBe(2);
+  });
+});
+
+describe("trace stats", () => {
+  const fixtures = join(root, "packages/trace/test/fixtures");
+
+  it("prints a duration for every node that recorded one, and a marker for the one that never finished", () => {
+    const run = ccg("trace", "stats", join(fixtures, "failed-node.jsonl"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("run-failed");
+    expect(run.stdout).toContain("build");
+    expect(run.stdout).toContain("12.49s");
+    expect(run.stdout).toContain("audit");
+    expect(run.stdout).toContain("1.69s");
+    // "report" only gets a node_started before run_finished — no duration ever
+    // arrived for it, and the summary says so rather than printing a 0.
+    expect(run.stdout).toContain("report");
+    expect(run.stdout).toContain("no duration recorded");
+    expect(run.stdout).not.toMatch(/report.*0ms/);
+  });
+
+  it("--json emits RunStats, absent nodes simply missing from it", () => {
+    const run = ccg("trace", "stats", join(fixtures, "happy-path.jsonl"), "--json");
+    expect(run.status).toBe(0);
+    const stats = JSON.parse(run.stdout);
+    expect(stats.runIds).toEqual(["run-happy"]);
+    expect(stats.nodes.plan).toEqual({ count: 1, meanMs: 1200, medianMs: 1200, costUsd: 0.0021 });
+    expect(stats.nodes.write).toEqual({ count: 1, meanMs: 1290, medianMs: 1290 });
+  });
+
+  it("--heat duration-ms tints every node with a recorded duration", () => {
+    const file = join(out, "trace-heat-duration.json");
+    const run = ccg("trace", "stats", join(fixtures, "happy-path.jsonl"), "--heat", file);
+    expect(run.status).toBe(0);
+    const heat = JSON.parse(readFileSync(file, "utf8"));
+    expect(heat).toEqual({
+      v: 1,
+      metric: "duration-ms",
+      unit: "ms",
+      source: `ccg trace stats ${join(fixtures, "happy-path.jsonl")}`,
+      values: { plan: 1200, research: 2880, write: 1290 },
+    });
+  });
+
+  it("--heat --metric cost-usd is sparse: only the nodes that actually reported a cost", () => {
+    const file = join(out, "trace-heat-cost.json");
+    const run = ccg("trace", "stats", join(fixtures, "happy-path.jsonl"), "--heat", file, "--metric", "cost-usd");
+    expect(run.status).toBe(0);
+    const heat = JSON.parse(readFileSync(file, "utf8"));
+    expect(heat.metric).toBe("cost-usd");
+    expect(heat.unit).toBe("usd");
+    // research and write never reported a cost.
+    expect(heat.values).toEqual({ plan: 0.0021 });
+  });
+
+  it("aggregates a directory of run files by pooling their instances", () => {
+    const run = ccg("trace", "stats", fixtures, "--json");
+    expect(run.status).toBe(0);
+    const stats = JSON.parse(run.stdout);
+    expect(stats.runIds.sort()).toEqual(["run-failed", "run-fanout", "run-gate", "run-happy"]);
+    // "worker" only exists in fan-out.jsonl: 3 instances, one of which failed
+    // without usage — so 3 durations but only 2 costs feed the aggregate.
+    expect(stats.nodes.worker.count).toBe(3);
+    expect(stats.nodes.worker.costUsd).toBeCloseTo(0.002, 6);
+  });
+
+  it("2 without a path", () => {
+    expect(ccg("trace", "stats").status).toBe(2);
+  });
+
+  it("2 on an unknown metric", () => {
+    const run = ccg(
+      "trace",
+      "stats",
+      join(fixtures, "happy-path.jsonl"),
+      "--heat",
+      join(out, "x.json"),
+      "--metric",
+      "bogus",
+    );
+    expect(run.status).toBe(2);
+  });
+
+  it("2 on an unknown trace subcommand", () => {
+    expect(ccg("trace", "nonsense").status).toBe(2);
+  });
+});
+
 describe("help", () => {
   it("lists every command", () => {
     const run = ccg("--help");
     expect(run.status).toBe(0);
-    for (const command of ["lint", "render", "codegen", "ingest", "plan", "retro"]) {
+    for (const command of ["lint", "render", "codegen", "ingest", "plan", "retro", "serve", "trace"]) {
       expect(run.stdout).toContain(`ccg ${command}`);
     }
   });

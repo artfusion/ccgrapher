@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { buildGraph, SpecError } from "@ccgrapher/core";
 import { lint } from "@ccgrapher/lint";
 import { describe, expect, it } from "vitest";
-import { buildRetroSpec, type RetroPr } from "../src/commands/retro.js";
+import { buildRetroHeat, buildRetroSpec, type RetroPr } from "../src/commands/retro.js";
 
 const fixture = JSON.parse(
   readFileSync(fileURLToPath(new URL("./fixtures/flowsequencer-prs.json", import.meta.url)), "utf8"),
@@ -134,3 +134,53 @@ describe("edges of the builder", () => {
 function edgeOf(s: { edges: readonly { from: string; to: string; carries: string[] }[] }, from: string, to: string) {
   return s.edges.find((e) => e.from === from && e.to === to)!;
 }
+
+describe("--heat", () => {
+  it("keys pr-duration-hours by the same pr_<number> ids the graph uses, skipping PRs with no createdAt", () => {
+    const heat = buildRetroHeat(fixture, "pr-duration-hours", "ccg retro artfusion/flowsequencer");
+    expect(heat).toEqual({
+      v: 1,
+      metric: "pr-duration-hours",
+      unit: "hours",
+      source: "ccg retro artfusion/flowsequencer",
+      values: {
+        pr_30: 28,
+        pr_29: 3,
+        pr_28: 10,
+        pr_26: 6,
+        pr_25: 1,
+        // pr_27 has no createdAt in the fixture, and gets no entry at all —
+        // never a 0, which would lie and say it took no time.
+      },
+    });
+    expect(heat.values).not.toHaveProperty("pr_27");
+  });
+
+  it("keys pr-size-lines by additions + deletions, skipping PRs missing either", () => {
+    const heat = buildRetroHeat(fixture, "pr-size-lines", "ccg retro artfusion/flowsequencer");
+    expect(heat).toEqual({
+      v: 1,
+      metric: "pr-size-lines",
+      unit: "lines",
+      source: "ccg retro artfusion/flowsequencer",
+      values: {
+        pr_30: 70,
+        pr_29: 190,
+        pr_28: 225,
+        pr_27: 2,
+        pr_25: 50,
+        // pr_26 has no additions/deletions in the fixture — absent, not 0.
+      },
+    });
+    expect(heat.values).not.toHaveProperty("pr_26");
+  });
+
+  it("never reports a 0 for a PR missing what a metric needs", () => {
+    const missingCreatedAt = pr({ number: 1, mergedAt: "2026-01-02T00:00:00Z" });
+    const missingSize = pr({ number: 2, mergedAt: "2026-01-02T00:00:00Z", createdAt: "2026-01-01T00:00:00Z" });
+    const durationHeat = buildRetroHeat([missingCreatedAt], "pr-duration-hours", "x");
+    const sizeHeat = buildRetroHeat([missingSize], "pr-size-lines", "x");
+    expect(durationHeat.values).toEqual({});
+    expect(sizeHeat.values).toEqual({});
+  });
+});

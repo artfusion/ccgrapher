@@ -11,8 +11,17 @@ import {
   type WorkflowSpec,
 } from "@ccgrapher/core";
 import { formatReport, lint } from "@ccgrapher/lint";
+import type { HeatData } from "@ccgrapher/trace";
 
-/** The slice of `gh pr list --json` output the builder reads. Extra keys are ignored. */
+/**
+ * The slice of `gh pr list --json` output the builder reads. Extra keys are
+ * ignored.
+ *
+ * `createdAt`, `additions` and `deletions` are optional on purpose: a PR built
+ * from an older `--from-json` capture, or from a `gh` version that omitted a
+ * field, simply does not have it. `--heat` reads that absence honestly rather
+ * than defaulting to a value that would misreport that PR as free or instant.
+ */
 export interface RetroPr {
   readonly number: number;
   readonly title: string;
@@ -20,6 +29,9 @@ export interface RetroPr {
   readonly headRefName: string;
   readonly body: string;
   readonly files: ReadonlyArray<{ readonly path: string }>;
+  readonly createdAt?: string;
+  readonly additions?: number;
+  readonly deletions?: number;
 }
 
 export interface RetroResult {
@@ -27,9 +39,17 @@ export interface RetroResult {
   readonly warnings: readonly string[];
 }
 
-const GH_FIELDS = "number,title,mergedAt,headRefName,body,files";
+/** What `--heat` can tint by. */
+export type RetroHeatMetric = "pr-duration-hours" | "pr-size-lines";
+
+const GH_FIELDS = "number,title,mergedAt,headRefName,body,files,createdAt,additions,deletions";
 const TICKET = /\b[A-Z]{2,}-\d+\b/g;
 const LABEL_TITLE_LIMIT = 50;
+const RETRO_HEAT_METRICS: readonly RetroHeatMetric[] = ["pr-duration-hours", "pr-size-lines"];
+const RETRO_HEAT_UNIT: Readonly<Record<RetroHeatMetric, string>> = {
+  "pr-duration-hours": "hours",
+  "pr-size-lines": "lines",
+};
 
 /**
  * Rebuilds the as-merged workflow from a repo's PR history: one worker per
@@ -135,6 +155,49 @@ export function buildRetroSpec(prs: readonly RetroPr[], repo: string): RetroResu
   return { spec, warnings };
 }
 
+/**
+ * `pr-duration-hours` is wall time from `createdAt` to `mergedAt`; `pr-size-lines`
+ * is `additions + deletions`. Either metric returns `undefined` — never `0` —
+ * when the PR is missing a field it needs, or when a timestamp does not parse.
+ */
+function retroHeatValue(pr: RetroPr, metric: RetroHeatMetric): number | undefined {
+  switch (metric) {
+    case "pr-duration-hours": {
+      if (pr.createdAt === undefined) return undefined;
+      const created = Date.parse(pr.createdAt);
+      const merged = Date.parse(pr.mergedAt);
+      if (Number.isNaN(created) || Number.isNaN(merged)) return undefined;
+      return (merged - created) / (60 * 60 * 1000);
+    }
+    case "pr-size-lines":
+      return pr.additions === undefined || pr.deletions === undefined
+        ? undefined
+        : pr.additions + pr.deletions;
+  }
+}
+
+/**
+ * A `HeatData` file keyed by the same `pr_<number>` node ids `buildRetroSpec`
+ * gives the as-merged graph, so a heatmap tints the same nodes the picture
+ * already has without anyone re-deriving the id scheme.
+ *
+ * A PR missing what the metric needs gets no entry — never a `0`. A `0` here
+ * would read as "this PR took no time" or "this PR touched no lines", which is
+ * a confident lie a heatmap would happily draw in cool blue.
+ */
+export function buildRetroHeat(
+  prs: readonly RetroPr[],
+  metric: RetroHeatMetric,
+  source: string,
+): HeatData {
+  const values: Record<string, number> = {};
+  for (const pr of prs) {
+    const value = retroHeatValue(pr, metric);
+    if (value !== undefined) values[`pr_${pr.number}`] = value;
+  }
+  return { v: 1, metric, unit: RETRO_HEAT_UNIT[metric], source, values };
+}
+
 /** Ticket IDs from the title, then the branch name; the body only as a last resort. */
 function ticketIds(pr: RetroPr): string[] {
   const ids = new Set<string>(pr.title.match(TICKET) ?? []);
@@ -238,6 +301,11 @@ function validatePrs(raw: unknown, origin: string): RetroPr[] {
         }
         return { path };
       }),
+      // Absent or wrong-typed stays undefined rather than becoming "" or 0 —
+      // --heat depends on being able to tell "unknown" from "measured zero".
+      createdAt: typeof pr.createdAt === "string" ? pr.createdAt : undefined,
+      additions: typeof pr.additions === "number" ? pr.additions : undefined,
+      deletions: typeof pr.deletions === "number" ? pr.deletions : undefined,
     };
   });
 }
@@ -252,6 +320,9 @@ export function retroCommand(args: string[]): number {
       lint: { type: "boolean", default: false },
       "from-json": { type: "string" },
       color: { type: "boolean", default: process.stdout.isTTY ?? false },
+      /** Write a HeatData overlay here instead of (or alongside) the spec. */
+      heat: { type: "string" },
+      metric: { type: "string", default: "pr-duration-hours" satisfies RetroHeatMetric },
     },
     allowPositionals: true,
     // Node's parseArgs needs this for `--no-color` and friends.
@@ -269,6 +340,14 @@ export function retroCommand(args: string[]): number {
     process.stderr.write("ccg retro: --limit must be a whole number from 1 to 50\n");
     return 2;
   }
+
+  if (!(RETRO_HEAT_METRICS as readonly string[]).includes(values.metric)) {
+    process.stderr.write(
+      `ccg retro: --metric must be one of ${RETRO_HEAT_METRICS.join(", ")}\n`,
+    );
+    return 2;
+  }
+  const metric = values.metric as RetroHeatMetric;
 
   let raw: unknown;
   if (values["from-json"]) {
@@ -291,6 +370,15 @@ export function retroCommand(args: string[]): number {
   for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`);
   const evidence = spec.edges.filter((edge) => edge.carries.length > 0).length;
   process.stderr.write(`${repo}: ${spec.nodes.length} merged PRs, ${evidence} evidence edge(s)\n`);
+
+  if (values.heat) {
+    const heat = buildRetroHeat(prs, metric, `ccg retro ${repo}`);
+    writeFileSync(values.heat, `${JSON.stringify(heat, null, 2)}\n`, "utf8");
+    const measured = Object.keys(heat.values).length;
+    process.stderr.write(
+      `wrote ${values.heat} — ${metric} for ${measured} of ${prs.length} PR(s)\n`,
+    );
+  }
 
   const yaml = formatSpec(spec);
   if (values.out) {

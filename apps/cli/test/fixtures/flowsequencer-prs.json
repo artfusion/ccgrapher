@@ -3,6 +3,9 @@
     "number": 30,
     "title": "Deep-return: land back on the intended page after signup/signin (YOG-192)",
     "mergedAt": "2026-07-20T15:03:38Z",
+    "createdAt": "2026-07-19T11:03:38Z",
+    "additions": 60,
+    "deletions": 10,
     "headRefName": "feature/yog-192-deep-return",
     "body": "Practice-gate CTAs carry the run URL through the magic link. Builds on YOG-190; part of YOG-189.",
     "files": [
@@ -15,6 +18,9 @@
     "number": 29,
     "title": "Require free account to practice (main app) + Free-card auth states (YOG-190/191)",
     "mergedAt": "2026-07-20T12:47:57Z",
+    "createdAt": "2026-07-20T09:47:57Z",
+    "additions": 150,
+    "deletions": 40,
     "headRefName": "feature/yog-190-191-practice-gate",
     "body": "Part of YOG-189.",
     "files": [
@@ -27,6 +33,9 @@
     "number": 28,
     "title": "New-visitor funnel: welcome gate + pricing/signup visibility (YOG-186/187/188)",
     "mergedAt": "2026-07-20T07:28:58Z",
+    "createdAt": "2026-07-19T21:28:58Z",
+    "additions": 210,
+    "deletions": 15,
     "headRefName": "feature/yog-186-188-welcome-funnel",
     "body": "Part of YOG-189.",
     "files": [
@@ -39,6 +48,8 @@
     "number": 27,
     "title": "Fix typo in footer",
     "mergedAt": "2026-07-10T15:09:08Z",
+    "additions": 1,
+    "deletions": 1,
     "headRefName": "fix/footer-typo",
     "body": "",
     "files": [{ "path": "app/src/components/Footer.tsx", "changeType": "MODIFIED" }]
@@ -47,6 +58,7 @@
     "number": 26,
     "title": "YOG-61 + YOG-62: embed growth loop — gated attribution + referral analytics",
     "mergedAt": "2026-07-10T14:58:14Z",
+    "createdAt": "2026-07-10T08:58:14Z",
     "headRefName": "artfusion/yog-61-62-embed-growth-loop",
     "body": "",
     "files": [
@@ -58,6 +70,9 @@
     "number": 25,
     "title": "Cookie consent — GA4 Consent Mode v2 + banner (YOG-158)",
     "mergedAt": "2026-07-10T14:04:57Z",
+    "createdAt": "2026-07-10T13:04:57Z",
+    "additions": 45,
+    "deletions": 5,
     "headRefName": "artfusion/yog-158-consent-mode-banner",
     "body": "",
     "files": [
