@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
-  - "apps/*"
+  - "apps/cli"
+  - "apps/web"
 allowBuilds:
   esbuild: true
   sharp: true

@@ -63,8 +63,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/trace
 
-  apps/site: {}
-
   apps/web:
     dependencies:
       '@ccgrapher/core':
