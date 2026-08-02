@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/ingest",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Reconstructs a workflow spec from existing TypeScript orchestration code.",
   "keywords": [
