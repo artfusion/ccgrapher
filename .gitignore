@@ -31,3 +31,7 @@ CLAUDE.local.md
 
 # agent worktrees created by the harness
 .claude/worktrees/
+
+# The marketing site for the managed service. Deployed from a working copy, not
+# from this repository, which carries the toolkit and its public docs only.
+/apps/site/
