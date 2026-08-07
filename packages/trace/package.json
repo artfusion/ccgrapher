@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/trace",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "The versioned JSONL event contract for workflow runs, and the pure fold that turns it into state.",
   "keywords": [

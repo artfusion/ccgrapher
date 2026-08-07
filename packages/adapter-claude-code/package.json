@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/adapter-claude-code",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "Turns Claude Code hook invocations into a ccgrapher trace, so a real agent session becomes a readable run.",
   "keywords": [
