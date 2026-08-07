@@ -83,7 +83,13 @@ async function frames(
     clearTimeout(timeout);
     controller.abort();
   }
-  return { status: response.status, headers: response.headers, frames: seen };
+  // Exactly `enough`, never more. One `read()` can deliver several frames in a
+  // single chunk, so the loop above overshoots whenever the server's writes
+  // happen to coalesce — which they do under CI's timing and not under a
+  // developer's. A test that passes locally and fails on the runner for that
+  // reason is worse than no test, so the helper honours the count it was asked
+  // for rather than leaving every caller to remember to slice.
+  return { status: response.status, headers: response.headers, frames: seen.slice(0, enough) };
 }
 
 const line = (seq: number, extra: string) =>
