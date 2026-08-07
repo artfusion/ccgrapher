@@ -55,7 +55,7 @@ describe("exit codes", () => {
   it("2 on an unreadable spec, without a stack trace", () => {
     const run = ccg("lint", join(out, "missing.yaml"));
     expect(run.status).toBe(2);
-    expect(run.stderr).not.toContain("at ");
+    expect(run.stderr).not.toMatch(STACK_FRAME);
   });
 });
 
