@@ -112,6 +112,11 @@ Rules of thumb while writing it:
   unguarded verifier is the expensive miss: lose one upstream branch and it
   still emits a verdict, and the check passes without having seen the thing it
   was checking.
+- **`writes:` the files a step touches, `uses:` the capabilities it needs.**
+  Two concurrent steps writing one file is a hidden edge. A capability a step
+  declares can be held against what a run reports it actually had, which is the
+  difference between a step that failed and a step that quietly ran without the
+  tool it needed.
 
 ### 2. Run it
 

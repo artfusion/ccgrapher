@@ -20,6 +20,7 @@ nodes:
     in:  { brief: string }
     out: { a_result: patch }
     writes: ["src/thing.ts"]    # two concurrent steps writing this = HIDDEN_EDGE
+    uses: ["mcp:github/pr"]     # a capability it depends on; a run is audited against this
 
   - id: task_b
     label: second piece of work

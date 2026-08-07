@@ -135,6 +135,7 @@ edges:
 | `out` | map | Field name → type descriptor. What it produces. |
 | `model` | `cheap` \| `strong` \| `null` | `null` means plain code — no model, no tokens. |
 | `writes` | string[] | Files or APIs it touches. Two concurrent writers is a hidden edge. |
+| `uses` | string[] | Capabilities it depends on — `mcp:server/tool`, `skill:name`, `plugin:name`, `agent:type`. Audited against what a run reports. |
 | `freshContext` | boolean | Set on a verifier. A worker must never grade its own work. |
 | `expects` | number | Fan-in guard. How many results should arrive. |
 | `fanOut` | `{ over, cap? }` | Run once per item. Stays one node, drawn as a stack badged `×N`. |
@@ -270,8 +271,8 @@ where the fake-edge audit finds waste that was never in anyone's diagram.
 Round-tripping is lossless: `spec → codegen → ingest → spec` returns a deeply-equal spec for every
 fixture, which the test suite asserts. Descriptors TypeScript would flatten to `string` (`url`,
 `path`, `YYYY-MM-DD`) ride along in trailing comments, and everything the type system can't express
-— kind, model tier, fresh context, worktree, guards — lives in the doc comment above each function.
-Both read as ordinary documentation.
+— kind, model tier, fresh context, worktree, guards, declared capabilities — lives in the doc
+comment above each function. Both read as ordinary documentation.
 
 ## Retrospective mode
 
@@ -342,6 +343,40 @@ needs to be able to tell "the workflow broke" from "a human said no".
 `examples/traces/live-demo.jsonl` is the trace the demo above produces, committed so the canvas has
 a sample run to develop against. `ccg trace stats` summarises it; `ccg serve examples/traces`
 replays it.
+
+## Auditing capability use
+
+A spec says which capabilities a node depends on. A trace says which the runtime had, which it
+lost, and which something actually reached for. `ccg trace audit` holds the two against each other:
+
+```bash
+ccg trace audit runs/my-run.jsonl --spec spec.yaml
+ccg trace audit runs --spec spec.yaml --json     # a whole directory, pooled
+```
+
+| Finding | What it means |
+| --- | --- |
+| `CAPABILITY_GAP` | A node ran while something it declares was reported gone. An error. |
+| `UNUSED_CAPABILITY` | A node ran and never reached for something it declares. |
+| `UNDECLARED_CAPABILITY` | Something was used that no node declared. |
+
+Exit code is `0` when clean or only warnings, `1` when there is an error finding, `2` on bad usage,
+matching `lint`.
+
+These do not join the six lint rules, and the six stay six. An audit finding needs a run as well as
+a spec, so a spec on its own can never produce one — which is why they live behind their own
+command rather than inside the linter.
+
+Two rules about silence hold throughout, and they are the point rather than a detail. A capability
+nothing reported on is **unknown, never missing** — `CAPABILITY_GAP` needs positive evidence that
+something went away. And `UNUSED_CAPABILITY` stays quiet unless the run reported at least one
+invocation somewhere, because a producer that never reports them has not told you a declaration
+went unused; it has told you nothing. A clean report over a silent trace says so in as many words.
+
+Any producer can write these events. `ccg run` emits them natively, and
+[`@ccgrapher/adapter-claude-code`](packages/adapter-claude-code) turns a Claude Code session into
+the same trace through its hooks, so the tools an agent actually reached for become a run you can
+read, serve and audit like any other.
 
 ## The web canvas
 
