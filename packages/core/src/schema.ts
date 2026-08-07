@@ -51,6 +51,23 @@ export const NodeSpec = z.object({
   out: FieldMap.default({}),
   /** Files or APIs this node touches. Two concurrent nodes sharing one is a hidden edge. */
   writes: z.array(z.string()).optional(),
+  /**
+   * Capabilities this node depends on: an MCP server, a skill, a plugin, another
+   * agent. Opaque namespaced ids — `mcp:<server>/<tool>`, `skill:<name>`,
+   * `plugin:<name>`, `agent:<type>` — because what counts as a capability is the
+   * runtime's business, not this schema's.
+   *
+   * Declaring one is a claim, and a claim is auditable: a run either reports the
+   * capability was there and used, or it does not, and the difference is a
+   * finding rather than a surprise at three in the morning.
+   *
+   * No commas or whitespace inside an id. The doc comments that carry a spec
+   * through codegen and back split traits on commas and ids on spaces, so an id
+   * containing either would not survive the round trip.
+   */
+  uses: z
+    .array(z.string().regex(/^[^\s,]+$/, "no commas or whitespace inside a capability id"))
+    .optional(),
   /** A verifier that shares context with the worker it grades is self-grading. */
   freshContext: z.boolean().optional(),
   /**

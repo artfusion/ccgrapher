@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGraph,
   effectiveInboundCount,
+  formatSpec,
   parseSpec,
   rankGraph,
   renderStyle,
@@ -161,5 +162,53 @@ describe("validation", () => {
 
   it("reports the field path on a schema failure", () => {
     expect(() => parseSpec(`${base}  - { id: a, label: A, kind: nonsense }\n`)).toThrow(SpecError);
+  });
+});
+
+/**
+ * Capability declarations. The ids are opaque to this package on purpose, but
+ * two characters are not: a comma or a space inside one would be shredded by
+ * the doc-comment format that carries a spec through codegen and back.
+ */
+describe("uses", () => {
+  const base = "version: 1\nname: t\nnodes:\n";
+  const withUses = (uses: string) =>
+    parseSpec(`${base}  - { id: a, label: A, kind: worker, uses: ${uses} }\n`);
+
+  it("carries namespaced capability ids", () => {
+    const spec = withUses('["mcp:search/query", "skill:house-style", "agent:reviewer"]');
+    expect(spec.nodes[0]?.uses).toEqual([
+      "mcp:search/query",
+      "skill:house-style",
+      "agent:reviewer",
+    ]);
+  });
+
+  it("rejects an id containing a comma, naming the path", () => {
+    let caught: SpecError | undefined;
+    try {
+      withUses('["mcp:a,b"]');
+    } catch (cause) {
+      caught = cause as SpecError;
+    }
+    expect(caught).toBeInstanceOf(SpecError);
+    expect(caught?.message).toContain("nodes.0.uses.0");
+  });
+
+  it("rejects an id containing whitespace", () => {
+    expect(() => withUses('["skill:two words"]')).toThrow(SpecError);
+  });
+
+  // Absent is not empty: a node that declares nothing is a node nobody asked,
+  // and the audit needs to tell that from a node that declared none.
+  it("leaves the key absent when a node does not declare one", () => {
+    const spec = parseSpec(`${base}  - { id: a, label: A, kind: worker }\n`);
+    expect(spec.nodes[0]?.uses).toBeUndefined();
+    expect(Object.hasOwn(spec.nodes[0] ?? {}, "uses")).toBe(false);
+  });
+
+  it("survives a round trip through formatSpec", () => {
+    const spec = withUses('["mcp:search/query", "skill:house-style"]');
+    expect(parseSpec(formatSpec(spec))).toEqual(spec);
   });
 });
