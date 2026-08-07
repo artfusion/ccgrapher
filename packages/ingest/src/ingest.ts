@@ -156,6 +156,7 @@ function collectNodes(
       in: interfaces.get(inName) ?? {},
       out: interfaces.get(outName) ?? {},
       ...(traits.writes ? { writes: traits.writes } : {}),
+      ...(traits.uses ? { uses: traits.uses } : {}),
       ...(traits.freshContext ? { freshContext: traits.freshContext } : {}),
       ...(traits.expects !== undefined ? { expects: traits.expects } : {}),
       ...(traits.fanOut ? { fanOut: traits.fanOut } : {}),
