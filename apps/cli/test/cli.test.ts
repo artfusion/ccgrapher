@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
 const example = (name: string) => join(root, "examples", `${name}.yaml`);
 const trace = (name: string) => join(root, "examples/traces", `${name}.jsonl`);
+const traceDir = () => join(root, "examples/traces");
 const out = mkdtempSync(join(tmpdir(), "ccg-cli-"));
 
 interface Run {
@@ -513,6 +514,34 @@ describe("trace audit", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("no findings");
     expect(run.stdout).toContain("no capability events");
+  });
+
+  // The pairing the audit used to accept without comment. Two unrelated
+  // workflows sharing a node name was all it took to invent a disagreement.
+  it("2 when every run in the file came from a different spec", () => {
+    const run = ccg("trace", "audit", trace("live-demo"), "--spec", example("capability-audit"));
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("none came from 'capability-audit'");
+    expect(run.stderr).toContain("live-demo");
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+
+  it("audits the runs that match and says how many it skipped", () => {
+    const run = ccg("trace", "audit", traceDir(), "--spec", example("capability-audit"));
+    expect(run.stdout).toContain("Skipped 1 run(s) from another spec (live-demo)");
+    // The finding that used to leak in from the other spec.
+    expect(run.stdout).not.toContain("mcp:docs/fetch");
+  });
+
+  it("--json carries provenance and whether anything was checked", () => {
+    const run = ccg("trace", "audit", traceDir(), "--spec", example("capability-audit"), "--json");
+    const report = JSON.parse(run.stdout) as {
+      skipped: Array<{ runId: string; specName: string }>;
+      reportedCapabilities: boolean;
+    };
+    expect(report.skipped).toEqual([{ runId: "live-demo", specName: "live-demo" }]);
+    // A consumer reading only the finding count cannot tell clean from unchecked.
+    expect(report.reportedCapabilities).toBe(true);
   });
 
   it("2 without --spec: an audit needs both sides", () => {

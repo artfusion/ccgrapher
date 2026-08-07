@@ -358,10 +358,11 @@ ccg trace audit runs --spec spec.yaml --json     # a whole directory, pooled
 | --- | --- |
 | `CAPABILITY_GAP` | A node ran while something it declares was reported gone. An error. |
 | `UNUSED_CAPABILITY` | A node ran and never reached for something it declares. |
-| `UNDECLARED_CAPABILITY` | Something was used that no node declared. |
+| `UNDECLARED_CAPABILITY` | A node used something it does not declare. Or, when the run named no node, something no node in the spec declares. |
 
 Exit code is `0` when clean or only warnings, `1` when there is an error finding, `2` on bad usage,
-matching `lint`.
+matching `lint`. Bad usage includes handing it a trace and a spec that have nothing to do with each
+other, on which more below.
 
 These do not join the six lint rules, and the six stay six. An audit finding needs a run as well as
 a spec, so a spec on its own can never produce one — which is why they live behind their own
@@ -371,7 +372,17 @@ Two rules about silence hold throughout, and they are the point rather than a de
 nothing reported on is **unknown, never missing** — `CAPABILITY_GAP` needs positive evidence that
 something went away. And `UNUSED_CAPABILITY` stays quiet unless the run reported at least one
 invocation somewhere, because a producer that never reports them has not told you a declaration
-went unused; it has told you nothing. A clean report over a silent trace says so in as many words.
+went unused; it has told you nothing. A clean report over a silent trace says so in as many words,
+and `--json` carries `reportedCapabilities` so a script can tell the two apart as well.
+
+An audit is only honest about a run that came from the spec it is being held against. A run records
+its spec's name, so a trace that names a different one is left out and reported as skipped, and a
+file where *every* run names a different spec is bad usage rather than a report — two unrelated
+workflows need only share a node name to appear to disagree, and that finding would be confident,
+specific and fiction. A run that recorded no spec at all is audited anyway: it made no claim to
+contradict, and refusing it would be the same error in the other direction. When the name matches
+but the recorded hash does not, the spec has been edited since the run and the findings are
+reported with that said.
 
 Any producer can write these events. `ccg run` emits them natively, and
 [`@ccgrapher/adapter-claude-code`](packages/adapter-claude-code) turns a Claude Code session into
