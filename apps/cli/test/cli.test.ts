@@ -490,8 +490,26 @@ describe("trace audit", () => {
 
   // A clean report over a trace that never reported a capability is not a clean
   // bill of health, and the output has to say which of the two it is.
+  // Written here rather than pointed at a committed fixture. This test needs a
+  // trace that mentions no capability, and a shared fixture cannot promise that:
+  // the live-demo trace it used to use gained capability events from an
+  // unrelated change, and the test went from meaningful to wrong without either
+  // side touching the other's files.
   it("says so when the trace never mentioned a capability at all", () => {
-    const run = ccg("trace", "audit", trace("live-demo"), "--spec", example("diamond"));
+    const silent = join(out, "no-capabilities.jsonl");
+    writeFileSync(
+      silent,
+      [
+        `{"v":1,"runId":"silent","seq":0,"ts":"2026-08-01T09:00:00.000Z","type":"run_started","spec":{"name":"diamond"},"source":"ccg-run"}`,
+        `{"v":1,"runId":"silent","seq":1,"ts":"2026-08-01T09:00:01.000Z","type":"node_started","node":"split"}`,
+        `{"v":1,"runId":"silent","seq":2,"ts":"2026-08-01T09:00:02.000Z","type":"node_finished","node":"split","durationMs":10}`,
+        `{"v":1,"runId":"silent","seq":3,"ts":"2026-08-01T09:00:03.000Z","type":"run_finished","ok":true,"durationMs":20}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const run = ccg("trace", "audit", silent, "--spec", example("diamond"));
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("no findings");
     expect(run.stdout).toContain("no capability events");
