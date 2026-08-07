@@ -166,18 +166,38 @@ async function promptGate(node: NodeSpec, payload: unknown): Promise<GateDecisio
 }
 
 /**
+ * What `loadImpls` came back with: the module read, or the one reason it cannot be used.
+ */
+type Loaded =
+  | { impls: Map<string, NodeImpl>; capabilities?: readonly string[] }
+  | { missing: string[] }
+  | { invalid: string };
+
+/**
  * Load the module and pair every node with its export.
  *
  * Gates are not in the list: the engine never calls an executor for one, so
  * demanding an implementation would be asking for code that could only ever be
  * dead. Lookup is by property rather than by destructuring, because a node id
  * is any non-empty string and need not be a valid identifier.
+ *
+ * The optional `capabilities` export is the module saying what it verified was
+ * reachable before the run. It is checked here rather than coerced, because a
+ * malformed one would otherwise reach the trace as an availability claim
+ * nothing stands behind. Not exporting it at all is entirely fine and means
+ * unreported, which is a different thing from reporting none.
  */
-async function loadImpls(
-  path: string,
-  graph: Graph,
-): Promise<{ impls: Map<string, NodeImpl> } | { missing: string[] }> {
+async function loadImpls(path: string, graph: Graph): Promise<Loaded> {
   const module = (await import(pathToFileURL(resolve(path)).href)) as Record<string, unknown>;
+
+  const declared = module["capabilities"];
+  if (declared !== undefined && !isStringArray(declared)) {
+    return {
+      invalid:
+        `its 'capabilities' export is ${describe(declared)} — it must be an array of ` +
+        `capability ids, or be left out entirely`,
+    };
+  }
 
   const impls = new Map<string, NodeImpl>();
   const missing: string[] = [];
@@ -187,7 +207,11 @@ async function loadImpls(
     if (typeof impl === "function") impls.set(node.id, impl as NodeImpl);
     else missing.push(node.id);
   }
-  return missing.length > 0 ? { missing } : { impls };
+  return missing.length > 0 ? { missing } : { impls, capabilities: declared };
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 /** One line of human progress per event. The trace has the detail; this wants to be readable. */
@@ -221,6 +245,16 @@ function report(event: TraceEvent, gateHint: (node: string) => void): void {
       );
       return;
     }
+    case "capability_available":
+      stderr(`  · ${event.capability} available\n`);
+      return;
+    case "capability_lost":
+      stderr(`  · ${event.capability} lost${event.reason ? `: ${event.reason}` : ""}\n`);
+      return;
+    // Silent on purpose. An invocation happens as often as a node cares to say
+    // so, and a terminal that narrated every tool call would bury the node
+    // progress this summary exists to show. The trace has every one of them.
+    case "capability_invoked":
     case "run_started":
     case "run_finished":
       return;
@@ -304,6 +338,10 @@ export async function runSpec(options: RunOptions): Promise<number> {
     stderr(`ccg run: cannot load ${options.impl}: ${loaded.message}\n`);
     return USAGE;
   }
+  if ("invalid" in loaded) {
+    stderr(`ccg run: ${options.impl} cannot be used: ${loaded.invalid}. Nothing was run.\n`);
+    return USAGE;
+  }
   if ("missing" in loaded) {
     // Every one of them, now, rather than one per run until they are all found.
     stderr(
@@ -313,7 +351,7 @@ export async function runSpec(options: RunOptions): Promise<number> {
     );
     return USAGE;
   }
-  const { impls } = loaded;
+  const { impls, capabilities } = loaded;
 
   mkdirSync(dirname(resolve(tracePath)), { recursive: true });
 
@@ -372,6 +410,9 @@ export async function runSpec(options: RunOptions): Promise<number> {
       },
       gate: gates.length > 0 ? gate : undefined,
       timeoutMs: options.timeoutMs,
+      // Passed straight through, absence included: the module either looked or
+      // it did not, and this command has no business inventing an answer.
+      capabilities,
       specHash: createHash("sha256").update(text).digest("hex").slice(0, SPEC_HASH_CHARS),
     });
 

@@ -58,6 +58,15 @@ export interface NodeContext {
   readonly signal: AbortSignal;
   /** Emits a `node_log` line against this node. */
   readonly log: (line: string) => void;
+  /**
+   * Records that this node actually used a capability, as `capability_invoked`.
+   *
+   * Only the executor can know this. The engine sees a function call and has no
+   * idea whether an MCP tool was reached inside it, so a node that used
+   * something and did not say so is indistinguishable from one that did not use
+   * it — which is why `NodeSpec.uses` is a claim and this is the evidence.
+   */
+  readonly capability: (id: string) => void;
 }
 
 /** What an executor hands back. Both fields optional: plenty of nodes have nothing useful to say. */
@@ -106,6 +115,16 @@ export interface ExecuteOptions {
   readonly source?: TraceSource;
   /** Identifies the exact spec text, so two runs of "the same" workflow can be told apart. */
   readonly specHash?: string;
+  /**
+   * Capabilities the caller verified were reachable when the run started, one
+   * `capability_available` each.
+   *
+   * **Absent means unreported, never none.** A caller that did not look is not
+   * saying the environment was empty, and this option gives it no way to say so
+   * by accident: omit it and the run emits nothing at all, so a reader can still
+   * tell "nobody checked" from "checked and found none".
+   */
+  readonly capabilities?: readonly string[];
 }
 
 /**
