@@ -1,4 +1,4 @@
-{"v":1,"runId":"cap-gap","seq":0,"ts":"2026-08-05T09:30:00.000Z","type":"run_started","spec":{"name":"capability-audit"},"source":"ccg-run"}
+{"v":1,"runId":"cap-gap","seq":0,"ts":"2026-08-05T09:30:00.000Z","type":"run_started","spec":{"name":"capability-audit"},"source":"custom"}
 {"v":1,"runId":"cap-gap","seq":1,"ts":"2026-08-05T09:30:00.001Z","type":"capability_available","capability":"mcp:docs/search"}
 {"v":1,"runId":"cap-gap","seq":2,"ts":"2026-08-05T09:30:00.001Z","type":"capability_available","capability":"skill:summarise"}
 {"v":1,"runId":"cap-gap","seq":3,"ts":"2026-08-05T09:30:00.002Z","type":"node_started","node":"fetch_docs"}
