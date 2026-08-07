@@ -238,7 +238,14 @@ describe("capability rows", () => {
     expect(rows.every((row) => row.recorded)).toBe(true);
   });
 
-  it("has no rows at all for a spec that declares nothing", () => {
-    expect(declaredRows([], [])).toEqual([]);
+  it("prints what the spec declared and nothing the run added on its own", () => {
+    // The undeclared side is `invokedRows`' job. A capability the run reached
+    // for that the spec never mentioned gets no row here, however loudly it was
+    // used — this list is the spec's, read against the run.
+    const rows = declaredRows(["skill:rebase"], ["skill:rebase", "mcp:jira/issue"]);
+    expect(rows).toEqual([{ label: "skill:rebase", value: "used", recorded: true }]);
+
+    // So a spec that declares nothing has no rows at all, whatever the run did.
+    expect(declaredRows([], ["mcp:jira/issue"])).toEqual([]);
   });
 });

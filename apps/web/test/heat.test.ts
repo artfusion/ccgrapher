@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { HeatData } from "@ccgrapher/trace";
+import { fileURLToPath } from "node:url";
+import { HeatData, heatFromRunStats, statsFromLines } from "@ccgrapher/trace";
+import { readTrace } from "@ccgrapher/trace/node";
 import type { Node } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import { applyHeat, formatHeat, HEAT_RAMP, HEAT_UNMEASURED_FILL } from "../lib/heat";
@@ -7,32 +9,27 @@ import { buildModel } from "../lib/graph-model";
 import { FIXTURES } from "../lib/fixtures";
 
 /**
- * Verbatim output of
+ * What
  *
  *   ccg trace stats examples/traces/live-demo.jsonl --heat … --metric duration-ms
  *
- * over the trace in this repo, against the `live-demo` fixture. Kept as it came
- * out rather than tidied, because the case worth testing is the one the producer
- * actually produces: seven nodes in the spec, five with a duration. `review` sat
- * at a gate and `count_lines` never ran, so neither is in `values` — and neither
- * of them is fast.
+ * writes, produced here the way the CLI produces it: the trace in this repo,
+ * read, rolled up, and turned into a heat file. Derived rather than pasted from
+ * a terminal, because a pasted constant is only ever an input — nothing compares
+ * it to the file it claims to come from, so it can drift from the producer for
+ * months with every test still green.
+ *
+ * The case worth testing is the one the producer actually produces: seven nodes
+ * in the spec, five with a duration. `review` sat at a gate and `count_lines`
+ * never ran, so neither is in `values` — and neither of them is fast.
  */
-const DURATION = {
-  v: 1,
-  metric: "duration-ms",
-  unit: "ms",
-  source: "ccg trace stats examples/traces/live-demo.jsonl",
-  values: { plan: 21, fetch_code: 16, fetch_docs: 42, summarise: 37, publish: 13 },
-} as const;
+const TRACE = fileURLToPath(new URL("../../../examples/traces/live-demo.jsonl", import.meta.url));
+const SOURCE = "ccg trace stats examples/traces/live-demo.jsonl";
+const STATS = statsFromLines(readTrace(TRACE));
+const DURATION = heatFromRunStats(STATS, "duration-ms", SOURCE);
 
 /** Same trace, `--metric cost-usd`. Sparser still: three of seven priced. */
-const COST = {
-  v: 1,
-  metric: "cost-usd",
-  unit: "usd",
-  source: "ccg trace stats examples/traces/live-demo.jsonl",
-  values: { plan: 0.0004, fetch_docs: 0.0018, summarise: 0.0091 },
-} as const;
+const COST = heatFromRunStats(STATS, "cost-usd", SOURCE);
 
 function liveDemo(): Node[] {
   const model = buildModel(FIXTURES["live-demo"]!, false);
@@ -51,6 +48,27 @@ function byId(nodes: Node[], id: string): Node {
 }
 
 describe("the files the CLI actually writes", () => {
+  it("are what the trace in this repo produces today, numbers and all", () => {
+    // The numbers the rest of this file reasons about, checked against their
+    // source rather than asserted about themselves. Edit the trace and this
+    // fails here, loudly, instead of leaving the band comments below quietly
+    // describing a run that no longer exists.
+    expect(DURATION).toEqual({
+      v: 1,
+      metric: "duration-ms",
+      unit: "ms",
+      source: SOURCE,
+      values: { plan: 23, fetch_code: 17, fetch_docs: 42, summarise: 37, publish: 12 },
+    });
+    expect(COST).toEqual({
+      v: 1,
+      metric: "cost-usd",
+      unit: "usd",
+      source: SOURCE,
+      values: { plan: 0.0004, fetch_docs: 0.0018, summarise: 0.0091 },
+    });
+  });
+
   it("both parse as the published contract", () => {
     expect(HeatData.parse(DURATION).values["fetch_docs"]).toBe(42);
     expect(HeatData.parse(COST).unit).toBe("usd");
@@ -60,7 +78,7 @@ describe("the files the CLI actually writes", () => {
 describe("normalisation", () => {
   it("anchors the scale at zero, not at the smallest value present", () => {
     const { legend } = applyHeat(liveDemo(), HeatData.parse(DURATION));
-    // Five bands over 0…42, so 8.4 ms each. Anchored at 13 instead, the fastest
+    // Five bands over 0…42, so 8.4 ms each. Anchored at 12 instead, the fastest
     // node measured would sit at the very bottom of the ramp and a 3× spread
     // would be drawn as a total one.
     const starts = legend!.bands.map((b) => b.from);
@@ -72,9 +90,9 @@ describe("normalisation", () => {
 
   it("puts each measured node in the band its value falls in", () => {
     const { nodes } = applyHeat(liveDemo(), HeatData.parse(DURATION));
-    expect(heatOf(byId(nodes, "publish"))!.band).toBe(1); // 13 ms
-    expect(heatOf(byId(nodes, "fetch_code"))!.band).toBe(1); // 16 ms
-    expect(heatOf(byId(nodes, "plan"))!.band).toBe(2); // 21 ms
+    expect(heatOf(byId(nodes, "publish"))!.band).toBe(1); // 12 ms
+    expect(heatOf(byId(nodes, "fetch_code"))!.band).toBe(2); // 17 ms
+    expect(heatOf(byId(nodes, "plan"))!.band).toBe(2); // 23 ms
     expect(heatOf(byId(nodes, "summarise"))!.band).toBe(4); // 37 ms
     // The maximum belongs to the top band, not to a sixth one off the end.
     expect(heatOf(byId(nodes, "fetch_docs"))!.band).toBe(HEAT_RAMP.length - 1);
