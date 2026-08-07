@@ -14,6 +14,28 @@ An edge between two steps only exists if **real data passes along it**. If step
 B does not consume anything step A produced, B was never waiting on A, and the
 wait was free to delete.
 
+## The protocol: when it runs, and what one invocation does
+
+**Not during planning.** Brainstorm and draft the plan freely first. Invoke this AFTER the
+plan exists and BEFORE any tickets are written — and run the review in a **fresh context**
+(a new session, or a fresh-context subagent), never the plan's author. An author grading
+their own declarations is SELF_GRADING, the exact finding this tool exists to catch. The
+mechanical lint is impartial either way; the honesty of the `in:`/`out:` fields is judgment,
+and judgment is what needs the fresh eyes.
+
+**One invocation is snapshot → pair → revision.** Snapshot the plan as it stands and render
+it AS IS — that is the before, taken untouched. Then revise: lint findings, repairs,
+restructuring, new ideas folded in. Render the after. **Post the pair, always** — never a
+lone render; if a change is invisible in the picture, say so beside the pair rather than
+posting one image.
+
+**It is not a one-off.** Re-invoke at every change: a new idea introduced, a piece of work
+finished, something studied that alters the shape. Each re-invocation snapshots again and
+produces a new pair, so the plan's history is a sequence of pairs. The standing aim is the
+diamond — keep pressing toward the widest honest waves. Being summoned is the current
+limitation, not the ambition: a plan optimiser that notices change on its own is the obvious
+next thing, and these invocation points are what stands in for it today.
+
 ## When this is worth doing
 
 Use it when the plan has **five or more steps**, or whenever you are about to
