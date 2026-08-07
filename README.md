@@ -384,6 +384,7 @@ Two things worth knowing when reading its output:
 | [`ingest`](packages/ingest) | ts-morph: orchestration code → spec |
 | [`trace`](packages/trace) | The event contract, the JSONL writer, and the fold every reader shares |
 | [`runner`](packages/runner) | Walks the ranks, enforces the guards, emits the trace |
+| [`adapter-claude-code`](packages/adapter-claude-code) | Claude Code hooks → a trace of a real session |
 | [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest · run · serve` |
 | [`apps/web`](apps/web) | Next.js + React Flow canvas |
 
