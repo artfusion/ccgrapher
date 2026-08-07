@@ -8,6 +8,9 @@
       "path": "./packages/trace"
     },
     {
+      "path": "./packages/adapter-claude-code"
+    },
+    {
       "path": "./packages/runner"
     },
     {

@@ -1,0 +1,53 @@
+{
+  "name": "@ccgrapher/adapter-claude-code",
+  "version": "0.3.1",
+  "type": "module",
+  "description": "Turns Claude Code hook invocations into a ccgrapher trace, so a real agent session becomes a readable run.",
+  "keywords": [
+    "agent",
+    "workflow",
+    "graph",
+    "dag",
+    "orchestration",
+    "lint",
+    "diagram",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "author": "artfusion",
+  "homepage": "https://github.com/artfusion/ccgrapher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artfusion/ccgrapher.git",
+    "directory": "packages/adapter-claude-code"
+  },
+  "bugs": {
+    "url": "https://github.com/artfusion/ccgrapher/issues"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "ccg-claude-code-hook": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@ccgrapher/trace": "workspace:*"
+  }
+}
