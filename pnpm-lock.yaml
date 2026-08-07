@@ -152,6 +152,9 @@ importers:
       '@ccgrapher/core':
         specifier: workspace:*
         version: link:../core
+      '@ccgrapher/trace':
+        specifier: workspace:*
+        version: link:../trace
 
   packages/render-excalidraw:
     dependencies:
