@@ -207,7 +207,13 @@ describe("clean control", () => {
       parseTraceLine("{ not json"),
       parseTraceLine(JSON.stringify({ v: 1, runId: "hand", seq: 0, ts: "t", type: "from_the_future" })),
     ];
-    expect(audit(lines, graph)).toEqual({ findings: [], runIds: [] });
+    expect(audit(lines, graph)).toEqual({
+      findings: [],
+      runIds: [],
+      skipped: [],
+      changedSince: [],
+      reportedCapabilities: false,
+    });
   });
 });
 
@@ -316,5 +322,105 @@ describe("UNUSED_CAPABILITY needs a producer that reports invocations", () => {
       graph,
     );
     expect(result.findings.some((f) => f.rule === "UNUSED_CAPABILITY")).toBe(true);
+  });
+});
+
+/**
+ * A run says which spec it came from. Until this was checked, nothing compared
+ * that claim to the spec being audited against, so pointing the audit at the
+ * wrong pair produced findings that were confident, specific and fiction — two
+ * unrelated workflows need only share a node name to appear to disagree.
+ */
+describe("a run is only audited against the spec it came from", () => {
+  const graph = fixture("capability-audit");
+
+  const fromSpec = (runId: string, name: string, hash?: string) =>
+    parseTraceLine(
+      JSON.stringify({
+        v: 1,
+        runId,
+        seq: 0,
+        ts: "2026-08-05T10:00:00.000Z",
+        type: "run_started",
+        spec: hash === undefined ? { name } : { name, hash },
+        source: "ccg-run",
+      }),
+    );
+
+  const body = (runId: string) => [
+    parseTraceLine(
+      JSON.stringify({
+        v: 1,
+        runId,
+        seq: 1,
+        ts: "2026-08-05T10:00:01.000Z",
+        type: "node_started",
+        node: "fetch_docs",
+      }),
+    ),
+    parseTraceLine(
+      JSON.stringify({
+        v: 1,
+        runId,
+        seq: 2,
+        ts: "2026-08-05T10:00:02.000Z",
+        type: "capability_invoked",
+        capability: "mcp:docs/search",
+        node: "fetch_docs",
+      }),
+    ),
+  ];
+
+  it("skips a run that names a different spec, and says which", () => {
+    const result = audit([fromSpec("other", "live-demo"), ...body("other")], graph);
+    expect(result.findings).toEqual([]);
+    expect(result.runIds).toEqual([]);
+    expect(result.skipped).toEqual([{ runId: "other", specName: "live-demo" }]);
+  });
+
+  it("audits the matching runs in a pool and skips the rest", () => {
+    const result = audit(
+      [
+        fromSpec("mine", "capability-audit"),
+        ...body("mine"),
+        fromSpec("theirs", "live-demo"),
+        ...body("theirs"),
+      ],
+      graph,
+    );
+    expect(result.runIds).toEqual(["mine"]);
+    expect(result.skipped.map((r) => r.runId)).toEqual(["theirs"]);
+    // The finding belongs to the run that matched, and mentions nothing from the other.
+    expect(result.findings.every((f) => f.capability !== "mcp:web/fetch")).toBe(true);
+  });
+
+  // Absence is not mismatch. A hand-written trace, or one from an adapter that
+  // never saw a session start, has made no claim to contradict.
+  it("audits a run that never said which spec it came from", () => {
+    const result = audit(body("anonymous"), graph);
+    expect(result.runIds).toEqual(["anonymous"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("reports a hash that moved, and audits anyway", () => {
+    const result = audit(
+      [fromSpec("mine", "capability-audit", "aaaaaaaaaaaaaaaa"), ...body("mine")],
+      graph,
+      { specHash: "bbbbbbbbbbbbbbbb" },
+    );
+    expect(result.changedSince).toEqual(["mine"]);
+    expect(result.runIds).toEqual(["mine"]);
+  });
+
+  it("says nothing about a hash when the caller supplied none", () => {
+    const result = audit([fromSpec("mine", "capability-audit", "aaaaaaaaaaaaaaaa"), ...body("mine")], graph);
+    expect(result.changedSince).toEqual([]);
+  });
+
+  it("reports whether anything was actually checked", () => {
+    const silent = audit([fromSpec("q", "capability-audit")], graph);
+    expect(silent.reportedCapabilities).toBe(false);
+    const spoke = audit([fromSpec("r", "capability-audit"), ...body("r")], graph);
+    expect(spoke.reportedCapabilities).toBe(true);
   });
 });

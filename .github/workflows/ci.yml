@@ -67,6 +67,39 @@ jobs:
           node apps/cli/dist/index.js render examples/diamond.yaml --no-embed-font -o plain.svg
           ! grep -q "SIL Open Font" plain.svg
 
+          # The capability audit, end to end. A run that declares, reports and
+          # uses the same capability is clean.
+          node apps/cli/dist/index.js trace audit examples/traces/live-demo.jsonl \
+            --spec examples/live-demo.yaml > audit-clean.txt
+          grep -q "no findings" audit-clean.txt
+
+          # A capability reported lost before its node ran is an error, exit 1.
+          node apps/cli/dist/index.js trace audit examples/traces/capability-gap.jsonl \
+            --spec examples/capability-audit.yaml > audit-gap.txt && rc=0 || rc=$?
+          test "$rc" -eq 1
+          grep -q "CAPABILITY_GAP" audit-gap.txt
+
+          # Silence is never absence. Strip every capability event and the same
+          # pairing must report nothing and say that nothing was checked.
+          grep -v '"type":"capability_' examples/traces/live-demo.jsonl > silent.jsonl
+          node apps/cli/dist/index.js trace audit silent.jsonl --spec examples/live-demo.yaml > audit-silent.txt
+          grep -q "no findings" audit-silent.txt
+          grep -q "no capability events" audit-silent.txt
+
+          # A trace and a spec that have nothing to do with each other is bad
+          # usage, not a report. Exit 2, and no findings invented.
+          node apps/cli/dist/index.js trace audit examples/traces/live-demo.jsonl \
+            --spec examples/capability-audit.yaml > audit-wrong.txt 2> audit-wrong-err.txt && rc=0 || rc=$?
+          test "$rc" -eq 2
+          grep -q "none came from" audit-wrong-err.txt
+
+          # A directory holding runs from several specs audits only its own.
+          node apps/cli/dist/index.js trace audit examples/traces \
+            --spec examples/capability-audit.yaml > audit-pool.txt && rc=0 || rc=$?
+          test "$rc" -eq 1
+          grep -q "Skipped 1 run" audit-pool.txt
+          ! grep -q "mcp:docs/fetch" audit-pool.txt
+
           # Every source file is licence-tagged.
           untagged=$(grep -rL "SPDX-License-Identifier" \
             --include="*.ts" --include="*.tsx" packages apps \

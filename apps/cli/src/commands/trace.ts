@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readdirSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "../args.js";
 import {
@@ -12,6 +13,9 @@ import {
 import { readTrace } from "@ccgrapher/trace/node";
 import { loadGraph } from "@ccgrapher/core/node";
 import { audit, type AuditFinding } from "@ccgrapher/lint";
+
+/** Must match what `ccg run` stamps into `run_started.spec.hash`, or nothing ever compares equal. */
+const SPEC_HASH_CHARS = 16;
 
 const HEAT_METRICS: readonly TraceHeatMetric[] = ["duration-ms", "cost-usd"];
 
@@ -186,7 +190,25 @@ export function traceAuditCommand(args: string[]): number {
 
   const graph = loadGraph(values.spec);
   const lines = readLines(path);
-  const result = audit(lines, graph);
+  // The hash the run recorded is of the spec TEXT, so the text is what gets
+  // hashed here — a re-serialised graph would differ over whitespace alone.
+  const specHash = createHash("sha256")
+    .update(readFileSync(values.spec, "utf8"))
+    .digest("hex")
+    .slice(0, SPEC_HASH_CHARS);
+  const result = audit(lines, graph, { specHash });
+
+  // Every run in the file came from somewhere else. Auditing them against this
+  // spec would report disagreements between two workflows that were never
+  // meant to agree, which is a confident answer to a question nobody asked.
+  if (result.runIds.length === 0 && result.skipped.length > 0) {
+    const names = [...new Set(result.skipped.map((r) => r.specName))].sort();
+    process.stderr.write(
+      `ccg trace audit: ${path} holds ${result.skipped.length} run(s), and none came from '${graph.spec.name}' — they name ${names.map((n) => `'${n}'`).join(", ")}.\n` +
+        `  Auditing a run against a spec it did not come from invents disagreements, so nothing was checked.\n`,
+    );
+    return 2;
+  }
 
   if (values.json) {
     const report = {
@@ -194,6 +216,11 @@ export function traceAuditCommand(args: string[]): number {
       name: graph.spec.name,
       findings: result.findings,
       runIds: result.runIds,
+      skipped: result.skipped,
+      changedSince: result.changedSince,
+      // So a consumer reading only the finding count can tell a clean audit
+      // from one where nothing was checked.
+      reportedCapabilities: result.reportedCapabilities,
     };
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
@@ -209,8 +236,21 @@ export function traceAuditCommand(args: string[]): number {
 
     // Silence from a trace that never mentioned a capability is not a clean
     // bill of health, and saying so is cheaper than someone assuming otherwise.
-    if (!mentionsCapabilities(lines)) {
+    if (!result.reportedCapabilities) {
       out.push("  This trace reported no capability events at all — nothing here was checked.");
+    }
+
+    if (result.skipped.length > 0) {
+      const names = [...new Set(result.skipped.map((r) => r.specName))].sort();
+      out.push(
+        `  Skipped ${result.skipped.length} run(s) from another spec (${names.join(", ")}).`,
+      );
+    }
+
+    if (result.changedSince.length > 0) {
+      out.push(
+        `  The spec has changed since run${result.changedSince.length === 1 ? "" : "s"} ${result.changedSince.join(", ")} — these findings may be stale.`,
+      );
     }
 
     const errors = result.findings.filter((f) => f.severity === "error").length;
