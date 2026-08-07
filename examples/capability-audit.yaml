@@ -8,6 +8,12 @@
 #
 # Expected audit output, one trace per rule, all in examples/traces/:
 #
+# capability-gap.jsonl says source: custom rather than ccg-run, because no
+# shipped producer could have written it. It carries node_started, which only
+# the runner emits, and capability_lost, which only the hooks adapter emits.
+# A fixture that named a producer incapable of producing it would be the kind
+# of quiet untruth these rules exist to find.
+#
 #   capability-unused.jsonl
 #     UNUSED_CAPABILITY      fetch_docs ran but never invoked 'skill:summarise'
 #
