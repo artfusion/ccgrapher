@@ -2,7 +2,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join, resolve, sep } from "node:path";
-import { isTraceEvent } from "@ccgrapher/trace";
+import { isTraceEvent, type TraceLine } from "@ccgrapher/trace";
 import { followTrace } from "@ccgrapher/trace/node";
 
 /**
@@ -32,11 +32,17 @@ const HEARTBEAT_MS = 15_000;
 const MAX_BODY_BYTES = 64 * 1024;
 
 /**
- * SSE event names the server itself emits. Prefixed so they can never collide
- * with a `TraceEvent["type"]`, which is the wire name every real event uses, and
- * so a client can tell "the run said this" from "the server said this".
+ * SSE event names the server itself emits — the only named frames on the stream.
  *
- * `ccg.error` rather than `error`, because `error` on an EventSource already
+ * A real event is forwarded unnamed, so it arrives at the client's `onmessage`
+ * and the client discriminates on the `type` inside the payload. Naming the
+ * frame after its type would look tidier and would quietly break the contract:
+ * `EventSource` delivers only the names a listener asked for, so a type either
+ * end had not heard of would never be delivered at all.
+ *
+ * These two keep names because they are the server talking about the stream
+ * rather than the run relaying an event, and the `ccg.` prefix says so. It is
+ * `ccg.error` rather than `error` because `error` on an EventSource already
  * means the transport failed, and a stream problem is not a transport problem.
  */
 const UNPARSED = "ccg.unparsed";
@@ -149,8 +155,53 @@ function parseLastEventId(header: string | string[] | undefined): number | undef
 }
 
 /** One SSE frame. `data` is single-line because JSON.stringify escapes newlines. */
-function frame(id: number | undefined, event: string, data: unknown): string {
-  return `${id === undefined ? "" : `id: ${id}\n`}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+function frame(id: number | undefined, event: string | undefined, data: unknown): string {
+  return (
+    `${id === undefined ? "" : `id: ${id}\n`}` +
+    `${event === undefined ? "" : `event: ${event}\n`}` +
+    `data: ${JSON.stringify(data)}\n\n`
+  );
+}
+
+/** A line with a `seq`, which is what makes it forwardable and resumable. */
+interface Forwardable {
+  readonly kind: "event";
+  readonly seq: number;
+  /** The parsed line, whether or not this server knows what its type means. */
+  readonly body: unknown;
+}
+
+/** A line that is not an event by any reading this server can apply. */
+interface Unforwardable {
+  readonly kind: "unparsed";
+  readonly raw: string;
+}
+
+/**
+ * Decide what to do with one line, structurally rather than by schema.
+ *
+ * The compiled schema is this server's opinion about which types exist, and the
+ * contract is additive-only: a writer newer than this build emits types it has
+ * never heard of, and those are still events, still ordered, still the client's
+ * to interpret. So the test is the envelope, not the type — anything that is
+ * JSON and carries a sequence number is forwarded with that number as its SSE
+ * id, and a reconnect can resume past it exactly as it resumes past a type this
+ * server does understand.
+ */
+function classify(line: TraceLine): Forwardable | Unforwardable {
+  if (isTraceEvent(line)) return { kind: "event", seq: line.seq, body: line };
+  let body: unknown;
+  try {
+    body = JSON.parse(line.raw);
+  } catch {
+    return { kind: "unparsed", raw: line.raw };
+  }
+  const seq = (body as { seq?: unknown } | null)?.seq;
+  // A seq that is not a sequence number cannot come back as a `Last-Event-ID`,
+  // so forwarding it as an id would promise a resume that could not happen.
+  return typeof seq === "number" && Number.isInteger(seq) && seq >= 0
+    ? { kind: "event", seq, body }
+    : { kind: "unparsed", raw: line.raw };
 }
 
 export async function startTraceServer(options: ServeOptions): Promise<TraceServer> {
@@ -228,19 +279,20 @@ export async function startTraceServer(options: ServeOptions): Promise<TraceServ
     try {
       for await (const line of followTrace(path, { signal: controller.signal, pollMs })) {
         if (controller.signal.aborted) break;
-        if (!isTraceEvent(line)) {
-          // A line this reader cannot parse is reported, never invented and
+        const forward = classify(line);
+        if (forward.kind === "unparsed") {
+          // A line that is not an event at all is reported, never invented and
           // never quietly dropped. While resuming it is held back instead:
           // it carries no seq, so there is no way to tell whether the client
           // already has it, and re-sending would be a duplicate it cannot detect.
-          if (skipTo === undefined) res.write(frame(undefined, UNPARSED, { raw: line.raw }));
+          if (skipTo === undefined) res.write(frame(undefined, UNPARSED, { raw: forward.raw }));
           continue;
         }
         if (skipTo !== undefined) {
-          if (line.seq <= skipTo) continue;
+          if (forward.seq <= skipTo) continue;
           skipTo = undefined;
         }
-        res.write(frame(line.seq, line.type, line));
+        res.write(frame(forward.seq, undefined, forward.body));
       }
     } catch (cause) {
       if (!res.writableEnded) res.write(frame(undefined, STREAM_ERROR, { error: messageOf(cause) }));
