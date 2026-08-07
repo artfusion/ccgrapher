@@ -10,6 +10,7 @@ import {
   MAX_OUTPUT_CHARS,
   OUTPUT_PREVIEW_CHARS,
   readTrace,
+  resumeSeq,
   TraceWriter,
   type TruncatedOutput,
 } from "../src/node.js";
@@ -203,5 +204,91 @@ describe("followTrace", () => {
 
     expect(seen).toHaveLength(2);
     expect(seen[1]?.type).toBe("node_finished");
+  });
+});
+
+describe("resumeSeq", () => {
+  it("starts at 0 for a file that does not exist", () => {
+    expect(resumeSeq(join(dir, "never-written.jsonl"))).toBe(0);
+  });
+
+  it("starts at 0 for an empty file", () => {
+    const path = tracePath();
+    appendFileSync(path, "");
+    expect(resumeSeq(path)).toBe(0);
+  });
+
+  it("continues after the highest seq already written", () => {
+    const path = tracePath();
+    const writer = new TraceWriter(path, "r");
+    writer.write({ type: "capability_available", capability: "mcp:a/b" });
+    writer.write({ type: "capability_available", capability: "skill:house-style" });
+    expect(resumeSeq(path)).toBe(2);
+  });
+
+  it("ignores a line it cannot parse rather than trusting it", () => {
+    const path = tracePath();
+    new TraceWriter(path, "r").write({ type: "capability_available", capability: "mcp:a/b" });
+    appendFileSync(path, "{ half a line\n");
+    expect(resumeSeq(path)).toBe(1);
+  });
+
+  // The point of the helper: a process that appends one event and exits still
+  // produces a file whose order can be recovered.
+  it("lets a second short-lived writer continue the sequence gaplessly", () => {
+    const path = tracePath();
+    new TraceWriter(path, "r").write({ type: "capability_available", capability: "mcp:a/b" });
+    new TraceWriter(path, "r", resumeSeq(path)).write({
+      type: "capability_invoked",
+      capability: "mcp:a/b",
+    });
+    new TraceWriter(path, "r", resumeSeq(path)).write({
+      type: "capability_lost",
+      capability: "mcp:a/b",
+      reason: "gone",
+    });
+
+    const seqs = readTrace(path).map((line) => (isTraceEvent(line) ? line.seq : -1));
+    expect(seqs).toEqual([0, 1, 2]);
+  });
+
+  it("takes the highest seq, not the last line", () => {
+    const path = tracePath();
+    const writer = new TraceWriter(path, "r");
+    writer.write({ type: "capability_available", capability: "mcp:a/b" });
+    writer.write({ type: "capability_available", capability: "mcp:c/d" });
+    // A file appended to out of order should not talk the next writer into
+    // repeating a number it has already used.
+    appendFileSync(
+      path,
+      '{"v":1,"runId":"r","seq":0,"ts":"2026-08-01T09:00:00.000Z","type":"capability_lost","capability":"mcp:a/b"}\n',
+    );
+    expect(resumeSeq(path)).toBe(2);
+  });
+});
+
+describe("TraceWriter caps a capability_lost reason", () => {
+  it("keeps the head and says how much was cut", () => {
+    const path = tracePath();
+    const reason = "x".repeat(MAX_LOG_LINE + 250);
+    const written = new TraceWriter(path, "r").write({
+      type: "capability_lost",
+      capability: "mcp:a/b",
+      reason,
+    });
+
+    const capped = written.type === "capability_lost" ? (written.reason ?? "") : "";
+    expect(capped.startsWith("x".repeat(MAX_LOG_LINE))).toBe(true);
+    expect(capped).toContain("(250 more chars)");
+  });
+
+  it("leaves a reason that fits exactly as it was", () => {
+    const path = tracePath();
+    const written = new TraceWriter(path, "r").write({
+      type: "capability_lost",
+      capability: "mcp:a/b",
+      reason: "socket closed",
+    });
+    expect(written.type === "capability_lost" ? written.reason : "").toBe("socket closed");
   });
 });

@@ -12,6 +12,9 @@ export {
   GateWaiting,
   GateResolved,
   RunFinished,
+  CapabilityAvailable,
+  CapabilityLost,
+  CapabilityInvoked,
   TraceEvent,
   type TraceEventType,
 } from "./schema.js";
@@ -32,6 +35,7 @@ export {
   type RunStatus,
   type NodeRunState,
   type NodeStatus,
+  type CapabilityRunState,
   type InstanceCounts,
 } from "./reduce.js";
 

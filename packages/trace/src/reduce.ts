@@ -48,6 +48,32 @@ export interface NodeRunState {
    * stamp. Absent unless the node is, or has been, `waiting`.
    */
   readonly gatePayload?: unknown;
+  /**
+   * Capability ids this node was reported to have used, first-seen order.
+   *
+   * Only ever populated from invocations that named a node. An adapter watching
+   * an agent session reports the tool without a node to pin it to, and guessing
+   * one would be the fold inventing an attribution nobody made.
+   */
+  readonly invoked?: readonly string[];
+}
+
+/**
+ * What a run said about one capability.
+ *
+ * `available` is deliberately tri-state. Absent means nothing ever said, which
+ * is not the same as `false` and must never be rendered as though it were: a
+ * run that never reported availability is a run where nobody looked, and
+ * treating that as absence would manufacture the exact false alarm this fold
+ * exists to avoid.
+ */
+export interface CapabilityRunState {
+  readonly available?: boolean;
+  /** When `available` was last set. Absent while nothing has claimed either way. */
+  readonly since?: string;
+  /** Why it went away, if the runtime said. Cleared when it comes back. */
+  readonly reason?: string;
+  readonly invocations: number;
 }
 
 export interface RunState {
@@ -55,6 +81,7 @@ export interface RunState {
   readonly status: RunStatus;
   readonly spec?: { readonly name: string; readonly hash?: string };
   readonly nodes: ReadonlyMap<string, NodeRunState>;
+  readonly capabilities: ReadonlyMap<string, CapabilityRunState>;
 }
 
 /**
@@ -64,10 +91,22 @@ export interface RunState {
  * is not finished and is certainly not failed.
  */
 export function emptyRunState(runId: string): RunState {
-  return { runId, status: "running", nodes: new Map() };
+  return { runId, status: "running", nodes: new Map(), capabilities: new Map() };
 }
 
 const PENDING: NodeRunState = { status: "pending", tail: [] };
+
+const NO_CAPABILITY: CapabilityRunState = { invocations: 0 };
+
+function withCapability(
+  state: RunState,
+  id: string,
+  next: (current: CapabilityRunState) => CapabilityRunState,
+): RunState {
+  const capabilities = new Map(state.capabilities);
+  capabilities.set(id, next(capabilities.get(id) ?? NO_CAPABILITY));
+  return { ...state, capabilities };
+}
 
 function withNode(
   state: RunState,
@@ -216,5 +255,54 @@ export function reduceRun(state: RunState, event: TraceLine): RunState {
       // Nodes are left exactly as they are. A node still marked `running` here
       // never reported an end, and saying otherwise would be a guess.
       return { ...state, status: event.ok ? "done" : "failed" };
+
+    case "capability_available":
+      return withCapability(state, event.capability, (current) => ({
+        ...current,
+        available: true,
+        since: event.ts,
+        // It is here again, so whatever it died of last time is history.
+        reason: undefined,
+      }));
+
+    case "capability_lost":
+      return withCapability(state, event.capability, (current) => ({
+        ...current,
+        available: false,
+        since: event.ts,
+        reason: event.reason,
+      }));
+
+    case "capability_invoked": {
+      // An invocation says something used it, not that anything checked whether
+      // it was there. `available` is left exactly as it was, absent included.
+      const counted = withCapability(state, event.capability, (current) => ({
+        ...current,
+        invocations: current.invocations + 1,
+      }));
+      if (event.node === undefined) return counted;
+      return withNode(counted, event.node, (node) =>
+        node.invoked?.includes(event.capability)
+          ? node
+          : { ...node, invoked: [...(node.invoked ?? []), event.capability] },
+      );
+    }
+
+    default: {
+      // Two jobs, and both matter.
+      //
+      // The `never` binding is the compile-time one: adding a variant to
+      // TraceEvent without adding a case here stops the build, so a new event
+      // type cannot be quietly ignored by the one fold three consumers share.
+      //
+      // The return is the runtime one. `parseTraceLine` turns anything
+      // unrecognised into `unknown`, which is handled above — but a caller that
+      // skips the parser and hands over a hand-built object used to fall off the
+      // end of this switch and get back `undefined`, poisoning the fold from
+      // that line on. Now it gets the state it came in with.
+      const unreachable: never = event;
+      void unreachable;
+      return state;
+    }
   }
 }

@@ -57,7 +57,12 @@ export type Usage = z.infer<typeof Usage>;
  * The known values are still named, so writers get autocomplete and a reader can
  * branch on them. They are a vocabulary, not a gate.
  */
-export const KNOWN_TRACE_SOURCES = ["ccg-run", "claude-code-watch", "custom"] as const;
+export const KNOWN_TRACE_SOURCES = [
+  "ccg-run",
+  "claude-code-watch",
+  "claude-code-hooks",
+  "custom",
+] as const;
 export type KnownTraceSource = (typeof KNOWN_TRACE_SOURCES)[number];
 
 export const TraceSource = z.string().min(1);
@@ -153,6 +158,54 @@ export const RunFinished = z.object({
 });
 export type RunFinished = z.infer<typeof RunFinished>;
 
+/**
+ * A capability the runtime says is there.
+ *
+ * Run-scoped rather than node-scoped, because availability is a fact about the
+ * environment and not about any one step. The id is opaque and namespaced, the
+ * same vocabulary `NodeSpec.uses` declares: `mcp:<server>/<tool>`,
+ * `skill:<name>`, `plugin:<name>`, `agent:<type>`.
+ *
+ * Silence is not absence. A run that reports no availability at all is a run
+ * where nobody looked, and a reader must not read that as "nothing was there".
+ */
+export const CapabilityAvailable = z.object({
+  ...envelope,
+  type: z.literal("capability_available"),
+  capability: z.string().min(1),
+});
+export type CapabilityAvailable = z.infer<typeof CapabilityAvailable>;
+
+/** A capability that was there and is not any more. `reason` is whatever the runtime said. */
+export const CapabilityLost = z.object({
+  ...envelope,
+  type: z.literal("capability_lost"),
+  capability: z.string().min(1),
+  reason: z.string().optional(),
+});
+export type CapabilityLost = z.infer<typeof CapabilityLost>;
+
+/**
+ * Something actually used a capability.
+ *
+ * `node` is optional on purpose, and it is the reason this event is not simply
+ * a field on `node_finished`. A runner knows which node called; an adapter
+ * watching a live agent session knows a tool was used and has no spec to
+ * attribute it to. Both are telling the truth, and a contract that demanded a
+ * node id would silently exclude the second.
+ *
+ * A denial is not an invocation. `capability_denied` can join additively when
+ * something honest can produce it; today nothing can, so it does not exist.
+ */
+export const CapabilityInvoked = z.object({
+  ...envelope,
+  type: z.literal("capability_invoked"),
+  capability: z.string().min(1),
+  node: z.string().min(1).optional(),
+  instance: z.number().int().nonnegative().optional(),
+});
+export type CapabilityInvoked = z.infer<typeof CapabilityInvoked>;
+
 export const TraceEvent = z.discriminatedUnion("type", [
   RunStarted,
   NodeStarted,
@@ -162,6 +215,9 @@ export const TraceEvent = z.discriminatedUnion("type", [
   GateWaiting,
   GateResolved,
   RunFinished,
+  CapabilityAvailable,
+  CapabilityLost,
+  CapabilityInvoked,
 ]);
 export type TraceEvent = z.infer<typeof TraceEvent>;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { heatFromRunStats, statsFromLines, type RunStats } from "../src/index.js";
+import { heatFromRunStats, parseTraceLine, statsFromLines, type RunStats } from "../src/index.js";
 import { readTrace } from "../src/node.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
@@ -105,5 +105,29 @@ describe("heatFromRunStats", () => {
     // research and write never reported a cost; a heatmap must never draw them
     // as if they cost $0.
     expect(heat.values).toEqual({ plan: 0.0021 });
+  });
+});
+
+/**
+ * Capability events carry a `node`, so a structural reader picks them up — but
+ * they carry no duration and no usage, and a run that reports which tools it
+ * touched must not thereby change what the run is said to have cost or taken.
+ */
+describe("capability events do not disturb the numbers", () => {
+  it("produces byte-identical stats with and without them", () => {
+    const plain = load("happy-path.jsonl");
+    const withCapabilities = [
+      ...plain,
+      parseTraceLine(
+        '{"v":1,"runId":"run-happy","seq":900,"ts":"2026-08-01T09:00:00.900Z","type":"capability_available","capability":"mcp:search/query"}',
+      ),
+      parseTraceLine(
+        '{"v":1,"runId":"run-happy","seq":901,"ts":"2026-08-01T09:00:00.901Z","type":"capability_invoked","capability":"mcp:search/query","node":"plan"}',
+      ),
+    ];
+
+    expect(JSON.stringify(statsFromLines(withCapabilities))).toBe(
+      JSON.stringify(statsFromLines(plain)),
+    );
   });
 });
