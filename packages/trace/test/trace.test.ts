@@ -8,8 +8,8 @@ import {
   reduceRun,
   serializeEvent,
   TAIL_CAP,
+  TraceEvent,
   type RunState,
-  type TraceEvent,
 } from "../src/index.js";
 import { readTrace } from "../src/node.js";
 
@@ -103,6 +103,33 @@ const EVENTS: TraceEvent[] = [
     ok: true,
     durationMs: 5410,
   },
+  {
+    v: 1,
+    type: "capability_available",
+    runId: "r",
+    seq: 8,
+    ts: "2026-08-01T09:00:00.008Z",
+    capability: "mcp:search/query",
+  },
+  {
+    v: 1,
+    type: "capability_lost",
+    runId: "r",
+    seq: 9,
+    ts: "2026-08-01T09:00:00.009Z",
+    capability: "mcp:search/query",
+    reason: "server closed the connection",
+  },
+  {
+    v: 1,
+    type: "capability_invoked",
+    runId: "r",
+    seq: 10,
+    ts: "2026-08-01T09:00:00.010Z",
+    capability: "mcp:search/query",
+    node: "research",
+    instance: 2,
+  },
 ];
 
 describe("round trip — event -> JSONL line -> event", () => {
@@ -111,8 +138,14 @@ describe("round trip — event -> JSONL line -> event", () => {
     expect(back).toEqual(event);
   });
 
-  it("covers every type in the union", () => {
-    expect(new Set(EVENTS.map((e) => e.type)).size).toBe(EVENTS.length);
+  // Checking these fixtures have no duplicates was never the point. The point is
+  // that a type added to the union without a fixture here goes round-trip
+  // untested, so the assertion is against the union itself.
+  it("covers every type in the union, with no duplicates", () => {
+    const fixtured = EVENTS.map((e) => e.type);
+    const declared = TraceEvent.options.map((option) => option.shape.type.value);
+    expect(new Set(fixtured).size).toBe(EVENTS.length);
+    expect([...fixtured].sort()).toEqual([...declared].sort());
   });
 
   it("is one line, with no trailing newline", () => {
@@ -383,5 +416,104 @@ describe("reduceRun is a fold, not a mutation", () => {
     expect(tail).toHaveLength(TAIL_CAP);
     expect(tail[0]).toBe(`line ${overflow - TAIL_CAP}`);
     expect(tail.at(-1)).toBe(`line ${overflow - 1}`);
+  });
+});
+
+describe("reduceRun — capabilities", () => {
+  const at = (seq: number, extra: Record<string, unknown>) =>
+    ({ v: 1, runId: "r", seq, ts: `2026-08-01T09:00:00.00${seq}Z`, ...extra }) as TraceEvent;
+
+  const foldEvents = (...events: readonly TraceEvent[]) =>
+    events.reduce(reduceRun, emptyRunState("r"));
+
+  it("records what was there, and when", () => {
+    const state = foldEvents(at(0, { type: "capability_available", capability: "mcp:a/b" }));
+    expect(state.capabilities.get("mcp:a/b")).toEqual({
+      available: true,
+      since: "2026-08-01T09:00:00.000Z",
+      reason: undefined,
+      invocations: 0,
+    });
+  });
+
+  it("keeps the last word on a capability that came back", () => {
+    const state = foldEvents(
+      at(0, { type: "capability_available", capability: "mcp:a/b" }),
+      at(1, { type: "capability_invoked", capability: "mcp:a/b" }),
+      at(2, { type: "capability_lost", capability: "mcp:a/b", reason: "socket closed" }),
+      at(3, { type: "capability_available", capability: "mcp:a/b" }),
+    );
+    const capability = state.capabilities.get("mcp:a/b");
+    expect(capability?.available).toBe(true);
+    expect(capability?.since).toBe("2026-08-01T09:00:00.003Z");
+    // It is back, so what it died of is history — but the count of what happened
+    // while it was alive is not.
+    expect(capability?.reason).toBeUndefined();
+    expect(capability?.invocations).toBe(1);
+  });
+
+  it("carries the reason a capability went away", () => {
+    const state = foldEvents(
+      at(0, { type: "capability_lost", capability: "mcp:a/b", reason: "auth expired" }),
+    );
+    expect(state.capabilities.get("mcp:a/b")).toMatchObject({
+      available: false,
+      reason: "auth expired",
+    });
+  });
+
+  // The distinction the whole audit rests on: nobody looked is not nothing there.
+  it("leaves availability absent when only an invocation is reported", () => {
+    const state = foldEvents(at(0, { type: "capability_invoked", capability: "mcp:a/b" }));
+    const capability = state.capabilities.get("mcp:a/b");
+    expect(capability?.invocations).toBe(1);
+    expect(capability?.available).toBeUndefined();
+    expect("available" in (capability ?? {})).toBe(false);
+  });
+
+  it("attributes an invocation to its node, once, in first-seen order", () => {
+    const state = foldEvents(
+      at(0, { type: "node_started", node: "research" }),
+      at(1, { type: "capability_invoked", capability: "mcp:a/b", node: "research" }),
+      at(2, { type: "capability_invoked", capability: "skill:house-style", node: "research" }),
+      at(3, { type: "capability_invoked", capability: "mcp:a/b", node: "research" }),
+    );
+    expect(state.nodes.get("research")?.invoked).toEqual(["mcp:a/b", "skill:house-style"]);
+    // Deduped on the node, counted on the capability — they answer different questions.
+    expect(state.capabilities.get("mcp:a/b")?.invocations).toBe(2);
+  });
+
+  it("touches no node when an invocation names none", () => {
+    const state = foldEvents(
+      at(0, { type: "node_started", node: "research" }),
+      at(1, { type: "capability_invoked", capability: "mcp:a/b" }),
+    );
+    expect(state.nodes.get("research")?.invoked).toBeUndefined();
+    expect(state.capabilities.get("mcp:a/b")?.invocations).toBe(1);
+  });
+});
+
+/**
+ * The fold used to fall off the end of its switch for a type it did not know,
+ * returning `undefined` and poisoning every later line. `parseTraceLine` made
+ * that unreachable in practice; a hand-built object handed straight to the fold
+ * did not go through the parser, and hosted ingest shims and test fixtures are
+ * exactly the callers that do that.
+ */
+describe("reduceRun — an event type from a newer writer", () => {
+  it("returns the state it was given, not undefined", () => {
+    const before = emptyRunState("r");
+    const fromTheFuture = {
+      v: 1,
+      type: "node_retried",
+      runId: "r",
+      seq: 0,
+      ts: "2026-08-01T09:00:00.000Z",
+      node: "flaky",
+      attempt: 2,
+    } as unknown as TraceEvent;
+
+    const after = reduceRun(before, fromTheFuture);
+    expect(after).toBe(before);
   });
 });

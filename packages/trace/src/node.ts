@@ -61,6 +61,16 @@ function cap(input: TraceEventInput): TraceEventInput {
     const output = capOutput(input.output);
     return output === input.output ? input : { ...input, output };
   }
+  // A runtime explaining why a capability went away can hand over a whole stack
+  // trace. Same treatment as a log line: keep the head, say how much was cut.
+  if (
+    input.type === "capability_lost" &&
+    input.reason !== undefined &&
+    input.reason.length > MAX_LOG_LINE
+  ) {
+    const dropped = input.reason.length - MAX_LOG_LINE;
+    return { ...input, reason: `${input.reason.slice(0, MAX_LOG_LINE)}… (${dropped} more chars)` };
+  }
   return input;
 }
 
@@ -120,6 +130,38 @@ function splitLines(text: string): string[] {
  */
 export function readTrace(path: string): TraceLine[] {
   return splitLines(readFileSync(path, "utf8")).map(parseTraceLine);
+}
+
+/**
+ * The `seq` a writer should start at to continue an existing file.
+ *
+ * `TraceWriter` owns `seq` for its file, which is what makes it monotonic — but
+ * that assumes one long-lived writer. A process that appends one event and exits
+ * gets a fresh counter every time it runs, and a file numbered 0, 0, 0 is a file
+ * whose order cannot be recovered and whose SSE ids collide.
+ *
+ * So: read what is already there, and carry on from it. Returns 0 for a file
+ * that does not exist or holds nothing usable. Unparseable trailing lines are
+ * skipped rather than trusted, and the highest `seq` wins rather than the last
+ * one seen, because a file that was appended to out of order should not talk a
+ * new writer into repeating a number.
+ *
+ * Concurrent appenders still need a lock between them. This makes continuing
+ * possible; it does not make racing safe.
+ */
+export function resumeSeq(path: string): number {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return 0;
+  }
+  let highest = -1;
+  for (const line of splitLines(text)) {
+    const parsed = parseTraceLine(line);
+    if (parsed.type !== "unknown" && parsed.seq > highest) highest = parsed.seq;
+  }
+  return highest + 1;
 }
 
 export interface FollowOptions {

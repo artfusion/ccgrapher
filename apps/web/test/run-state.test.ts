@@ -130,6 +130,9 @@ describe("the event names the client subscribes to", () => {
     // silently invisible on the canvas — hence a test rather than a comment.
     expect([...TRACE_EVENT_NAMES].sort()).toEqual(
       [
+        "capability_available",
+        "capability_invoked",
+        "capability_lost",
         "gate_resolved",
         "gate_waiting",
         "node_failed",
