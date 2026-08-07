@@ -7,6 +7,7 @@ import { Background, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { buildModel, type Model } from "../lib/graph-model";
 import { applyRunState } from "../lib/overlay";
+import { applyCapabilityState } from "../lib/capability";
 import {
   applyHeat,
   formatHeat,
@@ -77,6 +78,11 @@ export function Editor() {
   // So heat wins the canvas outright while it is showing, run state is not
   // merged at all, and the heat bar says so in words rather than letting the
   // reader notice the live tint went missing.
+  //
+  // Capability trouble goes with the run rather than beside heat, for the same
+  // reason: it is a present-tense reading of the run — what a step reached for a
+  // moment ago and could not find — so it lives in the branch where the run
+  // lives, and disappears with it when heat takes the canvas.
   const view = useMemo(() => {
     if (!model.ok) return { nodes: [], edges: [], legend: undefined };
     if (heat) {
@@ -85,7 +91,9 @@ export function Editor() {
       return { nodes, edges: model.edges, legend };
     }
     const overlaid = applyRunState(model.nodes, model.edges, connection?.run);
-    return { ...overlaid, legend: undefined };
+    // Capabilities are keyed by node too, so the edges pass straight through.
+    const nodes = applyCapabilityState(overlaid.nodes, connection?.run);
+    return { nodes, edges: overlaid.edges, legend: undefined };
   }, [model, connection?.run, heat]);
 
   const loadHeat = async (files: readonly File[]) => {

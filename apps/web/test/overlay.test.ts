@@ -5,13 +5,16 @@ import { HeatData } from "@ccgrapher/trace";
 import { describe, expect, it } from "vitest";
 import { applyRunState } from "../lib/overlay";
 import { applyHeat } from "../lib/heat";
+import { applyCapabilityState } from "../lib/capability";
 import { buildModel } from "../lib/graph-model";
 import { FIXTURES } from "../lib/fixtures";
 
+// `a` declares a capability so the capability overlay has something to be a
+// function of. Nothing about layout reads `uses`, which is the point.
 const SPEC = `version: 1
 name: two
 nodes:
-  - { id: a, label: a, kind: worker, in: { t: string }, out: { x: string } }
+  - { id: a, label: a, kind: worker, in: { t: string }, out: { x: string }, uses: ["mcp:github/pr"] }
   - { id: b, label: b, kind: worker, in: { x: string }, out: { y: string } }
 edges:
   - { from: a, to: b, carries: [x] }
@@ -45,6 +48,28 @@ const finish = (node: string, seq: number): TraceEvent => ({
   node,
   durationMs: 4,
 });
+const lost = (capability: string, seq: number): TraceEvent => ({
+  v: 1,
+  runId: "r",
+  seq,
+  ts,
+  type: "capability_lost",
+  capability,
+  reason: "the server stopped answering",
+});
+const invoked = (node: string, capability: string, seq: number): TraceEvent => ({
+  v: 1,
+  runId: "r",
+  seq,
+  ts,
+  type: "capability_invoked",
+  capability,
+  node,
+});
+
+/** A run in which `a` is working, has lost what it declared and used something else. */
+const troubled = (): RunState =>
+  fold(start("a", 0), lost("mcp:github/pr", 1), invoked("a", "skill:rebase", 2));
 
 /** Everything an overlay is forbidden to be a function of. */
 const geometry = (nodes: Node[]) =>
@@ -93,6 +118,63 @@ describe("the overlay seam", () => {
 
     expect(geometry(heatFirst.nodes)).toEqual(geometry(before.nodes));
     expect(geometry(runFirst.nodes)).toEqual(geometry(before.nodes));
+  });
+
+  it("moves nothing when a capability is in trouble", () => {
+    const before = positioned();
+    const after = applyCapabilityState(before.nodes, troubled());
+
+    // Not a vacuous assertion: this node really is alerting, and the geometry
+    // is still layout's.
+    expect((after[0]!.data as { capability?: { alert?: string } }).capability?.alert).toBe("gap");
+    expect(geometry(after)).toEqual(geometry(before.nodes));
+    expect(after.map((n) => n.id)).toEqual(before.nodes.map((n) => n.id));
+  });
+
+  it("moves nothing composed with run state in either order", () => {
+    const before = positioned();
+    const run = troubled();
+
+    const capsFirst = applyRunState(
+      applyCapabilityState(before.nodes, run),
+      before.edges,
+      run,
+    );
+    const runFirst = applyCapabilityState(
+      applyRunState(before.nodes, before.edges, run).nodes,
+      run,
+    );
+
+    expect(geometry(capsFirst.nodes)).toEqual(geometry(before.nodes));
+    expect(geometry(runFirst)).toEqual(geometry(before.nodes));
+    // Composition is not just harmless, it is complete: both readings survive.
+    const both = runFirst[0]!.data as { run?: { status: string }; capability?: { alert?: string } };
+    expect(both.run?.status).toBe("running");
+    expect(both.capability?.alert).toBe("gap");
+  });
+
+  it("moves nothing composed with heat in either order", () => {
+    // The canvas shows heat *or* the run, never both, but the seam must not
+    // depend on that: an overlay that only holds in the order the app happens
+    // to call it in is an overlay that will break the first time it is reused.
+    const before = positioned();
+    const run = troubled();
+
+    const capsFirst = applyHeat(applyCapabilityState(before.nodes, run), heat);
+    const heatFirst = applyCapabilityState(applyHeat(before.nodes, heat).nodes, run);
+
+    expect(geometry(capsFirst.nodes)).toEqual(geometry(before.nodes));
+    expect(geometry(heatFirst)).toEqual(geometry(before.nodes));
+  });
+
+  it("keeps capabilities out of the edges entirely", () => {
+    // A capability is a fact about a step and about the environment it ran in.
+    // `applyCapabilityState` is not given the edges, so it cannot invent a
+    // reading for one.
+    const before = positioned();
+    const after = applyCapabilityState(before.nodes, troubled());
+    expect(Array.isArray(after)).toBe(true);
+    expect(before.edges[0]!.animated).toBe(false);
   });
 
   it("keeps heat out of the edges entirely", () => {

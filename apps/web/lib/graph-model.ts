@@ -75,6 +75,10 @@ export function buildModel(yaml: string, repaired: boolean): ModelState {
       style: renderStyle(p.node),
       badge: p.node.fanOut ? `×${p.node.fanOut.cap ?? "n"}` : null,
       worktree: p.node.worktree === true,
+      // The spec side of a capability, kept separate from anything a run says.
+      // An empty list here means "this node declares nothing", which is not the
+      // same fact as "no run reported any use" — see lib/capability.ts.
+      uses: p.node.uses ?? [],
       rank: p.rank,
       problems: flagged.get(p.id) ?? [],
     },
