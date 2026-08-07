@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { loadGraph } from "@ccgrapher/core/node";
 import { formatReport, lint } from "@ccgrapher/lint";
 
 export function lintCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("lint", {
     args,
     options: {
       json: { type: "boolean", default: false },

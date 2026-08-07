@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { buildGraph, parseSpec, SpecError, type Graph, type NodeSpec } from "@ccgrapher/core";
 import {
   execute,
@@ -413,7 +413,7 @@ export async function runSpec(options: RunOptions): Promise<number> {
  * this safe rather than a race.
  */
 export function runCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("run", {
     args,
     options: {
       /** The module whose exports implement the nodes. */

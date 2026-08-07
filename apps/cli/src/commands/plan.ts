@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { stages } from "@ccgrapher/codegen";
@@ -14,7 +14,7 @@ import { lint } from "@ccgrapher/lint";
  * on one another. That is the output an agent can act on directly.
  */
 export function planCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("plan", {
     args,
     options: {
       /** Plan the repaired graph rather than the graph as written. */

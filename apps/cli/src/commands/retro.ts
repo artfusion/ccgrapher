@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import {
   buildGraph,
   formatSpec,
@@ -311,7 +311,7 @@ function validatePrs(raw: unknown, origin: string): RetroPr[] {
 }
 
 export function retroCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("retro", {
     args,
     options: {
       limit: { type: "string", default: "15" },

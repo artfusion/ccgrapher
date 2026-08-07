@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { statSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { DEFAULT_ORIGIN, DEFAULT_PORT, startTraceServer } from "../serve.js";
 
 /**
@@ -13,7 +13,7 @@ import { DEFAULT_ORIGIN, DEFAULT_PORT, startTraceServer } from "../serve.js";
  * 202 for a decision nobody will ever act on.
  */
 export function serveCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("serve", {
     args,
     options: {
       port: { type: "string", default: String(DEFAULT_PORT) },

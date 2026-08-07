@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync, writeFileSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { buildGraph, formatSpec } from "@ccgrapher/core";
 import { ingest } from "@ccgrapher/ingest";
 import { formatReport, lint } from "@ccgrapher/lint";
 
 export function ingestCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("ingest", {
     args,
     options: {
       out: { type: "string", short: "o" },
