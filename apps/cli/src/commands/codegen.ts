@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { writeFileSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { withEdges } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { codegen, codegenWarnings, isTarget, TARGETS } from "@ccgrapher/codegen";
 import { lint } from "@ccgrapher/lint";
 
 export function codegenCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("codegen", {
     args,
     options: {
       out: { type: "string", short: "o" },

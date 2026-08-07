@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import {
   heatFromRunStats,
   statsFromLines,
@@ -82,7 +82,7 @@ function formatNode(id: string, agg: Aggregate | undefined): string {
  * instance rather than an average of per-run averages. See `statsFromLines`.
  */
 export function traceStatsCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("trace stats", {
     args,
     options: {
       json: { type: "boolean", default: false },

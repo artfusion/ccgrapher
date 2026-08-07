@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 import { SpecError } from "@ccgrapher/core";
+import { UsageError } from "./args.js";
 import { lintCommand } from "./commands/lint.js";
 import { codegenCommand } from "./commands/codegen.js";
 import { ingestCommand } from "./commands/ingest.js";
@@ -91,6 +92,15 @@ function main(argv: string[]): number {
     return 0;
   }
 
+  // `ccg retro --help` is what someone types straight after reading a command
+  // somewhere and wanting to know more. There is no per-command help to print,
+  // so print the same usage the bare `--help` prints rather than rejecting the
+  // flag. Asking for help is never bad usage.
+  if (rest.includes("--help") || rest.includes("-h")) {
+    process.stdout.write(USAGE);
+    return 0;
+  }
+
   try {
     switch (command) {
       case "lint":
@@ -116,6 +126,10 @@ function main(argv: string[]): number {
         return 2;
     }
   } catch (cause) {
+    if (cause instanceof UsageError) {
+      process.stderr.write(`${cause.message}\nRun \`ccg --help\` for usage.\n`);
+      return 2;
+    }
     if (cause instanceof SpecError) {
       process.stderr.write(`${cause.message}\n`);
       return 2;

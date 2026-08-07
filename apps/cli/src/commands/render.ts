@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { extname } from "node:path";
 import { writeFileSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { parseArgs } from "../args.js";
 import { withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
@@ -22,7 +22,7 @@ const BY_EXTENSION: Record<string, Format> = {
 };
 
 export function renderCommand(args: string[]): number {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = parseArgs("render", {
     args,
     options: {
       out: { type: "string", short: "o" },

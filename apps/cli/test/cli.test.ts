@@ -17,6 +17,16 @@ interface Run {
   stderr: string;
 }
 
+/**
+ * A V8 stack frame: leading whitespace, then `at `.
+ *
+ * Searching stderr for the bare string "at " looks equivalent and is not: it
+ * also matches the last two letters of "format", so an assertion using it
+ * fails on the perfectly good message
+ * `option '-f, --format <value>' argument missing`.
+ */
+const STACK_FRAME = /^\s+at /m;
+
 // spawnSync rather than execFileSync: a warning on a successful run is still a
 // warning, and execFileSync only hands back stderr when the command failed.
 function ccg(...args: string[]): Run {
@@ -46,6 +56,76 @@ describe("exit codes", () => {
     const run = ccg("lint", join(out, "missing.yaml"));
     expect(run.status).toBe(2);
     expect(run.stderr).not.toContain("at ");
+  });
+});
+
+/**
+ * An unknown flag is bad usage, so it exits 2. It used to escape parseArgs as
+ * a raw TypeError, print a Node stack trace and exit 1 — the code that means
+ * "this workflow has lint errors". A mistyped flag was therefore
+ * indistinguishable from a failing check to anything reading exit codes,
+ * which is exactly what CI does.
+ *
+ * Every command parses through the same wrapper, so every command is checked
+ * here. The point of the fix is that they agree.
+ */
+describe("an unknown flag is bad usage, not a crash", () => {
+  const commands: Array<[string, string[]]> = [
+    ["lint", ["lint", example("diamond")]],
+    ["render", ["render", example("diamond")]],
+    ["codegen", ["codegen", example("diamond")]],
+    ["ingest", ["ingest", example("diamond")]],
+    ["plan", ["plan", example("diamond")]],
+    ["retro", ["retro", "owner/repo"]],
+    ["run", ["run", example("diamond")]],
+    ["serve", ["serve", out]],
+    ["trace stats", ["trace", "stats", out]],
+  ];
+
+  for (const [name, argv] of commands) {
+    it(`${name} --nope exits 2, names the flag, and prints no stack trace`, () => {
+      const run = ccg(...argv, "--nope");
+      expect(run.status).toBe(2);
+      expect(run.stderr).toContain("--nope");
+      expect(run.stderr).toContain(name);
+      expect(run.stderr).not.toMatch(STACK_FRAME);
+      expect(run.stderr).not.toContain("ERR_PARSE_ARGS");
+    });
+  }
+
+  it("a flag given no value is bad usage too", () => {
+    const run = ccg("render", example("diamond"), "--format");
+    expect(run.status).toBe(2);
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+
+  it("a value on a boolean flag is bad usage too", () => {
+    const run = ccg("lint", example("diamond"), "--json=maybe");
+    expect(run.status).toBe(2);
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+});
+
+/**
+ * Asking for help is never bad usage. There is no per-command help, so a
+ * subcommand prints the same usage the bare `--help` prints rather than
+ * rejecting the flag. This is the first thing someone tries after reading a
+ * command on the landing page.
+ */
+describe("--help after a subcommand", () => {
+  for (const name of ["lint", "render", "codegen", "ingest", "plan", "retro", "run", "serve", "trace"]) {
+    it(`ccg ${name} --help prints usage and exits 0`, () => {
+      const run = ccg(name, "--help");
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain("ccg lint <spec.yaml>");
+      expect(run.stderr).not.toMatch(STACK_FRAME);
+    });
+  }
+
+  it("ccg retro -h works the same way", () => {
+    const run = ccg("retro", "-h");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("Usage:");
   });
 });
 
@@ -237,7 +317,7 @@ describe("retro", () => {
     const run = ccg("retro", repo, "--from-json", bad);
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("not valid JSON");
-    expect(run.stderr).not.toContain("at ");
+    expect(run.stderr).not.toMatch(STACK_FRAME);
   });
 });
 
