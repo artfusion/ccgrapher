@@ -15,6 +15,14 @@ export {
   CONTEXT_COLLAPSE_THRESHOLD,
 } from "./rules.js";
 export {
+  audit,
+  auditRuleSeverity,
+  AUDIT_RULE_ORDER,
+  type AuditRuleId,
+  type AuditFinding,
+  type AuditResult,
+} from "./audit.js";
+export {
   RULE_ORDER,
   ruleSeverity,
   type RuleId,

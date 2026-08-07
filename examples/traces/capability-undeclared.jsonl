@@ -1,0 +1,13 @@
+{"v":1,"runId":"cap-undeclared","seq":0,"ts":"2026-08-05T09:20:00.000Z","type":"run_started","spec":{"name":"capability-audit"},"source":"ccg-run"}
+{"v":1,"runId":"cap-undeclared","seq":1,"ts":"2026-08-05T09:20:00.001Z","type":"capability_available","capability":"mcp:docs/search"}
+{"v":1,"runId":"cap-undeclared","seq":2,"ts":"2026-08-05T09:20:00.001Z","type":"capability_available","capability":"skill:summarise"}
+{"v":1,"runId":"cap-undeclared","seq":3,"ts":"2026-08-05T09:20:00.002Z","type":"capability_available","capability":"mcp:web/fetch"}
+{"v":1,"runId":"cap-undeclared","seq":4,"ts":"2026-08-05T09:20:00.003Z","type":"node_started","node":"fetch_docs"}
+{"v":1,"runId":"cap-undeclared","seq":5,"ts":"2026-08-05T09:20:00.150Z","type":"capability_invoked","capability":"mcp:docs/search","node":"fetch_docs"}
+{"v":1,"runId":"cap-undeclared","seq":6,"ts":"2026-08-05T09:20:00.320Z","type":"capability_invoked","capability":"mcp:web/fetch","node":"fetch_docs"}
+{"v":1,"runId":"cap-undeclared","seq":7,"ts":"2026-08-05T09:20:00.480Z","type":"capability_invoked","capability":"skill:summarise","node":"fetch_docs"}
+{"v":1,"runId":"cap-undeclared","seq":8,"ts":"2026-08-05T09:20:00.902Z","type":"node_finished","node":"fetch_docs","durationMs":899,"usage":{"model":"demo-cheap","inputTokens":140,"outputTokens":90,"costUsd":0.0007}}
+{"v":1,"runId":"cap-undeclared","seq":9,"ts":"2026-08-05T09:20:00.903Z","type":"node_started","node":"write_up"}
+{"v":1,"runId":"cap-undeclared","seq":10,"ts":"2026-08-05T09:20:01.010Z","type":"capability_invoked","capability":"skill:summarise","node":"write_up"}
+{"v":1,"runId":"cap-undeclared","seq":11,"ts":"2026-08-05T09:20:01.760Z","type":"node_finished","node":"write_up","durationMs":857,"usage":{"model":"demo-strong","inputTokens":880,"outputTokens":240,"costUsd":0.0039}}
+{"v":1,"runId":"cap-undeclared","seq":12,"ts":"2026-08-05T09:20:01.761Z","type":"run_finished","ok":true,"durationMs":1761}
