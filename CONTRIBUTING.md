@@ -58,6 +58,23 @@ Two things to know before writing one:
 - **A rule that fires on a clean fixture is a bug.** `SILENT_FAILURE` is scoped to fan-ins of more
   than one precisely so `diamond`'s single-inbound `merge` stays quiet.
 
+## Adding an audit rule
+
+Audit rules live in [`packages/lint/src/audit.ts`](packages/lint/src/audit.ts) and compare a run's
+trace against its spec. They follow the same four steps, with two differences. The id goes in
+`AUDIT_RULE_ORDER` rather than `RULE_ORDER`, so the six lint rules stay six — an audit rule needs a
+run and a spec alone can never produce one. And the fixture is a *pair*: a spec in `examples/` plus
+a trace in `examples/traces/`, with the expected findings written in the spec's header comment.
+
+One rule of its own, and it is the whole reason these are separate: **a finding needs positive
+evidence, not the absence of contrary evidence.** A capability nothing reported on is unknown, not
+missing. A run that never reports invocations has not told you a declaration went unused. If your
+rule would fire on a trace that simply said nothing, it is asserting more than it checked, and that
+is the failure this project exists to catch rather than commit.
+
+Two fixtures that will find this out for you: a trace with the capability events stripped, and one
+from a producer that reports availability but never invocations.
+
 ## Adding a render target
 
 Implement against `PositionedGraph` from `@ccgrapher/layout` (as `render-svg` and

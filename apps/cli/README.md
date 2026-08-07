@@ -14,6 +14,10 @@ ccg ingest  <orchestration.ts>        reconstruct a spec from existing code
 ccg plan    <spec.yaml>               what can run at once, wave by wave
 ccg retro   <owner/repo>              rebuild the as-merged workflow from PR history
 ccg run     <spec.yaml> --impl <mod>  execute the spec and write a trace
+ccg serve   <trace-dir>               stream a run's trace over SSE
+ccg trace stats <run.jsonl|dir>       durations and cost, summarised
+ccg trace audit <run.jsonl|dir> --spec <spec.yaml>
+                                      hold a run against what its spec declared
 ```
 
 An edge only exists if real data passes along it. Most workflows are typed as a
