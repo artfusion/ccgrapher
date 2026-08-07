@@ -20,6 +20,7 @@ import {
   usageRows,
   type DetailRow,
 } from "../lib/run-detail";
+import { declaredRows, invokedRows, type CapabilityState } from "../lib/capability";
 
 /**
  * Same visual vocabulary as the SVG renderer: agent nodes get a sketchy border,
@@ -43,7 +44,9 @@ export function SpecNode({ data, id, positionAbsoluteX, positionAbsoluteY, width
     badge: string | null;
     worktree: boolean;
     problems: string[];
+    uses?: readonly string[];
     run?: NodeRunState;
+    capability?: CapabilityState;
   };
 
   const hasProblem = d.problems.length > 0;
@@ -141,6 +144,10 @@ export function SpecNode({ data, id, positionAbsoluteX, positionAbsoluteY, width
           heading={d.label ?? id}
           kind={d.kind}
           run={run}
+          // The spec side survives even when no overlay has run over this node,
+          // so the note can still say what it declares.
+          declared={d.capability?.declared ?? d.uses ?? []}
+          invoked={d.capability?.invoked ?? run.invoked ?? []}
           box={{ x: positionAbsoluteX, y: positionAbsoluteY, w: width ?? 0, h: height ?? 0 }}
           noteRef={note}
           onClose={close}
@@ -218,6 +225,8 @@ function RunDetail({
   heading,
   kind,
   run,
+  declared,
+  invoked,
   box,
   noteRef,
   onClose,
@@ -226,6 +235,8 @@ function RunDetail({
   heading: string;
   kind: string;
   run: NodeRunState;
+  declared: readonly string[];
+  invoked: readonly string[];
   box: { x: number; y: number; w: number; h: number };
   noteRef: RefObject<HTMLDivElement | null>;
   onClose: (restoreFocus: boolean) => void;
@@ -298,6 +309,32 @@ function RunDetail({
             <p className="aside">nothing reported usage for this node — this is not a zero</p>
           )}
           <Rows rows={usageRows(run.usage)} />
+        </Section>
+
+        {/*
+         * Two lists, not one merged one. The spec's claim and the run's report
+         * are separate facts, and the interesting cases are exactly the ones a
+         * merge would hide: a capability declared and never heard from, and one
+         * used that nothing ever declared.
+         */}
+        <Section title="capabilities declared">
+          {declared.length === 0 ? (
+            <p className="aside">this node declares no capabilities</p>
+          ) : (
+            <div className="caps">
+              <Rows rows={declaredRows(declared, invoked)} />
+            </div>
+          )}
+        </Section>
+
+        <Section title="capabilities used">
+          {invoked.length === 0 ? (
+            <p className="aside">nothing reported capability use — this is not a zero</p>
+          ) : (
+            <div className="caps">
+              <Rows rows={invokedRows(declared, invoked)} />
+            </div>
+          )}
         </Section>
 
         {(failed || run.error !== undefined) && (
