@@ -182,13 +182,18 @@ describe("CAPABILITY_GAP", () => {
 });
 
 describe("clean control", () => {
+  // research-desk rather than diamond, and the assertion below is why: diamond
+  // gained a `uses:` declaration the day this test was written, in a change that
+  // touched no file this test touches. The guard is kept precisely so the next
+  // fixture to gain one fails here loudly instead of leaving a control that
+  // silently controls for nothing.
   it("a uses-free spec and a trace with no capability events reports nothing", () => {
-    const graph = fixture("diamond");
+    const graph = fixture("research-desk");
     expect(graph.spec.nodes.every((n) => n.uses === undefined)).toBe(true);
     const lines = [
-      line(0, { type: "run_started", spec: { name: "diamond" }, source: "ccg-run" }),
-      line(1, { type: "node_started", node: "split" }),
-      line(2, { type: "node_finished", node: "split", durationMs: 10 }),
+      line(0, { type: "run_started", spec: { name: "research-desk" }, source: "ccg-run" }),
+      line(1, { type: "node_started", node: "plan" }),
+      line(2, { type: "node_finished", node: "plan", durationMs: 10 }),
       line(3, { type: "run_finished", ok: true, durationMs: 20 }),
     ];
     const result = audit(lines, graph);
