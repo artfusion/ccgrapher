@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/lint",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Finds fake edges, hidden edges and missing fan-in guards in an agent-workflow graph.",
   "keywords": [
