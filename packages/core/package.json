@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Spec schema, validation and longest-path layer assignment for agent-workflow graphs.",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/runner",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "The pure execution engine: walks a workflow graph rank by rank, enforces the fan-in guards, and emits the trace contract.",
   "keywords": [
