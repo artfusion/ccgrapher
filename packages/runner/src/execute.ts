@@ -83,6 +83,15 @@ export async function execute(
     args: options.args,
   });
 
+  // Availability is a fact about the environment rather than about any one node,
+  // so it is stated once, at the top, and only by a caller that actually looked.
+  // An absent option emits nothing: silence reads as unreported, and a run that
+  // volunteered "nothing was there" on nobody's authority would be the false
+  // alarm the whole capability contract is built to avoid.
+  for (const capability of options.capabilities ?? []) {
+    emit({ type: "capability_available", capability });
+  }
+
   /**
    * One attempt at a node, or at one instance of a fanned one.
    *
@@ -111,6 +120,8 @@ export async function execute(
       worktree: node.worktree === true,
       signal: controller.signal,
       log: (line) => emit({ type: "node_log", node: node.id, line }),
+      capability: (id) =>
+        emit({ type: "capability_invoked", capability: id, node: node.id, instance }),
     };
 
     let result: NodeOutput | void;

@@ -49,6 +49,12 @@ function lines(events: readonly TraceEvent[]): string[] {
         return `gate_waiting ${event.node}`;
       case "gate_resolved":
         return `gate_resolved ${event.node} ${event.decision}`;
+      case "capability_available":
+        return `capability_available ${event.capability}`;
+      case "capability_lost":
+        return `capability_lost ${event.capability}`;
+      case "capability_invoked":
+        return `capability_invoked ${event.capability} ${event.node}${event.instance === undefined ? "" : ` ${event.instance}`}`;
     }
   });
 }
@@ -597,6 +603,115 @@ describe("fanOut", () => {
     const { events, emit } = collect();
     await execute(uncapped, executorOf(), { runId: "r1", emit, now: frozen });
     expect(lines(events)).toContain("node_started fan 0/1");
+  });
+});
+
+/**
+ * The engine is a writer of the capability contract, not a checker of it. It
+ * reports what the caller said was there and what a node said it used, and it
+ * never compares either against `NodeSpec.uses` — the divergence between claim
+ * and evidence is a finding for a reader to make, and an engine that quietly
+ * reconciled the two would destroy the very thing being audited.
+ */
+describe("capabilities", () => {
+  const graph = graphOf([worker("only", { uses: ["mcp:a/b"] })]);
+
+  it("states availability once, at the top, before any node runs", async () => {
+    const { events, emit } = collect();
+    await execute(graph, executorOf(), {
+      runId: "r1",
+      emit,
+      now: frozen,
+      capabilities: ["mcp:a/b"],
+    });
+
+    expect(lines(events)).toEqual([
+      "run_started fixture",
+      "capability_available mcp:a/b",
+      "node_started only",
+      "node_finished only",
+      "run_finished ok",
+    ]);
+    // The envelope is stamped by the same counter as everything else, or the
+    // file it lands in would be unorderable at the point it matters most.
+    expect(events[1]).toMatchObject({ v: 1, runId: "r1", seq: 1, ts: FROZEN_TS });
+    expect(events.map((event) => event.seq)).toEqual([...events.keys()]);
+  });
+
+  it("emits nothing at all when the caller did not look", async () => {
+    const { events, emit } = collect();
+    await execute(graph, executorOf(), { runId: "r1", emit, now: frozen });
+
+    // Absent stays absent. An empty availability claim would be the engine
+    // reporting "nothing was there" on nobody's authority.
+    expect(events.filter((event) => event.type === "capability_available")).toEqual([]);
+    expect(lines(events)).toEqual([
+      "run_started fixture",
+      "node_started only",
+      "node_finished only",
+      "run_finished ok",
+    ]);
+  });
+
+  it("attributes an invocation to the node that made it", async () => {
+    const { events, emit } = collect();
+    await execute(
+      graph,
+      async (context) => {
+        context.capability("mcp:a/b");
+        return { output: 1 };
+      },
+      { runId: "r1", emit, now: frozen, capabilities: ["mcp:a/b"] },
+    );
+
+    const invoked = events.find((event) => event.type === "capability_invoked");
+    expect(invoked).toMatchObject({ capability: "mcp:a/b", node: "only" });
+    // An unfanned node has no instance, and what reaches the file says so.
+    expect(JSON.parse(JSON.stringify(invoked))).not.toHaveProperty("instance");
+    expect(events.map((event) => event.seq)).toEqual([...events.keys()]);
+  });
+
+  it("carries the instance when a fanned node is the one that used it", async () => {
+    const fan = graphOf([worker("fan", { fanOut: { over: "items", cap: 3 } })]);
+    const { events, emit } = collect();
+    await execute(
+      fan,
+      async (context) => {
+        context.capability("mcp:a/b");
+        return { output: context.instance };
+      },
+      { runId: "r1", emit, now: frozen },
+    );
+
+    expect(
+      lines(events)
+        .filter((line) => line.startsWith("capability_invoked"))
+        .sort(),
+    ).toEqual([
+      "capability_invoked mcp:a/b fan 0",
+      "capability_invoked mcp:a/b fan 1",
+      "capability_invoked mcp:a/b fan 2",
+    ]);
+    // Three instances interleaving with three invocations is exactly the case
+    // `seq` exists for: every `ts` here is identical.
+    expect(events.map((event) => event.seq)).toEqual([...events.keys()]);
+  });
+
+  it("folds to what the reader of the file sees", async () => {
+    const { events, emit } = collect();
+    await execute(
+      graph,
+      async (context) => {
+        context.capability("mcp:a/b");
+        context.capability("mcp:a/b");
+        return { output: 1 };
+      },
+      { runId: "r1", emit, now: frozen, capabilities: ["mcp:a/b"] },
+    );
+
+    const state = events.reduce(reduceRun, emptyRunState("r1"));
+    expect(state.capabilities.get("mcp:a/b")).toMatchObject({ available: true, invocations: 2 });
+    expect(state.nodes.get("only")?.invoked).toEqual(["mcp:a/b"]);
   });
 });
 

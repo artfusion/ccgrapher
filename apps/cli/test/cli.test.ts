@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
 const example = (name: string) => join(root, "examples", `${name}.yaml`);
+const trace = (name: string) => join(root, "examples/traces", `${name}.jsonl`);
 const out = mkdtempSync(join(tmpdir(), "ccg-cli-"));
 
 interface Run {
@@ -80,6 +81,7 @@ describe("an unknown flag is bad usage, not a crash", () => {
     ["run", ["run", example("diamond")]],
     ["serve", ["serve", out]],
     ["trace stats", ["trace", "stats", out]],
+    ["trace audit", ["trace", "audit", trace("capability-unused"), "--spec", example("capability-audit")]],
   ];
 
   for (const [name, argv] of commands) {
@@ -440,6 +442,94 @@ describe("trace stats", () => {
 
   it("2 on an unknown trace subcommand", () => {
     expect(ccg("trace", "nonsense").status).toBe(2);
+  });
+});
+
+describe("trace audit", () => {
+  const spec = example("capability-audit");
+
+  it("0 when the run only disagrees with the spec in ways that are warnings", () => {
+    const run = ccg("trace", "audit", trace("capability-unused"), "--spec", spec);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("capability-audit");
+    expect(run.stdout).toContain("run cap-unused");
+    expect(run.stdout).toContain("UNUSED_CAPABILITY");
+    expect(run.stdout).toContain("skill:summarise");
+    expect(run.stdout).toContain("1 finding (0 errors, 1 warning)");
+  });
+
+  it("1 when a node ran without a capability it declares", () => {
+    const run = ccg("trace", "audit", trace("capability-gap"), "--spec", spec);
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("CAPABILITY_GAP");
+    expect(run.stdout).toContain("write_up");
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+
+  it("reports the capability a node used but never declared", () => {
+    const run = ccg("trace", "audit", trace("capability-undeclared"), "--spec", spec);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("UNDECLARED_CAPABILITY");
+    expect(run.stdout).toContain("mcp:web/fetch");
+  });
+
+  it("--json carries the capability as a field, not only inside the message", () => {
+    const run = ccg("trace", "audit", trace("capability-gap"), "--spec", spec, "--json");
+    expect(run.status).toBe(1);
+    const report = JSON.parse(run.stdout);
+    expect(report.spec).toBe(spec);
+    expect(report.name).toBe("capability-audit");
+    expect(report.runIds).toEqual(["cap-gap"]);
+    expect(report.findings[0]).toMatchObject({
+      rule: "CAPABILITY_GAP",
+      severity: "error",
+      capability: "skill:summarise",
+      nodes: ["write_up"],
+    });
+  });
+
+  // A clean report over a trace that never reported a capability is not a clean
+  // bill of health, and the output has to say which of the two it is.
+  // Written here rather than pointed at a committed fixture. This test needs a
+  // trace that mentions no capability, and a shared fixture cannot promise that:
+  // the live-demo trace it used to use gained capability events from an
+  // unrelated change, and the test went from meaningful to wrong without either
+  // side touching the other's files.
+  it("says so when the trace never mentioned a capability at all", () => {
+    const silent = join(out, "no-capabilities.jsonl");
+    writeFileSync(
+      silent,
+      [
+        `{"v":1,"runId":"silent","seq":0,"ts":"2026-08-01T09:00:00.000Z","type":"run_started","spec":{"name":"diamond"},"source":"ccg-run"}`,
+        `{"v":1,"runId":"silent","seq":1,"ts":"2026-08-01T09:00:01.000Z","type":"node_started","node":"split"}`,
+        `{"v":1,"runId":"silent","seq":2,"ts":"2026-08-01T09:00:02.000Z","type":"node_finished","node":"split","durationMs":10}`,
+        `{"v":1,"runId":"silent","seq":3,"ts":"2026-08-01T09:00:03.000Z","type":"run_finished","ok":true,"durationMs":20}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const run = ccg("trace", "audit", silent, "--spec", example("diamond"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("no findings");
+    expect(run.stdout).toContain("no capability events");
+  });
+
+  it("2 without --spec: an audit needs both sides", () => {
+    const run = ccg("trace", "audit", trace("capability-gap"));
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("--spec");
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+
+  it("2 on an unreadable spec, without a stack trace", () => {
+    const run = ccg("trace", "audit", trace("capability-gap"), "--spec", join(out, "missing.yaml"));
+    expect(run.status).toBe(2);
+    expect(run.stderr).not.toMatch(STACK_FRAME);
+  });
+
+  it("2 without a path", () => {
+    expect(ccg("trace", "audit", "--spec", spec).status).toBe(2);
   });
 });
 

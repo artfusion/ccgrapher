@@ -19,6 +19,14 @@
  * never padded, never holed — so reading them is how a node sees its upstream.
  */
 
+/**
+ * What this module verified was reachable before the run, one
+ * `capability_available` each. Exporting it is optional: a module that says
+ * nothing is a module where nobody looked, which is not the same as a module
+ * reporting that nothing was there.
+ */
+export const capabilities = ["mcp:docs/fetch"];
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Whatever the named upstream delivered, or undefined if it delivered nothing. */
@@ -38,6 +46,9 @@ export async function plan(context) {
 export async function fetch_docs(context) {
   const { docs_url: url } = from(context, "plan") ?? {};
   context.log(`reading ${url}`);
+  // The other half of `uses: ["mcp:docs/fetch"]` in the spec. The declaration is
+  // a claim; this is the node saying it actually reached for the thing.
+  context.capability("mcp:docs/fetch");
   await sleep(40);
   return {
     output: { notes: "- the runner walks ranks\n- the trace is the record\n" },

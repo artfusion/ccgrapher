@@ -7,6 +7,11 @@
 # gate. That is the shape worth demonstrating: a run where one thing broke and
 # the rest of the graph kept its head.
 #
+# `fetch_docs` also declares a capability it depends on. The impl module reports
+# that capability as available and calls `context.capability(...)` when it uses
+# it, so the trace carries both halves: what was claimed and what was actually
+# reached.
+#
 #   ccg run examples/live-demo.yaml --impl examples/live-demo.impl.mjs
 #   ccg run examples/live-demo.yaml --impl examples/live-demo.impl.mjs --serve
 #
@@ -28,6 +33,7 @@ nodes:
     label: read the docs
     kind: worker
     model: cheap
+    uses: ["mcp:docs/fetch"]    # a claim the trace can be held against
     in:  { docs_url: url }
     out: { notes: markdown }
 
