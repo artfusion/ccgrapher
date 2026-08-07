@@ -1,0 +1,10 @@
+{"v":1,"runId":"cap-unused","seq":0,"ts":"2026-08-05T09:10:00.000Z","type":"run_started","spec":{"name":"capability-audit"},"source":"ccg-run"}
+{"v":1,"runId":"cap-unused","seq":1,"ts":"2026-08-05T09:10:00.001Z","type":"capability_available","capability":"mcp:docs/search"}
+{"v":1,"runId":"cap-unused","seq":2,"ts":"2026-08-05T09:10:00.001Z","type":"capability_available","capability":"skill:summarise"}
+{"v":1,"runId":"cap-unused","seq":3,"ts":"2026-08-05T09:10:00.002Z","type":"node_started","node":"fetch_docs"}
+{"v":1,"runId":"cap-unused","seq":4,"ts":"2026-08-05T09:10:00.140Z","type":"capability_invoked","capability":"mcp:docs/search","node":"fetch_docs"}
+{"v":1,"runId":"cap-unused","seq":5,"ts":"2026-08-05T09:10:00.610Z","type":"node_finished","node":"fetch_docs","durationMs":608,"usage":{"model":"demo-cheap","inputTokens":120,"outputTokens":80,"costUsd":0.0006}}
+{"v":1,"runId":"cap-unused","seq":6,"ts":"2026-08-05T09:10:00.611Z","type":"node_started","node":"write_up"}
+{"v":1,"runId":"cap-unused","seq":7,"ts":"2026-08-05T09:10:00.700Z","type":"capability_invoked","capability":"skill:summarise","node":"write_up"}
+{"v":1,"runId":"cap-unused","seq":8,"ts":"2026-08-05T09:10:01.480Z","type":"node_finished","node":"write_up","durationMs":869,"usage":{"model":"demo-strong","inputTokens":900,"outputTokens":260,"costUsd":0.0041}}
+{"v":1,"runId":"cap-unused","seq":9,"ts":"2026-08-05T09:10:01.481Z","type":"run_finished","ok":true,"durationMs":1481}

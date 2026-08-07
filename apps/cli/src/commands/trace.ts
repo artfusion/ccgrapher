@@ -10,21 +10,24 @@ import {
   type TraceLine,
 } from "@ccgrapher/trace";
 import { readTrace } from "@ccgrapher/trace/node";
+import { loadGraph } from "@ccgrapher/core/node";
+import { audit, type AuditFinding } from "@ccgrapher/lint";
 
 const HEAT_METRICS: readonly TraceHeatMetric[] = ["duration-ms", "cost-usd"];
 
 /**
  * `ccg trace <subcommand>`.
  *
- * Only `stats` exists today. This stays a dispatcher rather than `stats`
- * folding straight into `ccg trace` so a later trace subcommand has somewhere
- * to land without a new top-level `ccg` command.
+ * `stats` asks what a run cost. `audit` asks whether it did what its spec said
+ * it would need. Both read the same trace, and neither is the other's flag.
  */
 export function traceCommand(args: string[]): number {
   const [subcommand, ...rest] = args;
   switch (subcommand) {
     case "stats":
       return traceStatsCommand(rest);
+    case "audit":
+      return traceAuditCommand(rest);
     default:
       process.stderr.write(
         `ccg trace: unknown subcommand '${subcommand ?? ""}' — try 'ccg trace stats <run.jsonl>'\n`,
@@ -138,4 +141,88 @@ export function traceStatsCommand(args: string[]): number {
 
   process.stdout.write(`${out.join("\n")}\n`);
   return 0;
+}
+
+/** True when nothing in the trace said anything about a capability at all. */
+function mentionsCapabilities(lines: readonly TraceLine[]): boolean {
+  return lines.some((line) => line.type !== "unknown" && line.type.startsWith("capability_"));
+}
+
+function formatAuditFindings(findings: readonly AuditFinding[]): string[] {
+  if (findings.length === 0) return ["  ✓ no findings"];
+  const width = Math.max(...findings.map((f) => f.rule.length));
+  return findings.map(
+    (f) => `  ${f.severity === "error" ? "error" : " warn"}  ${f.rule.padEnd(width)}  ${f.message}`,
+  );
+}
+
+/**
+ * `ccg trace audit <run.jsonl|dir> --spec <spec.yaml>`.
+ *
+ * Holds a run against the capabilities its spec declares. A directory is pooled
+ * the way `stats` pools one, so a whole history of runs reports each
+ * disagreement once rather than once per run.
+ */
+export function traceAuditCommand(args: string[]): number {
+  const { values, positionals } = parseArgs("trace audit", {
+    args,
+    options: {
+      spec: { type: "string" },
+      json: { type: "boolean", default: false },
+    },
+    allowPositionals: true,
+    allowNegative: true,
+  });
+
+  const path = positionals[0];
+  if (!path) {
+    process.stderr.write("ccg trace audit: no run file or directory given\n");
+    return 2;
+  }
+  if (!values.spec) {
+    process.stderr.write("ccg trace audit: --spec <spec.yaml> is required — an audit needs both sides\n");
+    return 2;
+  }
+
+  const graph = loadGraph(values.spec);
+  const lines = readLines(path);
+  const result = audit(lines, graph);
+
+  if (values.json) {
+    const report = {
+      spec: values.spec,
+      name: graph.spec.name,
+      findings: result.findings,
+      runIds: result.runIds,
+    };
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    const title = graph.spec.goal ? `${graph.spec.name} — ${graph.spec.goal}` : graph.spec.name;
+    const runLabel =
+      result.runIds.length === 0
+        ? "no run events"
+        : result.runIds.length === 1
+          ? `run ${result.runIds[0]}`
+          : `${result.runIds.length} runs (${result.runIds.join(", ")})`;
+
+    const out = [title, `${path} — ${runLabel}`, "", ...formatAuditFindings(result.findings), ""];
+
+    // Silence from a trace that never mentioned a capability is not a clean
+    // bill of health, and saying so is cheaper than someone assuming otherwise.
+    if (!mentionsCapabilities(lines)) {
+      out.push("  This trace reported no capability events at all — nothing here was checked.");
+    }
+
+    const errors = result.findings.filter((f) => f.severity === "error").length;
+    const warnings = result.findings.length - errors;
+    if (result.findings.length > 0) {
+      out.push(
+        `  ${result.findings.length} finding${result.findings.length === 1 ? "" : "s"} (${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"})`,
+      );
+    }
+
+    process.stdout.write(`${out.join("\n")}\n`);
+  }
+
+  return result.findings.some((f) => f.severity === "error") ? 1 : 0;
 }

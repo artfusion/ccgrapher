@@ -1,0 +1,44 @@
+# examples/capability-audit.yaml
+# The spec behind `ccg trace audit`. Two nodes declare `uses`, so a run's trace
+# can be held against what the spec claimed it would need.
+#
+# Expected lint output:
+#   nothing -- every edge carries real data. The graph is deliberately clean,
+#   because what these fixtures put under test is the trace, not the spec.
+#
+# Expected audit output, one trace per rule, all in examples/traces/:
+#
+#   capability-unused.jsonl
+#     UNUSED_CAPABILITY      fetch_docs ran but never invoked 'skill:summarise'
+#
+#   capability-undeclared.jsonl
+#     UNDECLARED_CAPABILITY  fetch_docs invoked 'mcp:web/fetch' but does not declare it
+#
+#   capability-gap.jsonl
+#     CAPABILITY_GAP         write_up declares 'skill:summarise', lost before it started
+#     UNUSED_CAPABILITY      write_up ran but never invoked 'skill:summarise'
+#     -- both, and honestly so: a node that ran without a capability could not
+#     have called it either.
+version: 1
+name: capability-audit
+goal: "read the docs and write the summary"
+
+nodes:
+  - id: fetch_docs
+    label: fetch the docs
+    kind: worker
+    model: cheap
+    in:  { topic: string }
+    out: { docs: markdown }
+    uses: ["mcp:docs/search", "skill:summarise"]
+
+  - id: write_up
+    label: write the summary
+    kind: synthesize
+    model: strong
+    in:  { docs: markdown }
+    out: { summary: markdown }
+    uses: ["skill:summarise"]
+
+edges:
+  - { from: fetch_docs, to: write_up, carries: [docs] }

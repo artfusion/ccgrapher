@@ -24,6 +24,7 @@ Usage:
   ccg run <spec.yaml> --impl <module>  execute the spec and write a trace
   ccg serve <trace-dir>                stream a run's trace over SSE
   ccg trace stats <run.jsonl|dir>      summarise a trace's durations and cost
+  ccg trace audit <run.jsonl|dir>      hold a run against the capabilities its spec declares
 
 Lint options:
   --json            machine-readable output
@@ -78,6 +79,10 @@ Trace stats options:
   --json            machine-readable RunStats output
   --heat <file>     write a HeatData overlay here, keyed by node id
   --metric <m>      duration-ms | cost-usd (default: duration-ms)
+
+Trace audit options:
+  --spec <file>     the spec the run claims to implement (required)
+  --json            machine-readable findings
 
 Exit codes:
   0  clean    1  lint errors found, or a run that failed    2  bad usage or unreadable spec

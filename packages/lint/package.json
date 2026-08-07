@@ -45,6 +45,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@ccgrapher/core": "workspace:*"
+    "@ccgrapher/core": "workspace:*",
+    "@ccgrapher/trace": "workspace:*"
   }
 }
