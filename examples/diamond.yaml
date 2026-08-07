@@ -17,6 +17,7 @@ nodes:
     label: worker 1
     kind: worker
     model: cheap
+    uses: ["mcp:tavily/search"]   # a declared capability: the run either used it or it did not
     in:  { angle: string }
     out: { claim: string, source: url, date: "YYYY-MM-DD" }
 
