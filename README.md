@@ -310,7 +310,14 @@ the exception: a gate is answered by a human, never executed, so it needs no imp
 
 A node is handed a `NodeContext` and returns `{ output?, usage? }`, or nothing. `context.inputs`
 holds only the results that genuinely arrived, never padded and never holed, so a node can always
-tell what reached it. `context.log(line)` writes a `node_log` event against that node.
+tell what reached it. `context.log(line)` writes a `node_log` event against that node, and
+`context.capability(id)` writes a `capability_invoked` one, which is how a node says it actually
+reached for the thing its `uses:` declared.
+
+The module may also `export const capabilities = [...]`: the ids it verified were reachable before
+the run, written out as one `capability_available` each. Leaving it out is fine and means nobody
+looked, which is not the same claim as looking and finding nothing — so a run that says nothing
+about a capability is never read as reporting its absence.
 
 The trace lands in `runs/<run-id>.jsonl`, or wherever `--trace` says. The run id and the filename
 are the same fact, which is what lets `ccg serve` stream a file and the fold key on it. A run never

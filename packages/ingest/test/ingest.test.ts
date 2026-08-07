@@ -74,6 +74,11 @@ describe("what survives the trip", () => {
     expect(spec.nodes.find((n) => n.id === "review_a")!.writes).toEqual(["notes/findings.md"]);
   });
 
+  it("keeps uses, so a declared capability is still auditable after the trip", () => {
+    const { spec } = roundTrip("diamond");
+    expect(spec.nodes.find((n) => n.id === "worker_1")!.uses).toEqual(["mcp:tavily/search"]);
+  });
+
   it("recovers an empty carries — a fake edge stays fake", () => {
     const { spec } = roundTrip("linear-chain");
     const fake = spec.edges.find((e) => e.from === "review_a" && e.to === "review_b")!;
@@ -488,6 +493,14 @@ describe("parsers", () => {
       worktree: true,
       expects: 20,
       fanOut: { over: "file", cap: 20 },
+    });
+  });
+
+  it("reads a capability list off a hand-written doc comment", () => {
+    expect(parseTraits("x — worker, uses mcp:a/b skill:c.", "x")).toEqual({
+      label: "x",
+      kind: "worker",
+      uses: ["mcp:a/b", "skill:c"],
     });
   });
 

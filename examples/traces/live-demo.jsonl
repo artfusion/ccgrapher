@@ -1,20 +1,22 @@
-{"v":1,"runId":"live-demo","seq":0,"ts":"2026-08-01T16:37:10.254Z","type":"run_started","spec":{"name":"live-demo","hash":"bb072b5a884c8506"},"source":"ccg-run"}
-{"v":1,"runId":"live-demo","seq":1,"ts":"2026-08-01T16:37:10.256Z","type":"node_started","node":"plan"}
-{"v":1,"runId":"live-demo","seq":2,"ts":"2026-08-01T16:37:10.256Z","type":"node_log","node":"plan","line":"splitting the job into docs and code"}
-{"v":1,"runId":"live-demo","seq":3,"ts":"2026-08-01T16:37:10.277Z","type":"node_finished","node":"plan","durationMs":21,"output":{"docs_url":"https://example.invalid/docs/live-demo","code_path":"src/live-demo"},"usage":{"model":"demo-cheap","inputTokens":90,"outputTokens":30,"costUsd":0.0004}}
-{"v":1,"runId":"live-demo","seq":4,"ts":"2026-08-01T16:37:10.278Z","type":"node_started","node":"fetch_docs"}
-{"v":1,"runId":"live-demo","seq":5,"ts":"2026-08-01T16:37:10.278Z","type":"node_log","node":"fetch_docs","line":"reading https://example.invalid/docs/live-demo"}
-{"v":1,"runId":"live-demo","seq":6,"ts":"2026-08-01T16:37:10.278Z","type":"node_started","node":"fetch_code"}
-{"v":1,"runId":"live-demo","seq":7,"ts":"2026-08-01T16:37:10.278Z","type":"node_log","node":"fetch_code","line":"opening src/live-demo"}
-{"v":1,"runId":"live-demo","seq":8,"ts":"2026-08-01T16:37:10.294Z","type":"node_failed","node":"fetch_code","durationMs":16,"error":"src/live-demo is not checked out — this node fails by design"}
-{"v":1,"runId":"live-demo","seq":9,"ts":"2026-08-01T16:37:10.320Z","type":"node_finished","node":"fetch_docs","durationMs":42,"output":{"notes":"- the runner walks ranks\n- the trace is the record\n"},"usage":{"model":"demo-cheap","inputTokens":400,"outputTokens":120,"costUsd":0.0018}}
-{"v":1,"runId":"live-demo","seq":10,"ts":"2026-08-01T16:37:10.321Z","type":"node_failed","node":"count_lines","error":"skipped: no result from fetch_code"}
-{"v":1,"runId":"live-demo","seq":11,"ts":"2026-08-01T16:37:10.321Z","type":"node_started","node":"summarise"}
-{"v":1,"runId":"live-demo","seq":12,"ts":"2026-08-01T16:37:10.321Z","type":"node_log","node":"summarise","line":"drafting the summary from the notes that arrived"}
-{"v":1,"runId":"live-demo","seq":13,"ts":"2026-08-01T16:37:10.358Z","type":"node_finished","node":"summarise","durationMs":37,"output":{"summary":"# live-demo\n\n- the runner walks ranks\n- the trace is the record\n"},"usage":{"model":"demo-strong","inputTokens":620,"outputTokens":210,"costUsd":0.0091}}
-{"v":1,"runId":"live-demo","seq":14,"ts":"2026-08-01T16:37:10.359Z","type":"gate_waiting","node":"review","payload":[{"summary":"# live-demo\n\n- the runner walks ranks\n- the trace is the record\n"}]}
-{"v":1,"runId":"live-demo","seq":15,"ts":"2026-08-01T16:37:10.416Z","type":"gate_resolved","node":"review","decision":"approve"}
-{"v":1,"runId":"live-demo","seq":16,"ts":"2026-08-01T16:37:10.416Z","type":"node_started","node":"publish"}
-{"v":1,"runId":"live-demo","seq":17,"ts":"2026-08-01T16:37:10.429Z","type":"node_log","node":"publish","line":"would write out/live-demo.md"}
-{"v":1,"runId":"live-demo","seq":18,"ts":"2026-08-01T16:37:10.429Z","type":"node_finished","node":"publish","durationMs":13,"output":{"path":"out/live-demo.md"}}
-{"v":1,"runId":"live-demo","seq":19,"ts":"2026-08-01T16:37:10.429Z","type":"run_finished","ok":false,"error":"2 node(s) did not complete: fetch_code (failed), count_lines (skipped)","durationMs":175}
+{"v":1,"runId":"live-demo","seq":0,"ts":"2026-08-07T13:42:33.003Z","type":"run_started","spec":{"name":"live-demo","hash":"5492458cc771fde3"},"source":"ccg-run"}
+{"v":1,"runId":"live-demo","seq":1,"ts":"2026-08-07T13:42:33.004Z","type":"capability_available","capability":"mcp:docs/fetch"}
+{"v":1,"runId":"live-demo","seq":2,"ts":"2026-08-07T13:42:33.004Z","type":"node_started","node":"plan"}
+{"v":1,"runId":"live-demo","seq":3,"ts":"2026-08-07T13:42:33.004Z","type":"node_log","node":"plan","line":"splitting the job into docs and code"}
+{"v":1,"runId":"live-demo","seq":4,"ts":"2026-08-07T13:42:33.027Z","type":"node_finished","node":"plan","durationMs":23,"output":{"docs_url":"https://example.invalid/docs/live-demo","code_path":"src/live-demo"},"usage":{"model":"demo-cheap","inputTokens":90,"outputTokens":30,"costUsd":0.0004}}
+{"v":1,"runId":"live-demo","seq":5,"ts":"2026-08-07T13:42:33.027Z","type":"node_started","node":"fetch_docs"}
+{"v":1,"runId":"live-demo","seq":6,"ts":"2026-08-07T13:42:33.027Z","type":"node_log","node":"fetch_docs","line":"reading https://example.invalid/docs/live-demo"}
+{"v":1,"runId":"live-demo","seq":7,"ts":"2026-08-07T13:42:33.027Z","type":"capability_invoked","capability":"mcp:docs/fetch","node":"fetch_docs"}
+{"v":1,"runId":"live-demo","seq":8,"ts":"2026-08-07T13:42:33.028Z","type":"node_started","node":"fetch_code"}
+{"v":1,"runId":"live-demo","seq":9,"ts":"2026-08-07T13:42:33.028Z","type":"node_log","node":"fetch_code","line":"opening src/live-demo"}
+{"v":1,"runId":"live-demo","seq":10,"ts":"2026-08-07T13:42:33.045Z","type":"node_failed","node":"fetch_code","durationMs":17,"error":"src/live-demo is not checked out — this node fails by design"}
+{"v":1,"runId":"live-demo","seq":11,"ts":"2026-08-07T13:42:33.069Z","type":"node_finished","node":"fetch_docs","durationMs":42,"output":{"notes":"- the runner walks ranks\n- the trace is the record\n"},"usage":{"model":"demo-cheap","inputTokens":400,"outputTokens":120,"costUsd":0.0018}}
+{"v":1,"runId":"live-demo","seq":12,"ts":"2026-08-07T13:42:33.069Z","type":"node_failed","node":"count_lines","error":"skipped: no result from fetch_code"}
+{"v":1,"runId":"live-demo","seq":13,"ts":"2026-08-07T13:42:33.069Z","type":"node_started","node":"summarise"}
+{"v":1,"runId":"live-demo","seq":14,"ts":"2026-08-07T13:42:33.069Z","type":"node_log","node":"summarise","line":"drafting the summary from the notes that arrived"}
+{"v":1,"runId":"live-demo","seq":15,"ts":"2026-08-07T13:42:33.106Z","type":"node_finished","node":"summarise","durationMs":37,"output":{"summary":"# live-demo\n\n- the runner walks ranks\n- the trace is the record\n"},"usage":{"model":"demo-strong","inputTokens":620,"outputTokens":210,"costUsd":0.0091}}
+{"v":1,"runId":"live-demo","seq":16,"ts":"2026-08-07T13:42:33.106Z","type":"gate_waiting","node":"review","payload":[{"summary":"# live-demo\n\n- the runner walks ranks\n- the trace is the record\n"}]}
+{"v":1,"runId":"live-demo","seq":17,"ts":"2026-08-07T13:42:33.133Z","type":"gate_resolved","node":"review","decision":"approve"}
+{"v":1,"runId":"live-demo","seq":18,"ts":"2026-08-07T13:42:33.134Z","type":"node_started","node":"publish"}
+{"v":1,"runId":"live-demo","seq":19,"ts":"2026-08-07T13:42:33.146Z","type":"node_log","node":"publish","line":"would write out/live-demo.md"}
+{"v":1,"runId":"live-demo","seq":20,"ts":"2026-08-07T13:42:33.146Z","type":"node_finished","node":"publish","durationMs":12,"output":{"path":"out/live-demo.md"}}
+{"v":1,"runId":"live-demo","seq":21,"ts":"2026-08-07T13:42:33.146Z","type":"run_finished","ok":false,"error":"2 node(s) did not complete: fetch_code (failed), count_lines (skipped)","durationMs":143}

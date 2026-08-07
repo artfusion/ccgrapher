@@ -218,6 +218,76 @@ describe("the live demo", () => {
     // The gate saw the summary it was approving, not a bare "please confirm".
     expect(JSON.stringify(state.nodes.get("review")?.gatePayload)).toContain("live-demo");
   });
+
+  it("carries both halves of the capability it declares", async () => {
+    const run = options(example("live-demo.yaml"), example("live-demo.impl.mjs"), { serve: true });
+    await runAndAnswer(run, "review", "approve");
+
+    const events = readTrace(run.trace!);
+    // The two lines the capability contract adds to this run: one availability
+    // claim, stated at the top, and one node saying it actually used the thing.
+    expect(events.filter((line) => line.type === "capability_available")).toMatchObject([
+      { capability: "mcp:docs/fetch", seq: 1 },
+    ]);
+    expect(events.filter((line) => line.type === "capability_invoked")).toMatchObject([
+      { capability: "mcp:docs/fetch", node: "fetch_docs" },
+    ]);
+
+    const state = fold(run.trace!);
+    expect(state.capabilities.get("mcp:docs/fetch")).toMatchObject({
+      available: true,
+      invocations: 1,
+    });
+    // The claim in the spec and the evidence in the trace, on the same node.
+    expect(state.nodes.get("fetch_docs")?.invoked).toEqual(["mcp:docs/fetch"]);
+  });
+});
+
+/**
+ * `capabilities` is the module's word on what it verified was reachable. The
+ * command carries it through and checks its shape, and does nothing else with
+ * it: comparing it against the `uses:` in the spec is a reader's job, and a CLI
+ * that quietly reconciled the two would erase the divergence worth finding.
+ */
+describe("an implementation that reports capabilities", () => {
+  it("writes them, and the fold reads them as available", async () => {
+    const run = options(fixture("run-clean.yaml"), fixture("run-capability.impl.mjs"));
+    expect((await withStderr(() => runSpec(run))).result).toBe(0);
+
+    const state = fold(run.trace!);
+    expect(state.capabilities.get("mcp:docs/fetch")).toMatchObject({
+      available: true,
+      invocations: 1,
+    });
+    // Available and never used. Declaring it is not evidence of using it, and
+    // the fold keeps the two apart.
+    expect(state.capabilities.get("skill:unused")).toMatchObject({
+      available: true,
+      invocations: 0,
+    });
+    expect(state.nodes.get("alpha")?.invoked).toEqual(["mcp:docs/fetch"]);
+    expect(state.nodes.get("beta")?.invoked).toBeUndefined();
+  });
+
+  it("says nothing at all when the module never looked", async () => {
+    const run = options(fixture("run-clean.yaml"), fixture("run-clean.impl.mjs"));
+    await withStderr(() => runSpec(run));
+
+    // Absent stays absent: an empty availability report would be the run
+    // claiming the environment was bare when nobody ever checked.
+    expect(fold(run.trace!).capabilities.size).toBe(0);
+    expect(readTrace(run.trace!).filter((line) => line.type.startsWith("capability_"))).toEqual([]);
+  });
+
+  it("refuses a capabilities export that is not an array of ids", async () => {
+    const run = options(fixture("run-clean.yaml"), fixture("run-bad-capability.impl.mjs"));
+    const { result, text } = await withStderr(() => runSpec(run));
+
+    expect(result).toBe(2);
+    expect(text).toContain("capabilities");
+    expect(text).toContain("Nothing was run.");
+    expect(existsSync(run.trace!)).toBe(false);
+  });
 });
 
 describe("gates", () => {
@@ -300,6 +370,28 @@ describe("through the real binary", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  it("2 on a capabilities export that is not an array, without a stack trace", () => {
+    const run = spawnSync(
+      "node",
+      [
+        cli,
+        "run",
+        fixture("run-clean.yaml"),
+        "--impl",
+        fixture("run-bad-capability.impl.mjs"),
+        "--trace",
+        tracePath(),
+      ],
+      { encoding: "utf8" },
+    );
+
+    // Bad usage rather than a crash: the module is wrong, not broken, and a
+    // stack trace would say the tool fell over when it in fact caught this.
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("capabilities");
+    expect(run.stderr).not.toMatch(/^\s+at /m);
   });
 
   it("2 on bad usage, and it says which argument", () => {

@@ -214,6 +214,7 @@ nodes:
     label: read the docs
     kind: worker
     model: cheap
+    uses: ["mcp:docs/fetch"]
     in:  { docs_url: url }
     out: { notes: markdown }
 
