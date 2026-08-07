@@ -271,3 +271,50 @@ function renumber(lines: readonly TraceLine[], runId: string): TraceLine[] {
     l.type === "unknown" ? l : (parseTraceLine(JSON.stringify({ ...l, runId })) as TraceLine),
   );
 }
+
+/**
+ * The same discipline CAPABILITY_GAP applies to availability, applied to
+ * invocation. A producer that never reports an invocation has not told us a
+ * declaration went unused; it has told us nothing, and the two must not read
+ * the same.
+ */
+describe("UNUSED_CAPABILITY needs a producer that reports invocations", () => {
+  const graph = fixture("capability-audit");
+
+  const ran = (extra: readonly TraceLine[] = []) => [
+    line(0, { type: "run_started", spec: { name: "capability-audit" }, source: "ccg-run" }),
+    line(1, { type: "node_started", node: "fetch_docs" }),
+    ...extra,
+    line(5, { type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+    line(6, { type: "run_finished", ok: true, durationMs: 20 }),
+  ];
+
+  it("stays silent when the run reported no invocation at all", () => {
+    // fetch_docs declares two capabilities and ran. Under the old rule that was
+    // two warnings; it is really a run that cannot answer the question.
+    const result = audit(ran(), graph);
+    expect(result.findings.filter((f) => f.rule === "UNUSED_CAPABILITY")).toEqual([]);
+  });
+
+  it("fires as soon as the run proves it reports invocations", () => {
+    // One invocation anywhere is the evidence. It is for a different capability
+    // than the ones left unused, which is the point: the flag is about the
+    // producer's behaviour, not about this node or this capability.
+    const result = audit(
+      ran([line(2, { type: "capability_invoked", capability: "mcp:docs/search", node: "fetch_docs" })]),
+      graph,
+    );
+    const unused = result.findings.filter((f) => f.rule === "UNUSED_CAPABILITY");
+    expect(unused.map((f) => f.capability)).toEqual(["skill:summarise"]);
+  });
+
+  it("counts a node-less invocation as evidence too", () => {
+    // A session adapter reports the tool without a spec node to pin it to. That
+    // still proves the producer speaks this part of the contract.
+    const result = audit(
+      ran([line(2, { type: "capability_invoked", capability: "mcp:elsewhere/thing" })]),
+      graph,
+    );
+    expect(result.findings.some((f) => f.rule === "UNUSED_CAPABILITY")).toBe(true);
+  });
+});
