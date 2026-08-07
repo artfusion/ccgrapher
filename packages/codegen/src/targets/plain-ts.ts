@@ -93,6 +93,7 @@ function docComment(node: NodeSpec): string {
   if (node.worktree) traits.push("isolated worktree");
   if (node.expects !== undefined) traits.push(`expects ${node.expects}`);
   if (node.writes?.length) traits.push(`writes ${node.writes.join(" ")}`);
+  if (node.uses?.length) traits.push(`uses ${node.uses.join(" ")}`);
 
   const fan = node.fanOut
     ? ` Runs once per ${node.fanOut.over}${node.fanOut.cap ? `, capped at ${node.fanOut.cap}` : ""}.`

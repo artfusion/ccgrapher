@@ -13,7 +13,15 @@ const KINDS: readonly NodeKind[] = [
 
 export type NodeTraits = Pick<
   NodeSpec,
-  "label" | "kind" | "model" | "freshContext" | "worktree" | "expects" | "writes" | "fanOut"
+  | "label"
+  | "kind"
+  | "model"
+  | "freshContext"
+  | "worktree"
+  | "expects"
+  | "writes"
+  | "uses"
+  | "fanOut"
 >;
 
 /**
@@ -60,6 +68,8 @@ export function parseTraits(doc: string, fallbackLabel: string): NodeTraits {
       if (Number.isInteger(n)) traits.expects = n;
     } else if (trait.startsWith("writes ")) {
       traits.writes = trait.slice(7).trim().split(/\s+/).filter(Boolean);
+    } else if (trait.startsWith("uses ")) {
+      traits.uses = trait.slice(5).trim().split(/\s+/).filter(Boolean);
     }
   }
 

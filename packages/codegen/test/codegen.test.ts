@@ -266,6 +266,10 @@ describe("plain-ts", () => {
     expect(code).toContain("await Promise.all([");
   });
 
+  it("writes a node's declared capabilities into its doc comment", () => {
+    expect(code).toContain("worker, model: cheap, uses mcp:tavily/search");
+  });
+
   it("renders array descriptors as arrays", () => {
     expect(codegen(fixture("linear-chain"), "plain-ts")).toContain("issues_a: string[];");
   });
