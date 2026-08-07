@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import {
-  emptyRunState,
-  parseTraceLine,
-  reduceRun,
-  TraceEvent,
-  type RunState,
-} from "@ccgrapher/trace";
+import { emptyRunState, parseTraceLine, reduceRun, type RunState } from "@ccgrapher/trace";
 import { useCallback, useEffect, useState } from "react";
 
 /**
@@ -42,23 +36,12 @@ export interface RunConnection {
 }
 
 /**
- * The SSE event names the server uses for real events.
+ * The server's own frames, which are about the stream and not about the run.
  *
- * Derived from the schema rather than typed out, because `EventSource` only
- * delivers events whose name you asked for by name. A type added to the contract
- * in a later version therefore has to reach this list, and deriving it means it
- * does so by rebuilding rather than by somebody remembering.
- *
- * A type emitted by a *newer writer than this reader* is still not delivered.
- * That costs nothing today — `parseTraceLine` would return `unknown` for it and
- * `reduceRun` would ignore it anyway — but it is the reason this list is checked
- * by a test.
+ * Named, and so subscribed to by name. Real events are not: they arrive unnamed,
+ * on `message`, because `EventSource` delivers only the names a listener asked
+ * for and no list of names can contain a type a later writer will invent.
  */
-export const TRACE_EVENT_NAMES: readonly string[] = TraceEvent.options.map(
-  (option) => option.shape.type.value,
-);
-
-/** The server's own frames, which are about the stream and not about the run. */
 const UNPARSED = "ccg.unparsed";
 const STREAM_ERROR = "ccg.error";
 
@@ -134,25 +117,27 @@ export function connectRun(
     };
   }
 
-  for (const name of TRACE_EVENT_NAMES) {
-    source.addEventListener(name, (event) => {
-      const line = parseTraceLine(event.data);
-      if (line.type === "unknown") return;
-      // Already folded. See the note above about replay.
-      if (line.seq <= lastSeq) return;
-      lastSeq = line.seq;
-      // The id in the URL is a file name; `run_started` is the run saying what it
-      // is actually called. `ccg run` keeps the two the same, but anything that
-      // renamed or copied a trace would otherwise fold to an empty run and draw a
-      // graph in which nothing ever happened — a silent lie, and the loudest kind.
-      // Foreign events after this point are still ignored, by `reduceRun`.
-      if (line.type === "run_started" && line.runId !== state.runId) {
-        state = emptyRunState(line.runId);
-      }
-      state = reduceRun(state, line);
-      emit("connected");
-    });
-  }
+  // One subscription for every real event, because the server sends them unnamed.
+  // The discrimination happens in `parseTraceLine`, which is where the contract
+  // already lives: a type this bundle has never heard of parses to `unknown` and
+  // is passed over here rather than never being delivered at all.
+  source.addEventListener("message", (event) => {
+    const line = parseTraceLine(event.data);
+    if (line.type === "unknown") return;
+    // Already folded. See the note above about replay.
+    if (line.seq <= lastSeq) return;
+    lastSeq = line.seq;
+    // The id in the URL is a file name; `run_started` is the run saying what it
+    // is actually called. `ccg run` keeps the two the same, but anything that
+    // renamed or copied a trace would otherwise fold to an empty run and draw a
+    // graph in which nothing ever happened — a silent lie, and the loudest kind.
+    // Foreign events after this point are still ignored, by `reduceRun`.
+    if (line.type === "run_started" && line.runId !== state.runId) {
+      state = emptyRunState(line.runId);
+    }
+    state = reduceRun(state, line);
+    emit("connected");
+  });
 
   source.addEventListener(UNPARSED, () => {
     // The server could not parse a line and said so rather than dropping it. The

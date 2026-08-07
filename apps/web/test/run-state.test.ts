@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   connectRun,
   eventsUrl,
-  TRACE_EVENT_NAMES,
   type ConnectionStatus,
   type EventSourceLike,
   type RunConnection,
@@ -42,9 +41,9 @@ class FakeEventSource implements EventSourceLike {
     this.onopen?.();
   }
 
-  /** A frame the server sent, named as the server names it. */
+  /** A real event, which the server sends unnamed for the client's `message`. */
   send(event: TraceEvent): void {
-    this.emit(event.type, serializeEvent(event));
+    this.emit("message", serializeEvent(event));
   }
 
   emit(name: string, data: string): void {
@@ -123,28 +122,18 @@ function nodeFinished(node: string, runId = "live-demo"): TraceEvent {
   };
 }
 
-describe("the event names the client subscribes to", () => {
-  it("covers every type in the contract", () => {
-    // Derived from the schema at import time. `EventSource` only delivers events
-    // it was asked for by name, so a type missing from this list would be
-    // silently invisible on the canvas — hence a test rather than a comment.
-    expect([...TRACE_EVENT_NAMES].sort()).toEqual(
-      [
-        "capability_available",
-        "capability_invoked",
-        "capability_lost",
-        "gate_resolved",
-        "gate_waiting",
-        "node_failed",
-        "node_finished",
-        "node_log",
-        "node_started",
-        "run_finished",
-        "run_started",
-      ].sort(),
-    );
+/** An event of a type no build of this client has ever compiled in. */
+function fromALaterWriter(runId = "live-demo"): string {
+  return JSON.stringify({
+    v: 1,
+    runId,
+    seq: seq++,
+    ts: "2026-08-01T16:37:10.260Z",
+    type: "node_annotated",
+    node: "plan",
+    note: "from a later writer",
   });
-});
+}
 
 describe("connectRun", () => {
   it("opens the run's event stream and reports connecting first", () => {
@@ -230,9 +219,45 @@ describe("connectRun", () => {
   it("ignores a line it cannot parse rather than throwing", () => {
     const h = harness();
     h.source.open();
-    h.source.emit("node_started", "{not json");
-    h.source.emit("node_started", JSON.stringify({ v: 1, type: "node_started" }));
+    h.source.emit("message", "{not json");
+    h.source.emit("message", JSON.stringify({ v: 1, type: "node_started" }));
     expect(h.last().run?.nodes.size).toBe(0);
+    h.stop();
+  });
+
+  it("passes over a type it has never heard of without breaking the fold", () => {
+    // The contract is additive-only within v: 1, so a writer newer than this
+    // bundle emits types it cannot name. They arrive — the server forwards them
+    // unnamed rather than by type — parse to `unknown`, and are simply not this
+    // reader's to interpret. What must not happen is the stream stopping.
+    const h = harness();
+    h.source.open();
+    h.source.send(started());
+    h.source.send(nodeStarted("plan"));
+
+    h.source.emit("message", fromALaterWriter());
+    expect(h.last().status).toBe("connected");
+    expect(h.last().error).toBeUndefined();
+    expect(h.last().run?.nodes.get("plan")?.status).toBe("running");
+
+    // And the events after it still fold, which is the part a missed delivery
+    // used to cost on every reconnect.
+    h.source.send(nodeFinished("plan"));
+    expect(h.last().run?.nodes.get("plan")?.status).toBe("done");
+    h.stop();
+  });
+
+  it("says nothing about a line the server could not parse either", () => {
+    const h = harness();
+    h.source.open();
+    h.source.send(started());
+    h.source.send(nodeStarted("plan"));
+    const before = h.seen.length;
+
+    h.source.emit("ccg.unparsed", JSON.stringify({ raw: "{not json" }));
+    expect(h.seen.length).toBe(before);
+    expect(h.last().status).toBe("connected");
+    expect(h.last().run?.nodes.get("plan")?.status).toBe("running");
     h.stop();
   });
 
