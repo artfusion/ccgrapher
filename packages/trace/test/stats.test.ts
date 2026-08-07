@@ -116,17 +116,25 @@ describe("heatFromRunStats", () => {
 describe("capability events do not disturb the numbers", () => {
   it("produces byte-identical stats with and without them", () => {
     const plain = load("happy-path.jsonl");
-    const withCapabilities = [
-      ...plain,
-      parseTraceLine(
-        '{"v":1,"runId":"run-happy","seq":900,"ts":"2026-08-01T09:00:00.900Z","type":"capability_available","capability":"mcp:search/query"}',
-      ),
-      parseTraceLine(
-        '{"v":1,"runId":"run-happy","seq":901,"ts":"2026-08-01T09:00:00.901Z","type":"capability_invoked","capability":"mcp:search/query","node":"plan"}',
-      ),
-    ];
+    const capabilities = [
+      '{"v":1,"runId":"run-happy","seq":900,"ts":"2026-08-01T09:00:00.900Z","type":"capability_available","capability":"mcp:search/query"}',
+      '{"v":1,"runId":"run-happy","seq":901,"ts":"2026-08-01T09:00:00.901Z","type":"capability_invoked","capability":"mcp:search/query","node":"plan"}',
+    ].map(parseTraceLine);
 
-    expect(JSON.stringify(statsFromLines(withCapabilities))).toBe(
+    // The precondition, and the whole reason this test is worth anything: these
+    // lines are understood. A line the schema rejects comes back as `unknown`
+    // and contributes nothing to the roll-up either — so the equality below
+    // would hold just as well if capability events had stopped parsing
+    // altogether, and this test would pass while proving the opposite of what
+    // it claims. `node: "plan"` in particular is the field that would have
+    // pulled a duration in, had the roll-up been reading these.
+    expect(capabilities.map((line) => line.type)).toEqual([
+      "capability_available",
+      "capability_invoked",
+    ]);
+    expect(capabilities[1]).toMatchObject({ capability: "mcp:search/query", node: "plan" });
+
+    expect(JSON.stringify(statsFromLines([...plain, ...capabilities]))).toBe(
       JSON.stringify(statsFromLines(plain)),
     );
   });
