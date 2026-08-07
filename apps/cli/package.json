@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/cli",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "Command line interface for ccgrapher: lint, render, codegen and ingest.",
   "keywords": [
