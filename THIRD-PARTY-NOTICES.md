@@ -127,7 +127,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 | [roughjs](https://github.com/rough-stuff/rough) | MIT | `render-svg` — hand-drawn strokes |
 | [@fontsource/caveat](https://github.com/fontsource/font-files) | OFL-1.1 | `render-svg` — embedded typeface |
 | [ts-morph](https://github.com/dsherret/ts-morph) | MIT | `ingest` — TypeScript AST traversal |
-| [@xyflow/react](https://github.com/xyflow/xyflow) | MIT | `web` — interactive canvas |
+| [@joint/core](https://github.com/clientIO/joint), [@joint/react](https://github.com/clientIO/joint) | MPL-2.0 | `web` — interactive canvas |
+| [use-sync-external-store](https://github.com/facebook/react) | MIT | `web` — transitive, via `@joint/react` |
 | [next](https://github.com/vercel/next.js), [react](https://github.com/facebook/react) | MIT | `web` |
 
 ## Development dependencies

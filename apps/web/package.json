@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Interactive React Flow canvas for editing and linting workflow specs.",
+  "description": "Interactive JointJS canvas for editing and linting workflow specs.",
   "keywords": [
     "agent",
     "workflow",
@@ -37,7 +37,6 @@
     "@ccgrapher/trace": "workspace:*",
     "@joint/core": "^4.3.1",
     "@joint/react": "^4.3.2",
-    "@xyflow/react": "^12.3.5",
     "next": "^15.1.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
