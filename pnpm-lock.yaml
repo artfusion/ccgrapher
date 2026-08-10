@@ -77,6 +77,12 @@ importers:
       '@ccgrapher/trace':
         specifier: workspace:*
         version: link:../../packages/trace
+      '@joint/core':
+        specifier: ^4.3.1
+        version: 4.3.1
+      '@joint/react':
+        specifier: ^4.3.2
+        version: 4.3.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@xyflow/react':
         specifier: ^12.3.5
         version: 12.11.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -676,6 +682,15 @@ packages:
     engines: {node: ^18.17.0 || ^20.3.0 || >=21.0.0}
     cpu: [x64]
     os: [win32]
+
+  '@joint/core@4.3.1':
+    resolution: {integrity: sha512-ikJchpM0Ux9v7CmcR7VQhu2YGS97xrZKjF+rN8nL5XE8ZYf+pSW4Zb0J0+/1AGEvjESN2ppwcJVyxVMbyJ+2XQ==}
+
+  '@joint/react@4.3.2':
+    resolution: {integrity: sha512-dxwKpOm7TAuOveIzAZ2uHJZ1forbdfXLaoWpe2NjqO3d4HONNGN3T2ITnebJn8vPlv+nuuw50cUdpDiomfgT0A==}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -2006,6 +2021,15 @@ snapshots:
 
   '@img/sharp-win32-x64@0.34.5':
     optional: true
+
+  '@joint/core@4.3.1': {}
+
+  '@joint/react@4.3.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@joint/core': 4.3.1
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+      use-sync-external-store: 1.6.0(react@19.2.8)
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
