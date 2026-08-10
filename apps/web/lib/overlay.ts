@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { NodeRunState, RunState } from "@ccgrapher/trace";
-import type { Edge, Node } from "@xyflow/react";
+import type { CCEdge as Edge, CCNode as Node } from "./view-model.js";
 
 /**
  * The overlay seam.

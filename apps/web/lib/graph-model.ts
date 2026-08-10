@@ -2,7 +2,7 @@
 import { buildGraph, parseSpec, renderStyle, withEdges, type Graph } from "@ccgrapher/core";
 import { layoutGraph } from "@ccgrapher/layout";
 import { lint, type LintResult } from "@ccgrapher/lint";
-import type { Edge, Node } from "@xyflow/react";
+import type { CCEdge as Edge, CCNode as Node } from "./view-model.js";
 
 export interface Model {
   readonly ok: true;
