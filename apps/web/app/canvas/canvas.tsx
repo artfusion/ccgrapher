@@ -57,6 +57,7 @@ export function Canvas({
       <GraphSync spec={baseSpec} onSpecChange={onSpecChange} />
       <OverlaySync nodes={nodes} />
       <FitOnMount />
+      <PanZoom />
       <Paper
         className="jointjs-paper"
         renderElement={SpecNode}
@@ -80,6 +81,89 @@ function FitOnMount() {
   useEffect(() => {
     paper?.transformToFitContent({ padding: 24, minScale: 0.2, maxScale: 1.5 });
   }, [paper]);
+  return null;
+}
+
+const MIN_SCALE = 0.2;
+const MAX_SCALE = 3;
+
+/**
+ * Mouse-wheel zoom and drag-to-pan, hand-rolled on core JointJS APIs —
+ * `ui.PaperScroller` (the `@joint/react-plus` equivalent of this) was left
+ * out of the migration as a paid dependency this repo doesn't take, but
+ * "no zoom buttons" turned out to mean "no way to move the canvas at all,"
+ * which is a real gap, not a cosmetic one.
+ *
+ * Zoom is anchored at the cursor: `clientToLocalPoint` reads where the
+ * cursor sits in the paper's own coordinate space *before* the scale
+ * changes, then after rescaling, `localToClientPoint` is used to measure how
+ * far that same point drifted on screen, and `translate` corrects by exactly
+ * that drift. Anchoring at a fixed origin instead (paper (0,0), say) would
+ * make the content jump under the cursor on every scroll tick — technically
+ * a zoom, but not a usable one.
+ *
+ * Pan only starts from `blank:pointerdown` — a drag beginning on a node, a
+ * port or a link is JointJS's own gesture (move, connect) and must not also
+ * pan underneath it. `evt.clientX`/`clientY` deltas map to `translate`
+ * 1:1 regardless of the current scale, because `translate` (tx, ty) are the
+ * final additive terms of the paper's transform matrix — applied *after*
+ * scale, in already-rendered pixel space — so no scale correction is needed
+ * here the way it is for the zoom anchor above.
+ */
+function PanZoom() {
+  const { paper } = usePaper();
+
+  useEffect(() => {
+    if (!paper) return;
+
+    const onWheel = (evt: WheelEvent) => {
+      evt.preventDefault();
+      const factor = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const current = paper.scale().sx;
+      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, current * factor));
+      if (next === current) return;
+
+      const clientPoint = { x: evt.clientX, y: evt.clientY };
+      const localPoint = paper.clientToLocalPoint(clientPoint.x, clientPoint.y);
+      paper.scale(next, next);
+      const driftedPoint = paper.localToClientPoint(localPoint.x, localPoint.y);
+      const translate = paper.translate();
+      paper.translate(
+        translate.tx + (clientPoint.x - driftedPoint.x),
+        translate.ty + (clientPoint.y - driftedPoint.y),
+      );
+    };
+
+    paper.el.addEventListener("wheel", onWheel, { passive: false });
+
+    const onBlankPointerDown = (evt: MouseEvent & { data?: unknown }) => {
+      evt.data = {
+        startClientX: evt.clientX,
+        startClientY: evt.clientY,
+        startTranslate: paper.translate(),
+      };
+    };
+    const onBlankPointerMove = (evt: MouseEvent & { data?: unknown }) => {
+      const data = evt.data as
+        | { startClientX: number; startClientY: number; startTranslate: { tx: number; ty: number } }
+        | undefined;
+      if (!data) return;
+      paper.translate(
+        data.startTranslate.tx + (evt.clientX - data.startClientX),
+        data.startTranslate.ty + (evt.clientY - data.startClientY),
+      );
+    };
+
+    paper.on("blank:pointerdown", onBlankPointerDown);
+    paper.on("blank:pointermove", onBlankPointerMove);
+
+    return () => {
+      paper.el.removeEventListener("wheel", onWheel);
+      paper.off("blank:pointerdown", onBlankPointerDown);
+      paper.off("blank:pointermove", onBlankPointerMove);
+    };
+  }, [paper]);
+
   return null;
 }
 
