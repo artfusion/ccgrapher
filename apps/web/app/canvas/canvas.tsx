@@ -114,11 +114,36 @@ function OverlaySync({ nodes }: { nodes: readonly CCNode[] }) {
 }
 
 /**
- * Pulls the live link list straight from `dia.Graph` on every source/target
- * change — not from a React state mirror — so a plain element drag (which
- * touches `position`, not a link's endpoints) never fires this at all. That
- * is how "dragging must not write back" is actually enforced here, not just
- * intended.
+ * Pulls the live link list straight from `dia.Graph` — not from a React
+ * state mirror — so a plain element drag (which touches `position`, not a
+ * link's endpoints) never fires this at all. That is how "dragging must not
+ * write back" is actually enforced here, not just intended.
+ *
+ * Two event families, not one. `change:source`/`change:target` fires when an
+ * *existing* link's endpoint changes — a disconnect (endpoint goes to null)
+ * or a repoint. It does **not** fire for a brand-new link: JointJS sets
+ * `source`/`target` at construction, and a model's own constructor setting
+ * its own initial attributes is not a "change" for Backbone/JointJS's
+ * purposes. A first pass here subscribed only to `change:*` and a live drag
+ * test caught it directly: three links really were created in `dia.Graph`
+ * (confirmed via `graph.getLinks()`), but none of them ever reached
+ * `graphToSpec` — a drawn edge was being silently dropped, not merely
+ * unverified. `add`/`remove`, filtered to links, is what a genuine connect
+ * or a link being deleted outright actually fires.
+ *
+ * The `add`/`remove` fix above shipped a second bug of its own, also caught
+ * live: `initialCells` seeds the graph one cell at a time, and a fixture
+ * switch tears the old graph down the same way, so a single mount or
+ * teardown fires a *burst* of `add`/`remove` events. Reading
+ * `graph.getLinks()` synchronously from inside the very first handler in
+ * that burst catches the graph mid-mutation — a live test wrote `edges: []`
+ * to the actual YAML source because the first `add` fired before the rest
+ * of the initial seed had landed. `scheduleCommit` collapses a burst into
+ * one read, deferred to a microtask so it always runs after the current
+ * synchronous batch of graph mutations has fully settled. `cancelled`
+ * guards the case where that microtask is still pending when this effect's
+ * own cleanup runs (unmounting mid-burst) — without it, a stale commit could
+ * fire after the fact against a torn-down graph.
  */
 function GraphSync({
   spec,
@@ -142,11 +167,28 @@ function GraphSync({
   }, [graph, spec, onSpecChange]);
 
   useEffect(() => {
-    // A link's own `source`/`target` change on connect, disconnect and
-    // repoint — exactly the three operations the plan calls legitimate.
-    graph.on("change:source change:target", commit);
+    let cancelled = false;
+    let scheduled = false;
+
+    const scheduleCommit = () => {
+      if (scheduled || cancelled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (!cancelled) commit();
+      });
+    };
+
+    const onAddOrRemove = (cell: { isLink: () => boolean }) => {
+      if (cell.isLink()) scheduleCommit();
+    };
+
+    graph.on("change:source change:target", scheduleCommit);
+    graph.on("add remove", onAddOrRemove);
     return () => {
-      graph.off("change:source change:target", commit);
+      cancelled = true;
+      graph.off("change:source change:target", scheduleCommit);
+      graph.off("add remove", onAddOrRemove);
     };
   }, [graph, commit]);
 
