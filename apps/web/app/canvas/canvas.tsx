@@ -55,6 +55,7 @@ export function Canvas({
   return (
     <GraphProvider initialCells={cells}>
       <GraphSync spec={baseSpec} onSpecChange={onSpecChange} />
+      <OverlaySync nodes={nodes} />
       <FitOnMount />
       <Paper
         className="jointjs-paper"
@@ -79,6 +80,36 @@ function FitOnMount() {
   useEffect(() => {
     paper?.transformToFitContent({ padding: 24, minScale: 0.2, maxScale: 1.5 });
   }, [paper]);
+  return null;
+}
+
+/**
+ * `initialCells` seeds the graph once, on mount, by design — that is what
+ * keeps a drag from ever round-tripping through React state. But it also
+ * means a later change to `nodes` (a heat file dropped, a live run's SSE
+ * frame, a capability alert appearing) would silently stop reaching an
+ * already-mounted node, because nothing tells JointJS to look again.
+ *
+ * This is the fix, and it is narrow on purpose: `setCellData` only ever
+ * touches a cell's `data`, never its `position` or `size` — the exact same
+ * boundary `lib/overlay.ts`'s "may only add to data" rule already draws.
+ * Links need no equivalent: heat has nothing to say about an edge, and the
+ * fake/lint styling `bridge.ts` computes for a link is static from the
+ * moment the graph is built.
+ */
+function OverlaySync({ nodes }: { nodes: readonly CCNode[] }) {
+  const { setCellData } = useGraph();
+
+  useEffect(() => {
+    for (const n of nodes) {
+      setCellData(n.id, () => ({
+        ...n.data,
+        overlayClassName: n.className,
+        overlayStyle: n.style,
+      }));
+    }
+  }, [nodes, setCellData]);
+
   return null;
 }
 
