@@ -406,6 +406,12 @@ lints as you draw, and the field it carries is written straight back into the YA
 *node*, on the other hand, does nothing to the spec — the picture is a consequence of the `in:`/
 `out:` declarations, never something a human moved, so only a connection is a real edit.
 
+**August 2026 — moved from React Flow to [JointJS](https://www.jointjs.com/).** The picture, the
+overlays and the findings are unchanged; what's new is the port system above. Every node's declared
+`in:`/`out:` fields are real, individually draggable ports now, not a single anonymous handle — so
+connecting two of them is how an edge gets proposed, and the linter's read on it is immediate rather
+than a save-and-reload away.
+
 ---
 
 ## More on the skill
