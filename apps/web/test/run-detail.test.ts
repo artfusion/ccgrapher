@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { emptyRunState, reduceRun, type NodeRunState, type TraceEvent } from "@ccgrapher/trace";
-import { Position } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import {
   formatCost,
@@ -13,7 +12,7 @@ import {
   usageIsEmpty,
   usageRows,
 } from "../lib/run-detail";
-import { placement } from "../app/spec-node";
+import { placement, Position } from "../app/spec-node";
 
 /**
  * The rule under test is one sentence: **absent is not zero**.
@@ -122,8 +121,13 @@ describe("a fanned node", () => {
 });
 
 describe("where the note goes", () => {
+  // `box` is already in client (viewport) pixels here — paper.localToClientPoint
+  // has folded in whatever pan/zoom was live, so placement() itself no longer
+  // takes a separate tx/ty/zoom. Each case below is the same scenario the
+  // React Flow version tested, expressed as a client box instead of a
+  // model-space one pre-multiplied by a transform.
   const box = { x: 0, y: 0, w: 200, h: 60 };
-  const view = { tx: 0, ty: 0, zoom: 1, paneW: 1000, paneH: 800 };
+  const view = { paneW: 1000, paneH: 800 };
 
   it("sits beside the node when there is room", () => {
     expect(placement(box, view).position).toBe(Position.Right);
@@ -131,18 +135,18 @@ describe("where the note goes", () => {
 
   it("flips to the other side rather than hang off the canvas edge", () => {
     // The node's right edge is 100px from the pane's; a 320px note does not fit.
-    const nearRight = placement(box, { ...view, tx: 700 });
+    const nearRight = placement({ ...box, x: 700 }, view);
     expect(nearRight.position).toBe(Position.Left);
   });
 
   it("goes below when neither side fits", () => {
-    const narrow = placement(box, { ...view, paneW: 420, tx: 100 });
+    const narrow = placement({ ...box, x: 100 }, { ...view, paneW: 420 });
     expect(narrow.position).toBe(Position.Bottom);
     expect(narrow.align).toBe("center");
   });
 
   it("hangs from the node's bottom edge when it would overflow downwards", () => {
-    const low = placement(box, { ...view, ty: 700 });
+    const low = placement({ ...box, y: 700 }, view);
     expect(low.align).toBe("end");
   });
 });

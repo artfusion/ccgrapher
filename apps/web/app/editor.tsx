@@ -1,10 +1,10 @@
 "use client";
 // SPDX-License-Identifier: Apache-2.0
 
-import { formatSpec } from "@ccgrapher/core";
+import { formatSpec, type WorkflowSpec } from "@ccgrapher/core";
 import { HeatData } from "@ccgrapher/trace";
-import { Background, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildModel, type Model } from "../lib/graph-model";
 import { applyRunState } from "../lib/overlay";
 import { applyCapabilityState } from "../lib/capability";
@@ -22,10 +22,14 @@ import {
   type RunConnection,
   type RunSummary,
 } from "../lib/run-state";
-import { SpecNode } from "./spec-node";
-import "@xyflow/react/dist/style.css";
 
-const nodeTypes: NodeTypes = { spec: SpecNode };
+// @joint/core touches `document` at import, and `pnpm --filter @ccgrapher/web
+// build` runs under Next's server build — so the canvas is client-only,
+// loaded after hydration rather than during SSR.
+const Canvas = dynamic(() => import("./canvas/canvas").then((m) => m.Canvas), { ssr: false });
+
+/** How long a connect/disconnect waits before it reaches the YAML pane. */
+const SPEC_WRITE_DEBOUNCE_MS = 75;
 
 export function Editor() {
   const [source, setSource] = useState(FIXTURES[DEFAULT_FIXTURE]!);
@@ -56,6 +60,25 @@ export function Editor() {
   // Re-lints on every keystroke. Parsing and linting a spec this size is
   // microseconds, so there is nothing to debounce.
   const model = useMemo(() => buildModel(source, repaired), [source, repaired]);
+
+  // ── canvas -> YAML ──────────────────────────────────────────────────────
+  // The only two things a canvas edit is allowed to be: a link connecting or
+  // disconnecting — `Canvas` enforces that a drag never reaches this handler
+  // at all (see app/canvas/canvas.tsx). `Canvas` is uncontrolled and
+  // event-driven rather than a two-way sync, so there is no controlled-loop
+  // risk here to mutex against: a spec change remounts the canvas (new
+  // `key`, fresh `initialCells`), which constructs a graph rather than
+  // mutating an existing one, so it fires no `change:source`/`change:target`
+  // of its own. Only the debounce is needed, so a user drawing a link across
+  // several ports in quick succession writes the YAML once.
+  const writeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const onCanvasSpecChange = useCallback((next: WorkflowSpec) => {
+    clearTimeout(writeTimer.current);
+    writeTimer.current = setTimeout(() => {
+      setSource(formatSpec(next));
+      setRepaired(false);
+    }, SPEC_WRITE_DEBOUNCE_MS);
+  }, []);
 
   // ── the overlay seam ──────────────────────────────────────────────────────
   // Layout has already run at this point and its output is not touched below.
@@ -223,22 +246,19 @@ export function Editor() {
           {!model.ok ? (
             <pre className="error">{model.error}</pre>
           ) : (
-            <ReactFlow
-              // Remounted only when the shape of the graph changes, so `fitView`
-              // reframes a new spec. Run state is deliberately not in this key:
-              // it changes on every event, and a key that moved with it would
-              // remount the whole canvas several times a second.
+            <Canvas
+              // Remounted only when the shape of the graph changes, so the
+              // fresh canvas reframes to a new spec. Run state is
+              // deliberately not in this key: it changes on every event, and
+              // a key that moved with it would remount the whole canvas
+              // several times a second.
               key={`${model.nodes.length}-${repaired}`}
               nodes={view.nodes}
               edges={view.edges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.15 }}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background color="#DDD5C8" gap={22} size={1.4} />
-              <Controls showInteractive={false} />
-            </ReactFlow>
+              specNodes={model.graph.spec.nodes}
+              baseSpec={model.graph.spec}
+              onSpecChange={onCanvasSpecChange}
+            />
           )}
 
           {view.legend && <HeatLegend legend={view.legend} />}
