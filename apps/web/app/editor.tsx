@@ -172,6 +172,22 @@ export function Editor() {
             ))}
           </select>
 
+          <label className="filepick">
+            <input
+              type="file"
+              accept=".yaml,.yml,text/yaml,application/x-yaml"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                // So opening the same file twice in a row still fires a change.
+                e.target.value = "";
+                if (!file) return;
+                setSource(await file.text());
+                setRepaired(false);
+              }}
+            />
+            open a spec…
+          </label>
+
           <label className={repairCount === 0 ? "disabled" : ""}>
             <input
               type="checkbox"
