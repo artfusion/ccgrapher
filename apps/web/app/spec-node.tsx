@@ -1,15 +1,11 @@
 "use client";
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Handle,
-  NodeToolbar,
-  Position,
-  useStore,
-  type Align,
-  type NodeProps,
-} from "@xyflow/react";
+import { HTMLHost, useCellId, usePaper } from "@joint/react";
 import { TAIL_CAP, type NodeRunState } from "@ccgrapher/trace";
+import {
+  createPortal,
+} from "react-dom";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { INK, KIND_TINT } from "../lib/graph-model";
 import {
@@ -31,23 +27,35 @@ import { declaredRows, invokedRows, type CapabilityState } from "../lib/capabili
  * dimension and no position — see `lib/overlay.ts`.
  *
  * Clicking a node that the run has said something about pins a note to it. The
- * note is a portal into React Flow's renderer, outside the zoom transform, so
- * opening one cannot nudge the drawing by a pixel: it is the same invariant the
- * tint obeys, held one step further out.
+ * note is a portal to `document.body`, outside JointJS's SVG entirely, so opening
+ * one cannot nudge the drawing by a pixel: it is the same invariant the tint
+ * obeys, held one step further out.
  */
-export function SpecNode({ data, id, positionAbsoluteX, positionAbsoluteY, width, height }: NodeProps) {
-  const d = data as {
-    label?: string;
-    lines: string[];
-    kind: string;
-    style: "agent" | "code" | "human";
-    badge: string | null;
-    worktree: boolean;
-    problems: string[];
-    uses?: readonly string[];
-    run?: NodeRunState;
-    capability?: CapabilityState;
-  };
+export interface SpecNodeData {
+  label?: string;
+  lines: string[];
+  kind: string;
+  style: "agent" | "code" | "human";
+  badge: string | null;
+  worktree: boolean;
+  problems: string[];
+  uses?: readonly string[];
+  run?: NodeRunState;
+  capability?: CapabilityState;
+  /**
+   * `CCNode.className`/`CCNode.style`, carried in under these names by
+   * `bridge.ts`'s `specToGraph` — heat.ts and capability.ts write the wash,
+   * the `--heat-fill`/`--capability-ink` custom properties, and their marker
+   * classes here. Named distinctly from `style` above (this component's own
+   * agent/code/human tag) so the two can never collide.
+   */
+  overlayClassName?: string;
+  overlayStyle?: Record<string, string | number | undefined>;
+}
+
+export function SpecNode(d: SpecNodeData) {
+  const id = useCellId();
+  const { paper } = usePaper();
 
   const hasProblem = d.problems.length > 0;
   const run = d.run;
@@ -64,7 +72,7 @@ export function SpecNode({ data, id, positionAbsoluteX, positionAbsoluteY, width
   }, []);
 
   // Anywhere else on the canvas dismisses the note, the way putting a paper one
-  // down does. Capture phase, because React Flow starts a pan on pointerdown and
+  // down does. Capture phase, because JointJS starts a pan on pointerdown and
   // this needs to have decided before it does.
   useEffect(() => {
     if (!open) return;
@@ -90,72 +98,83 @@ export function SpecNode({ data, id, positionAbsoluteX, positionAbsoluteY, width
       : d.badge;
 
   return (
-    <div
-      className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
-        hasProblem ? " flagged" : ""
-      }${run ? ` run-${status}` : ""}${open ? " opened" : ""}`}
-      style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
-      title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
-      data-run-status={run ? status : undefined}
+    // Two levels, deliberately — the same shape React Flow gave this
+    // component for free by wrapping every custom node in its own div.
+    // `.node-host` (outer) carries the overlay's own className/style —
+    // `heat-node`, `capability-alert`, the `--heat-fill`/`--capability-ink`
+    // custom properties — and gets its own pseudo-element budget for the
+    // capability ring. `.spec-node` (inner) keeps the worktree card on
+    // `::before` and the heat caption on `::after`, exactly as before a
+    // capability alert on the same node would otherwise collide with them.
+    <HTMLHost
+      useModelGeometry
+      className={`node-host${d.overlayClassName ? ` ${d.overlayClassName}` : ""}`}
+      style={d.overlayStyle}
     >
-      <Handle type="target" position={Position.Top} />
-      {badge && <span className="badge">{badge}</span>}
-      <span className={`icon icon-${d.kind}`} aria-hidden />
-      <span className="label">
-        {d.lines.map((line, i) => (
-          <span key={i} className="line">
-            {line}
-          </span>
-        ))}
-      </span>
-      {run && status !== "pending" && <RunMark status={status} />}
-      {hasProblem && <span className="warn" aria-label="lint finding" />}
+      <div
+        className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
+          hasProblem ? " flagged" : ""
+        }${run ? ` run-${status}` : ""}${open ? " opened" : ""}`}
+        style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
+        title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
+        data-run-status={run ? status : undefined}
+      >
+        {badge && <span className="badge">{badge}</span>}
+        <span className={`icon icon-${d.kind}`} aria-hidden />
+        <span className="label">
+          {d.lines.map((line, i) => (
+            <span key={i} className="line">
+              {line}
+            </span>
+          ))}
+        </span>
+        {run && status !== "pending" && <RunMark status={status} />}
+        {hasProblem && <span className="warn" aria-label="lint finding" />}
 
-      {openable && (
-        <button
-          ref={trigger}
-          type="button"
-          className="run-open nodrag"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-label={`what ${d.label ?? id} did — ${status}`}
-          onPointerDown={(event) => {
-            pressedAt.current = { x: event.clientX, y: event.clientY };
-          }}
-          onClick={(event) => {
-            // `detail === 0` is a keyboard activation, which has no travel to
-            // measure. A pointer that moved was dragging the node, and a drag
-            // should not leave a note open behind it.
-            const from = pressedAt.current;
-            const dragged =
-              event.detail > 0 &&
-              from !== null &&
-              Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4;
-            if (dragged) return;
-            if (open) close(false);
-            else setOpen(true);
-          }}
-        />
-      )}
+        {openable && (
+          <button
+            ref={trigger}
+            type="button"
+            className="run-open nodrag"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label={`what ${d.label ?? id} did — ${status}`}
+            onPointerDown={(event) => {
+              pressedAt.current = { x: event.clientX, y: event.clientY };
+            }}
+            onClick={(event) => {
+              // `detail === 0` is a keyboard activation, which has no travel to
+              // measure. A pointer that moved was dragging the node, and a drag
+              // should not leave a note open behind it.
+              const from = pressedAt.current;
+              const dragged =
+                event.detail > 0 &&
+                from !== null &&
+                Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4;
+              if (dragged) return;
+              if (open) close(false);
+              else setOpen(true);
+            }}
+          />
+        )}
+      </div>
 
-      {openable && open && (
+      {openable && open && paper && (
         <RunDetail
-          nodeId={id}
-          heading={d.label ?? id}
+          nodeId={String(id)}
+          heading={d.label ?? String(id)}
           kind={d.kind}
           run={run}
           // The spec side survives even when no overlay has run over this node,
           // so the note can still say what it declares.
           declared={d.capability?.declared ?? d.uses ?? []}
           invoked={d.capability?.invoked ?? run.invoked ?? []}
-          box={{ x: positionAbsoluteX, y: positionAbsoluteY, w: width ?? 0, h: height ?? 0 }}
+          paper={paper}
           noteRef={note}
           onClose={close}
         />
       )}
-
-      <Handle type="source" position={Position.Bottom} />
-    </div>
+    </HTMLHost>
   );
 }
 
@@ -214,11 +233,34 @@ const NOTE_W = 320;
 const NOTE_H = 380;
 const NOTE_GAP = 14;
 
+/** Where a node currently sits in client (viewport) pixels — pan/zoom already applied. */
+function clientBox(
+  paper: NonNullable<ReturnType<typeof usePaper>["paper"]>,
+  nodeId: string,
+): { x: number; y: number; w: number; h: number } | undefined {
+  const cell = paper.model.getCell(nodeId);
+  if (!cell || !("position" in cell.attributes)) return undefined;
+  const bbox = cell.getBBox();
+  const topLeft = paper.localToClientPoint(bbox.x, bbox.y);
+  const bottomRight = paper.localToClientPoint(bbox.x + bbox.width, bbox.y + bbox.height);
+  return {
+    x: topLeft.x,
+    y: topLeft.y,
+    w: bottomRight.x - topLeft.x,
+    h: bottomRight.y - topLeft.y,
+  };
+}
+
 /**
  * The note itself.
  *
  * Mounted only while it is open, so a canvas at rest subscribes to nothing and
- * a pan does not re-render seven closed pop-overs.
+ * a pan does not re-render seven closed pop-overs. Portalled straight to
+ * `document.body` and positioned in client pixels via `paper.localToClientPoint`,
+ * which already folds in the paper's current pan and zoom — no transform math
+ * duplicated here. Re-measured on the paper's own `scale`/`translate` events so
+ * the note tracks a pan or zoom while it is open, the same way the old
+ * NodeToolbar portal did by living outside React Flow's transformed viewport.
  */
 function RunDetail({
   nodeId,
@@ -227,7 +269,7 @@ function RunDetail({
   run,
   declared,
   invoked,
-  box,
+  paper,
   noteRef,
   onClose,
 }: {
@@ -237,17 +279,22 @@ function RunDetail({
   run: NodeRunState;
   declared: readonly string[];
   invoked: readonly string[];
-  box: { x: number; y: number; w: number; h: number };
+  paper: NonNullable<ReturnType<typeof usePaper>["paper"]>;
   noteRef: RefObject<HTMLDivElement | null>;
   onClose: (restoreFocus: boolean) => void;
 }) {
-  const tx = useStore((s) => s.transform[0]);
-  const ty = useStore((s) => s.transform[1]);
-  const zoom = useStore((s) => s.transform[2]);
-  const paneW = useStore((s) => s.width);
-  const paneH = useStore((s) => s.height);
+  const [box, setBox] = useState(() => clientBox(paper, nodeId));
 
-  const place = placement(box, { tx, ty, zoom, paneW, paneH });
+  useEffect(() => {
+    const recompute = () => setBox(clientBox(paper, nodeId));
+    recompute();
+    paper.on("scale", recompute);
+    paper.on("translate", recompute);
+    return () => {
+      paper.off("scale", recompute);
+      paper.off("translate", recompute);
+    };
+  }, [paper, nodeId]);
 
   useEffect(() => {
     noteRef.current?.focus({ preventScroll: true });
@@ -256,120 +303,116 @@ function RunDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (!box) return null;
+
+  const place = placement(box, { paneW: window.innerWidth, paneH: window.innerHeight });
+
   const failed = run.status === "failed";
   const gate = kind === "gate";
   const truncated = run.tail.length >= TAIL_CAP;
 
-  return (
-    <NodeToolbar
-      nodeId={nodeId}
-      isVisible
-      position={place.position}
-      align={place.align}
-      offset={NOTE_GAP}
-      // The toolbar portal is a sibling of the viewport, which sits at z-index 2.
-      // Without this the note would be drawn *underneath* the nodes unless the
-      // node happened to be selected, which is a coincidence, not a guarantee.
-      style={{ zIndex: 10 }}
+  return createPortal(
+    <div
+      ref={noteRef}
+      className="run-note nowheel nopan nodrag"
+      role="dialog"
+      aria-label={`what ${heading} did`}
+      tabIndex={-1}
+      style={{
+        position: "fixed",
+        zIndex: 10,
+        ...place.style,
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        onClose(true);
+      }}
     >
-      <div
-        ref={noteRef}
-        className="run-note nowheel nopan nodrag"
-        role="dialog"
-        aria-label={`what ${heading} did`}
-        tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          // React Flow reads Escape on the node as "deselect". One key, one
-          // meaning: while this is open it closes this.
-          event.stopPropagation();
-          onClose(true);
-        }}
-      >
-        <header>
-          <h2>{heading}</h2>
-          <button type="button" className="close" aria-label="close" onClick={() => onClose(true)}>
-            ×
-          </button>
-        </header>
+      <header>
+        <h2>{heading}</h2>
+        <button type="button" className="close" aria-label="close" onClick={() => onClose(true)}>
+          ×
+        </button>
+      </header>
 
-        <Rows rows={timingRows(run)} />
+      <Rows rows={timingRows(run)} />
 
-        {run.instances && (
-          <Section title="instances" note={summariseInstances(run.instances)}>
-            <Rows rows={instanceRows(run.instances)} />
+      {run.instances && (
+        <Section title="instances" note={summariseInstances(run.instances)}>
+          <Rows rows={instanceRows(run.instances)} />
+          <p className="aside">
+            the fold keeps counts; the per-instance rows are in the trace file
+          </p>
+        </Section>
+      )}
+
+      <Section title="what it cost">
+        {usageIsEmpty(run.usage) && (
+          <p className="aside">nothing reported usage for this node — this is not a zero</p>
+        )}
+        <Rows rows={usageRows(run.usage)} />
+      </Section>
+
+      {/*
+       * Two lists, not one merged one. The spec's claim and the run's report
+       * are separate facts, and the interesting cases are exactly the ones a
+       * merge would hide: a capability declared and never heard from, and one
+       * used that nothing ever declared.
+       */}
+      <Section title="capabilities declared">
+        {declared.length === 0 ? (
+          <p className="aside">this node declares no capabilities</p>
+        ) : (
+          <div className="caps">
+            <Rows rows={declaredRows(declared, invoked)} />
+          </div>
+        )}
+      </Section>
+
+      <Section title="capabilities used">
+        {invoked.length === 0 ? (
+          <p className="aside">nothing reported capability use — this is not a zero</p>
+        ) : (
+          <div className="caps">
+            <Rows rows={invokedRows(declared, invoked)} />
+          </div>
+        )}
+      </Section>
+
+      {(failed || run.error !== undefined) && (
+        <Section title={gate ? "the reviewer said" : "error"}>
+          {run.error === undefined ? (
+            // A rejection with no note, or a failure whose message never
+            // reached the trace. Saying so beats an empty box that reads as
+            // "no problem here".
             <p className="aside">
-              the fold keeps counts; the per-instance rows are in the trace file
+              {gate ? "rejected, with no reason given" : "no message was recorded"}
             </p>
-          </Section>
-        )}
-
-        <Section title="what it cost">
-          {usageIsEmpty(run.usage) && (
-            <p className="aside">nothing reported usage for this node — this is not a zero</p>
-          )}
-          <Rows rows={usageRows(run.usage)} />
-        </Section>
-
-        {/*
-         * Two lists, not one merged one. The spec's claim and the run's report
-         * are separate facts, and the interesting cases are exactly the ones a
-         * merge would hide: a capability declared and never heard from, and one
-         * used that nothing ever declared.
-         */}
-        <Section title="capabilities declared">
-          {declared.length === 0 ? (
-            <p className="aside">this node declares no capabilities</p>
           ) : (
-            <div className="caps">
-              <Rows rows={declaredRows(declared, invoked)} />
-            </div>
+            <pre className="error-text">{run.error}</pre>
           )}
         </Section>
+      )}
 
-        <Section title="capabilities used">
-          {invoked.length === 0 ? (
-            <p className="aside">nothing reported capability use — this is not a zero</p>
-          ) : (
-            <div className="caps">
-              <Rows rows={invokedRows(declared, invoked)} />
-            </div>
-          )}
+      {run.gatePayload !== undefined && (
+        <Section title="what the gate asked about">
+          <pre className="payload">{stringify(run.gatePayload)}</pre>
         </Section>
+      )}
 
-        {(failed || run.error !== undefined) && (
-          <Section title={gate ? "the reviewer said" : "error"}>
-            {run.error === undefined ? (
-              // A rejection with no note, or a failure whose message never
-              // reached the trace. Saying so beats an empty box that reads as
-              // "no problem here".
-              <p className="aside">
-                {gate ? "rejected, with no reason given" : "no message was recorded"}
-              </p>
-            ) : (
-              <pre className="error-text">{run.error}</pre>
-            )}
-          </Section>
+      <Section title="output">
+        {run.tail.length === 0 ? (
+          <p className="aside">no output lines were recorded</p>
+        ) : (
+          <>
+            {truncated && <p className="aside">earlier lines are in the trace file</p>}
+            <pre className="tail">{run.tail.join("\n")}</pre>
+          </>
         )}
-
-        {run.gatePayload !== undefined && (
-          <Section title="what the gate asked about">
-            <pre className="payload">{stringify(run.gatePayload)}</pre>
-          </Section>
-        )}
-
-        <Section title="output">
-          {run.tail.length === 0 ? (
-            <p className="aside">no output lines were recorded</p>
-          ) : (
-            <>
-              {truncated && <p className="aside">earlier lines are in the trace file</p>}
-              <pre className="tail">{run.tail.join("\n")}</pre>
-            </>
-          )}
-        </Section>
-      </div>
-    </NodeToolbar>
+      </Section>
+    </div>,
+    document.body,
   );
 }
 
@@ -421,30 +464,62 @@ function stringify(payload: unknown): string {
   }
 }
 
+/** A side and an alignment, expressed as the CSS this note is placed with. */
+export type NotePosition = "top" | "right" | "bottom" | "left";
+export type NoteAlign = "start" | "end" | "center";
+
+/**
+ * A `Position`-shaped constant with the same member names @xyflow/react's
+ * `Position` enum had, so `run-detail.test.ts`'s assertions
+ * (`toBe(Position.Right)` etc) survive the library swap verbatim — this is a
+ * value swap, not a logic change.
+ */
+export const Position = { Top: "top", Right: "right", Bottom: "bottom", Left: "left" } as const;
+
 /**
  * Which side of the node the note goes, and how it lines up.
  *
  * Beside the node if it fits, because that is where a note pinned to a drawing
  * belongs; below it when the canvas is too narrow for either side. Everything is
- * measured against the pane, so a node against the right edge gets its note on
- * the left instead of half a note off-screen.
+ * measured against the viewport, so a node against the right edge gets its note
+ * on the left instead of half a note off-screen. Pure — the same decision as
+ * before the JointJS migration, just fed a client-space box instead of a
+ * model-space one pre-multiplied by hand.
  */
 export function placement(
   box: { x: number; y: number; w: number; h: number },
-  view: { tx: number; ty: number; zoom: number; paneW: number; paneH: number },
-): { position: Position; align: Align } {
-  const left = box.x * view.zoom + view.tx;
-  const top = box.y * view.zoom + view.ty;
-  const right = left + box.w * view.zoom;
-  const bottom = top + box.h * view.zoom;
+  view: { paneW: number; paneH: number },
+): { position: NotePosition; align: NoteAlign; style: Record<string, number | string> } {
+  const { x: left, y: top, w, h } = box;
+  const right = left + w;
+  const bottom = top + h;
 
-  const align: Align =
+  const sideAlign: NoteAlign =
     top + NOTE_H <= view.paneH ? "start" : bottom - NOTE_H >= 0 ? "end" : "center";
 
-  if (right + NOTE_GAP + NOTE_W <= view.paneW) return { position: Position.Right, align };
-  if (left - NOTE_GAP - NOTE_W >= 0) return { position: Position.Left, align };
-  return {
-    position: bottom + NOTE_GAP + NOTE_H <= view.paneH ? Position.Bottom : Position.Top,
-    align: "center",
-  };
+  const position: NotePosition =
+    right + NOTE_GAP + NOTE_W <= view.paneW
+      ? "right"
+      : left - NOTE_GAP - NOTE_W >= 0
+        ? "left"
+        : bottom + NOTE_GAP + NOTE_H <= view.paneH
+          ? "bottom"
+          : "top";
+
+  // Falling through to above/below the node is always centred — only the
+  // beside-the-node cases (right/left) use the top/bottom fit to decide.
+  const align: NoteAlign = position === "bottom" || position === "top" ? "center" : sideAlign;
+
+  const style: Record<string, number | string> = { width: NOTE_W };
+  if (position === "right") style.left = right + NOTE_GAP;
+  else if (position === "left") style.left = left - NOTE_GAP - NOTE_W;
+  else style.left = Math.max(8, Math.min(left, view.paneW - NOTE_W - 8));
+
+  if (position === "bottom") style.top = bottom + NOTE_GAP;
+  else if (position === "top") style.top = Math.max(8, top - NOTE_GAP - NOTE_H);
+  else if (align === "start") style.top = top;
+  else if (align === "end") style.top = bottom - NOTE_H;
+  else style.top = (top + bottom) / 2 - NOTE_H / 2;
+
+  return { position, align, style };
 }

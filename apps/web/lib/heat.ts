@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { HeatData } from "@ccgrapher/trace";
-import type { Node } from "@xyflow/react";
+import type { CCNode as Node } from "./view-model.js";
 
 /**
  * The thermal overlay.

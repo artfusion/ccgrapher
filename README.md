@@ -401,6 +401,11 @@ Edit the YAML and the graph redraws and re-lints on every keystroke. **preview r
 collapsed graph without touching your source; **apply repairs** rewrites it. It imports the same
 `core`, `lint` and `layout` packages the CLI does, so the two can't disagree.
 
+The canvas draws in the other direction too: drag a link from one port to another and the edge
+lints as you draw, and the field it carries is written straight back into the YAML pane. Dragging a
+*node*, on the other hand, does nothing to the spec — the picture is a consequence of the `in:`/
+`out:` declarations, never something a human moved, so only a connection is a real edit.
+
 ---
 
 ## More on the skill
@@ -432,7 +437,7 @@ Two things worth knowing when reading its output:
 | [`runner`](packages/runner) | Walks the ranks, enforces the guards, emits the trace |
 | [`adapter-claude-code`](packages/adapter-claude-code) | Claude Code hooks → a trace of a real session |
 | [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest · run · serve` |
-| [`apps/web`](apps/web) | Next.js + React Flow canvas |
+| [`apps/web`](apps/web) | Next.js + JointJS canvas |
 
 **The one invariant.** `core` computes *ranks*; `layout` computes *pixels*. The "6 layers → 4" figure
 in a lint report comes from `core` and never from the layout library, so the picture and the report

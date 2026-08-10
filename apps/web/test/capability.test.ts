@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { emptyRunState, reduceRun, type RunState, type TraceEvent } from "@ccgrapher/trace";
-import type { Node } from "@xyflow/react";
+import type { CCNode as Node } from "../lib/view-model.js";
 import { describe, expect, it } from "vitest";
 import { applyCapabilityState, declaredRows, invokedRows } from "../lib/capability";
 import { buildModel } from "../lib/graph-model";

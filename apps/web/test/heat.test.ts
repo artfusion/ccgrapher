@@ -2,7 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { HeatData, heatFromRunStats, statsFromLines } from "@ccgrapher/trace";
 import { readTrace } from "@ccgrapher/trace/node";
-import type { Node } from "@xyflow/react";
+import type { CCNode as Node } from "../lib/view-model.js";
 import { describe, expect, it } from "vitest";
 import { applyHeat, formatHeat, HEAT_RAMP, HEAT_UNMEASURED_FILL } from "../lib/heat";
 import { buildModel } from "../lib/graph-model";

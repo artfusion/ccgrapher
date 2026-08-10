@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { emptyRunState, reduceRun, type RunState, type TraceEvent } from "@ccgrapher/trace";
-import type { Edge, Node } from "@xyflow/react";
+import type { CCEdge as Edge, CCNode as Node } from "../lib/view-model.js";
 import { HeatData } from "@ccgrapher/trace";
 import { describe, expect, it } from "vitest";
 import { applyRunState } from "../lib/overlay";

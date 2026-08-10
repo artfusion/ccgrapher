@@ -140,6 +140,20 @@ main {
 
 /* ---- nodes ------------------------------------------------------------- */
 
+/*
+ * The outer of the two levels every node is drawn in — see spec-node.tsx's
+ * comment on `.node-host` vs `.spec-node`. `position: relative` so the
+ * capability ring (::before/::after below, under "capabilities") anchors
+ * here rather than escaping to whatever positioned ancestor JointJS happens
+ * to render next, the same way `.spec-node` already anchors its own two
+ * pseudo-elements.
+ */
+.node-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .spec-node {
   position: relative;
   display: flex;
@@ -262,8 +276,16 @@ main {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/svg%3E");
 }
 
-.react-flow__handle {
-  opacity: 0;
+/*
+ * Real ports now — one per declared in:/out: field, drawn by JointJS itself
+ * from the portMap bridge.ts builds, not the single invisible generic handle
+ * React Flow used. Visible on purpose: a port is the drag affordance the
+ * per-field connect model depends on, so hiding it would hide the feature.
+ */
+.jj-port {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.4;
 }
 
 /* ---- run status --------------------------------------------------------- */
@@ -361,10 +383,15 @@ main {
   color: var(--danger);
 }
 
-/* An edge only animates while data is genuinely moving along it. */
-.react-flow__edge.edge-flowing .react-flow__edge-path {
-  stroke-width: 2.6;
-}
+/*
+ * The "data is flowing along this edge" pulse (`edge-flowing`, set in
+ * lib/overlay.ts) has no equivalent here: JointJS's declarative link style
+ * has no className hook the way a React Flow edge did, and reaching for
+ * imperative per-link CSS classes was more machinery than this migration's
+ * scope covers. The edge still shows its real stroke colour and the fake-
+ * edge dashing; only the "moving" pulse is gone. Flagged rather than quietly
+ * dropped — see ART-315 / the PR description.
+ */
 
 @media (prefers-reduced-motion: reduce) {
   /* The pulse becomes the ring it pulses to. Status is still legible by colour,
@@ -372,11 +399,6 @@ main {
   .spec-node.run-running {
     animation: none;
     box-shadow: 0 0 0 5px rgba(232, 118, 58, 0.26);
-  }
-
-  .react-flow__edge-path {
-    animation: none !important;
-    stroke-dasharray: none !important;
   }
 }
 
@@ -636,18 +658,18 @@ main {
  * border, which heat does not touch.
  */
 
-.react-flow__node.heat-node .spec-node {
+.node-host.heat-node .spec-node {
   background: var(--heat-fill) !important;
 }
 
 /* Hatched, not pale. A node with no measurement is off the ramp entirely, and
    this hatch appears nowhere else in the drawing. */
-.react-flow__node.heat-unmeasured .spec-node {
+.node-host.heat-unmeasured .spec-node {
   border-style: dotted;
   color: #6f6660;
 }
 
-.react-flow__node.heat-node .spec-node::after {
+.node-host.heat-node .spec-node::after {
   content: var(--heat-label);
   position: absolute;
   right: -3px;
@@ -659,7 +681,7 @@ main {
   pointer-events: none;
 }
 
-.react-flow__node.heat-unmeasured .spec-node::after {
+.node-host.heat-unmeasured .spec-node::after {
   font-style: italic;
 }
 
@@ -832,7 +854,7 @@ main {
 
 /* Wider than the worktree's own dashed card at -6px, so a node that has both
    reads as two marks rather than as one thick smudge. */
-.react-flow__node.capability-alert::before {
+.node-host.capability-alert::before {
   content: "";
   position: absolute;
   inset: -10px;
@@ -842,14 +864,14 @@ main {
 
 /* Dotted rather than dashed, because "the spec never mentioned this" is a
    quieter finding than "a running step cannot reach what it declared". */
-.react-flow__node.capability-undeclared::before {
+.node-host.capability-undeclared::before {
   border-style: dotted;
 }
 
 /* The caption names the capability. Shape and words, not hue alone: a reader
    who cannot tell the red from the amber still reads `missing:` or
    `undeclared:` next to the id. */
-.react-flow__node.capability-alert::after {
+.node-host.capability-alert::after {
   content: var(--capability-label);
   position: absolute;
   left: -3px;
