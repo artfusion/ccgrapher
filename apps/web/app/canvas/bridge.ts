@@ -36,14 +36,33 @@ export interface ElementCell {
   readonly portMap?: Record<string, PortSpec>;
 }
 
+export interface LinkStyle {
+  readonly color?: string;
+  readonly width?: number;
+  readonly dasharray?: string;
+  readonly targetMarker?: { readonly type: "path"; readonly d: string; readonly fill?: string };
+}
+
+export interface LinkLabel {
+  readonly text: string;
+  readonly position?: number;
+  readonly color?: string;
+  readonly fontSize?: number;
+  readonly backgroundColor?: string;
+}
+
 export interface LinkCell {
   readonly id: string;
   readonly type: "link";
   readonly source: { readonly id: string; readonly port?: string };
   readonly target: { readonly id: string; readonly port?: string };
-  readonly label?: string;
+  readonly style?: LinkStyle;
+  readonly labelMap?: Record<string, LinkLabel>;
   readonly data?: Record<string, unknown>;
 }
+
+/** A plain arrowhead path — JointJS's `targetMarker` accepts this shape directly. */
+const arrowMarker = (fill: string) => ({ type: "path" as const, d: "M 10 -5 0 0 10 5 Z", fill });
 
 export type Cell = ElementCell | LinkCell;
 
@@ -110,18 +129,49 @@ export function specToGraph(
       n.width !== undefined && n.height !== undefined
         ? { width: n.width, height: n.height }
         : undefined,
-    data: n.data,
+    // `n.className`/`n.style` are CCNode's own top-level fields (heat.ts and
+    // capability.ts write to them, never to `data`) — but an ElementCell has
+    // nowhere else for them to live, since @joint/react's renderElement only
+    // ever receives `data`. Carried in under `overlayClassName`/`overlayStyle`
+    // rather than merged into the bare keys, so a spec field that happened to
+    // be named `className` could never collide with the overlay's own.
+    data: { ...n.data, overlayClassName: n.className, overlayStyle: n.style },
     portMap: portMapFor(byId.get(n.id)),
   }));
 
-  const links: LinkCell[] = model.edges.map((e) => ({
-    id: e.id,
-    type: "link",
-    source: { id: e.source },
-    target: { id: e.target },
-    label: e.label,
-    data: e.data,
-  }));
+  const links: LinkCell[] = model.edges.map((e) => {
+    // `e.style` is React Flow's shape (stroke/strokeWidth/strokeDasharray),
+    // left over from graph-model.ts having been written for that library —
+    // translated here rather than in graph-model.ts, so that file stays
+    // canvas-agnostic and only this bridge knows JointJS's own link-style
+    // field names (color/width/dasharray).
+    const color = (e.style?.stroke as string | undefined) ?? "#6F6660";
+    const style: LinkStyle = {
+      color,
+      width: (e.style?.strokeWidth as number | undefined) ?? 2,
+      dasharray: e.style?.strokeDasharray as string | undefined,
+      targetMarker: arrowMarker(color),
+    };
+
+    return {
+      id: e.id,
+      type: "link",
+      source: { id: e.source },
+      target: { id: e.target },
+      style,
+      labelMap: e.label
+        ? {
+            main: {
+              text: e.label,
+              position: 0.5,
+              color: (e.labelStyle?.fill as string | undefined) ?? color,
+              backgroundColor: (e.labelBgStyle?.fill as string | undefined) ?? "#FBF7F0",
+            },
+          }
+        : undefined,
+      data: e.data,
+    };
+  });
 
   return [...elements, ...links];
 }

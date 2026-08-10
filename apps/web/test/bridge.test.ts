@@ -94,6 +94,59 @@ describe("specToGraph / graphToSpec round trip", () => {
   });
 });
 
+describe("overlay fields reach the cell", () => {
+  // heat.ts and capability.ts write to CCNode's top-level className/style —
+  // never to data — because that's the seam every overlay in lib/ is built
+  // on. A bridge that only forwarded `n.data` would silently drop every heat
+  // wash and capability ring the moment the canvas swapped libraries.
+  it("carries CCNode.className/.style into data.overlayClassName/.overlayStyle", () => {
+    const model = buildModel(DIAMOND, false);
+    if (!model.ok) throw new Error(model.error);
+
+    const tinted = {
+      ...model,
+      nodes: model.nodes.map((n, i) =>
+        i === 0 ? { ...n, className: "heat-node heat-measured", style: { "--heat-fill": "#E8763A" } } : n,
+      ),
+    };
+    const cells = specToGraph(tinted, model.graph.spec.nodes);
+    const first = elements(cells)[0]!;
+    expect(first.data.overlayClassName).toBe("heat-node heat-measured");
+    expect(first.data.overlayStyle).toEqual({ "--heat-fill": "#E8763A" });
+  });
+
+  it("translates a fake edge's React-Flow-shaped style into JointJS's native link style", () => {
+    const model = buildModel(DIAMOND, false);
+    if (!model.ok) throw new Error(model.error);
+
+    // No fake edges in diamond.yaml itself — fabricate the same shape
+    // graph-model.ts produces for one, to pin the translation independent of
+    // which fixture happens to lint dirty.
+    const faked = {
+      ...model,
+      edges: [
+        {
+          ...model.edges[0]!,
+          label: "carries no data",
+          style: { stroke: "#C4442E", strokeWidth: 1.6, strokeDasharray: "6 4" },
+          labelStyle: { fill: "#C4442E" },
+          labelBgStyle: { fill: "#FBF7F0" },
+        },
+      ],
+    };
+    const cells = specToGraph(faked, model.graph.spec.nodes);
+    const link = links(cells)[0]!;
+    expect(link.style).toEqual({
+      color: "#C4442E",
+      width: 1.6,
+      dasharray: "6 4",
+      targetMarker: { type: "path", d: "M 10 -5 0 0 10 5 Z", fill: "#C4442E" },
+    });
+    expect(link.labelMap?.main.text).toBe("carries no data");
+    expect(link.labelMap?.main.color).toBe("#C4442E");
+  });
+});
+
 describe("validateLinkConnection", () => {
   it("rejects a link to itself", () => {
     expect(validateLinkConnection("a", outPort("x"), "a", inPort("x"))).toBe(false);

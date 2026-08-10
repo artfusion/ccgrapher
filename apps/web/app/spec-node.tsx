@@ -42,7 +42,15 @@ export interface SpecNodeData {
   uses?: readonly string[];
   run?: NodeRunState;
   capability?: CapabilityState;
-  className?: string;
+  /**
+   * `CCNode.className`/`CCNode.style`, carried in under these names by
+   * `bridge.ts`'s `specToGraph` — heat.ts and capability.ts write the wash,
+   * the `--heat-fill`/`--capability-ink` custom properties, and their marker
+   * classes here. Named distinctly from `style` above (this component's own
+   * agent/code/human tag) so the two can never collide.
+   */
+  overlayClassName?: string;
+  overlayStyle?: Record<string, string | number | undefined>;
 }
 
 export function SpecNode(d: SpecNodeData) {
@@ -94,8 +102,10 @@ export function SpecNode(d: SpecNodeData) {
       useModelGeometry
       className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
         hasProblem ? " flagged" : ""
-      }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${d.className ? ` ${d.className}` : ""}`}
-      style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
+      }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${
+        d.overlayClassName ? ` ${d.overlayClassName}` : ""
+      }`}
+      style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK, ...d.overlayStyle }}
       title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
       data-run-status={run ? status : undefined}
     >
