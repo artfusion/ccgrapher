@@ -142,8 +142,8 @@ describe("overlay fields reach the cell", () => {
       dasharray: "6 4",
       targetMarker: { type: "path", d: "M 10 -5 0 0 10 5 Z", fill: "#C4442E" },
     });
-    expect(link.labelMap?.main.text).toBe("carries no data");
-    expect(link.labelMap?.main.color).toBe("#C4442E");
+    expect(link.labelMap?.main?.text).toBe("carries no data");
+    expect(link.labelMap?.main?.color).toBe("#C4442E");
   });
 });
 

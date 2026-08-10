@@ -98,55 +98,66 @@ export function SpecNode(d: SpecNodeData) {
       : d.badge;
 
   return (
+    // Two levels, deliberately — the same shape React Flow gave this
+    // component for free by wrapping every custom node in its own div.
+    // `.node-host` (outer) carries the overlay's own className/style —
+    // `heat-node`, `capability-alert`, the `--heat-fill`/`--capability-ink`
+    // custom properties — and gets its own pseudo-element budget for the
+    // capability ring. `.spec-node` (inner) keeps the worktree card on
+    // `::before` and the heat caption on `::after`, exactly as before a
+    // capability alert on the same node would otherwise collide with them.
     <HTMLHost
       useModelGeometry
-      className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
-        hasProblem ? " flagged" : ""
-      }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${
-        d.overlayClassName ? ` ${d.overlayClassName}` : ""
-      }`}
-      style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK, ...d.overlayStyle }}
-      title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
-      data-run-status={run ? status : undefined}
+      className={`node-host${d.overlayClassName ? ` ${d.overlayClassName}` : ""}`}
+      style={d.overlayStyle}
     >
-      {badge && <span className="badge">{badge}</span>}
-      <span className={`icon icon-${d.kind}`} aria-hidden />
-      <span className="label">
-        {d.lines.map((line, i) => (
-          <span key={i} className="line">
-            {line}
-          </span>
-        ))}
-      </span>
-      {run && status !== "pending" && <RunMark status={status} />}
-      {hasProblem && <span className="warn" aria-label="lint finding" />}
+      <div
+        className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
+          hasProblem ? " flagged" : ""
+        }${run ? ` run-${status}` : ""}${open ? " opened" : ""}`}
+        style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
+        title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
+        data-run-status={run ? status : undefined}
+      >
+        {badge && <span className="badge">{badge}</span>}
+        <span className={`icon icon-${d.kind}`} aria-hidden />
+        <span className="label">
+          {d.lines.map((line, i) => (
+            <span key={i} className="line">
+              {line}
+            </span>
+          ))}
+        </span>
+        {run && status !== "pending" && <RunMark status={status} />}
+        {hasProblem && <span className="warn" aria-label="lint finding" />}
 
-      {openable && (
-        <button
-          ref={trigger}
-          type="button"
-          className="run-open nodrag"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-label={`what ${d.label ?? id} did — ${status}`}
-          onPointerDown={(event) => {
-            pressedAt.current = { x: event.clientX, y: event.clientY };
-          }}
-          onClick={(event) => {
-            // `detail === 0` is a keyboard activation, which has no travel to
-            // measure. A pointer that moved was dragging the node, and a drag
-            // should not leave a note open behind it.
-            const from = pressedAt.current;
-            const dragged =
-              event.detail > 0 &&
-              from !== null &&
-              Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4;
-            if (dragged) return;
-            if (open) close(false);
-            else setOpen(true);
-          }}
-        />
-      )}
+        {openable && (
+          <button
+            ref={trigger}
+            type="button"
+            className="run-open nodrag"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label={`what ${d.label ?? id} did — ${status}`}
+            onPointerDown={(event) => {
+              pressedAt.current = { x: event.clientX, y: event.clientY };
+            }}
+            onClick={(event) => {
+              // `detail === 0` is a keyboard activation, which has no travel to
+              // measure. A pointer that moved was dragging the node, and a drag
+              // should not leave a note open behind it.
+              const from = pressedAt.current;
+              const dragged =
+                event.detail > 0 &&
+                from !== null &&
+                Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4;
+              if (dragged) return;
+              if (open) close(false);
+              else setOpen(true);
+            }}
+          />
+        )}
+      </div>
 
       {openable && open && paper && (
         <RunDetail
