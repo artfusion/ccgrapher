@@ -10,6 +10,12 @@
         "dev"
       ],
       "port": 3210
+    },
+    {
+      "name": "ccgrapher-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4173", "--directory", "/Users/michael/Development/ccgrapher-site"],
+      "port": 4173
     }
   ]
 }
