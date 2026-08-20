@@ -163,6 +163,25 @@ describe("validation", () => {
   it("reports the field path on a schema failure", () => {
     expect(() => parseSpec(`${base}  - { id: a, label: A, kind: nonsense }\n`)).toThrow(SpecError);
   });
+
+  it("rejects unparsable YAML with its own message, distinct from a schema failure", () => {
+    // Missing closing brace: not schema-invalid, not even YAML — parseYaml itself
+    // throws before WorkflowSpec ever sees it.
+    expect(() => parseSpec(`${base}  - { id: a, label: A, kind: worker\n`)).toThrow(
+      /not valid YAML/,
+    );
+  });
+
+  it("names the origin it was given in a YAML-syntax error, the same as in a schema error", () => {
+    let caught: SpecError | undefined;
+    try {
+      parseSpec(`${base}  - { id: a, label: A, kind: worker\n`, "broken.yaml");
+    } catch (cause) {
+      caught = cause as SpecError;
+    }
+    expect(caught).toBeInstanceOf(SpecError);
+    expect(caught?.message).toMatch(/^broken\.yaml: not valid YAML/);
+  });
 });
 
 /**
