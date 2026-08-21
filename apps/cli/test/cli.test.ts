@@ -449,6 +449,16 @@ describe("trace stats", () => {
 describe("trace audit", () => {
   const spec = example("capability-audit");
 
+  // The CI acceptance-criteria shell block's baseline case, ported here so a
+  // regression in it surfaces on `pnpm test` rather than only after a full
+  // build in CI: a run that declares, reports and uses the same capability
+  // has nothing to report at all — not even a warning.
+  it("0 with no findings at all when a run's capability use matches its own spec", () => {
+    const run = ccg("trace", "audit", trace("live-demo"), "--spec", example("live-demo"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("no findings");
+  });
+
   it("0 when the run only disagrees with the spec in ways that are warnings", () => {
     const run = ccg("trace", "audit", trace("capability-unused"), "--spec", spec);
     expect(run.status).toBe(0);
