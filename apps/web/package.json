@@ -1,6 +1,6 @@
 {
   "name": "@ccgrapher/web",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Interactive JointJS canvas for editing and linting workflow specs.",
