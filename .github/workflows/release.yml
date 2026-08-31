@@ -1,0 +1,60 @@
+name: Release
+
+# Publishes every npm package when a vX.Y.Z tag is pushed. The apps-web-v*
+# tags mark web canvas milestones and publish nothing, so they do not match.
+#
+# Auth is npm trusted publishing (OIDC): each package's npm settings name this
+# repository and this workflow file as a trusted publisher, so there is no
+# token to store or rotate, and npm attaches provenance to what it accepts.
+# A package missing that configuration fails its own publish here — nothing
+# silently skips.
+on:
+  push:
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
+
+permissions:
+  contents: read
+  id-token: write # the OIDC exchange with npm
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer; Node's bundled npm lags.
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tag must describe the tree it points at. A tag pushed against
+      # packages still carrying the previous version would publish nothing
+      # (every version already on the registry) and report success.
+      - name: Tag matches the package versions
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          cli_version=$(node -p "require('./apps/cli/package.json').version")
+          if [ "$tag_version" != "$cli_version" ]; then
+            echo "tag $GITHUB_REF_NAME but @ccgrapher/cli is $cli_version — bump the packages before tagging" >&2
+            exit 1
+          fi
+
+      # publish.sh builds, tests, packs with pnpm, refuses unresolved
+      # workspace: deps, skips versions already on the registry, and fails if
+      # any publishable package is missing from its ordered list.
+      - name: Publish
+        run: bash tools/publish.sh
