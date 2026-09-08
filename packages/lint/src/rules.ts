@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import {
-  effectiveInboundCount,
-  hasPath,
-  rankGraph,
-  roots,
-  type EdgeSpec,
-  type Graph,
-} from "@ccgrapher/core";
+import { effectiveInboundCount, hasPath, roots, type EdgeSpec, type Graph } from "@ccgrapher/core";
 import { ruleSeverity, type Finding, type Phase, type RuleId } from "./types.js";
 
 /** Fields an edge genuinely transports: declared by the source AND consumed by the target. */
@@ -30,17 +23,28 @@ export function unsatisfiedInputs(graph: Graph, id: string): string[] {
   return Object.keys(node.in).filter((field) => !supplied.has(field));
 }
 
-/** Nodes that could run at the same moment: same rank, no directed path either way. */
+/**
+ * Nodes that could run at the same moment: no directed path between them
+ * either way, regardless of rank.
+ *
+ * This used to check same-rank pairs only, on the assumption that rank is a
+ * proxy for "runs at the same time" — true of `ccg run` and every codegen
+ * target, which both execute one full rank at a time behind a barrier. It is
+ * not true in general: a layer is a layout fact, not an execution guarantee,
+ * and nothing stops a smarter scheduler, a live agent session, or a human
+ * team from starting a rank-4 node the moment its own inputs are ready, while
+ * an unrelated rank-2 node from a different branch is still running. Two
+ * nodes with no declared path between them, in either direction, are exactly
+ * the nodes the spec never said had to wait on each other — same rank or not.
+ */
 function concurrentPairs(graph: Graph): Array<[string, string]> {
-  const { layers } = rankGraph(graph);
+  const ids = [...graph.nodes.keys()];
   const pairs: Array<[string, string]> = [];
-  for (const layer of layers) {
-    for (let i = 0; i < layer.length; i++) {
-      for (let j = i + 1; j < layer.length; j++) {
-        const a = layer[i]!;
-        const b = layer[j]!;
-        if (!hasPath(graph, a, b) && !hasPath(graph, b, a)) pairs.push([a, b]);
-      }
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = ids[i]!;
+      const b = ids[j]!;
+      if (!hasPath(graph, a, b) && !hasPath(graph, b, a)) pairs.push([a, b]);
     }
   }
   return pairs;
