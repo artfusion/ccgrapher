@@ -8,9 +8,9 @@ import { layoutGraph } from "@ccgrapher/layout";
 import { lint } from "@ccgrapher/lint";
 import { renderExcalidraw } from "@ccgrapher/render-excalidraw";
 import { renderMermaid } from "@ccgrapher/render-mermaid";
-import { renderSvg } from "@ccgrapher/render-svg";
+import { renderSvg, wrapHtml } from "@ccgrapher/render-svg";
 
-const FORMATS = ["svg", "mermaid", "excalidraw"] as const;
+const FORMATS = ["svg", "mermaid", "excalidraw", "html"] as const;
 type Format = (typeof FORMATS)[number];
 
 const BY_EXTENSION: Record<string, Format> = {
@@ -19,6 +19,8 @@ const BY_EXTENSION: Record<string, Format> = {
   ".md": "mermaid",
   ".excalidraw": "excalidraw",
   ".json": "excalidraw",
+  ".html": "html",
+  ".htm": "html",
 };
 
 export function renderCommand(args: string[]): number {
@@ -106,6 +108,17 @@ function emit(
         fakeEdges,
         title,
       });
+    case "html":
+      return wrapHtml(
+        renderSvg(layoutGraph(graph), {
+          header: options.header,
+          embedFont: options.embedFont,
+          grain: options.grain,
+          fakeEdges,
+          title,
+        }),
+        { title },
+      );
   }
 }
 
