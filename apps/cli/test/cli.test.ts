@@ -177,11 +177,27 @@ describe("render", () => {
       ["svg", "<svg xmlns="],
       ["mmd", "flowchart TD"],
       ["excalidraw", '"type": "excalidraw"'],
+      ["html", "<!doctype html>"],
     ] as const) {
       const file = join(out, `diamond.${ext}`);
       expect(ccg("render", example("diamond"), "-o", file).status).toBe(0);
       expect(readFileSync(file, "utf8")).toContain(marker);
     }
+  });
+
+  it("html wraps the same svg render would have produced, with pan and zoom", () => {
+    const svgFile = join(out, "diamond-plain.svg");
+    const htmlFile = join(out, "diamond-plain.html");
+    ccg("render", example("diamond"), "-o", svgFile);
+    ccg("render", example("diamond"), "-o", htmlFile);
+
+    const svg = readFileSync(svgFile, "utf8");
+    const html = readFileSync(htmlFile, "utf8");
+    expect(html).toContain(svg);
+    // xmlns and the font's OFL notice legitimately contain "http://" as
+    // text — only a src/href attribute would mean an actual network request.
+    expect(html).not.toMatch(/\bsrc="https?:/);
+    expect(html).not.toMatch(/\bhref="https?:/);
   });
 
   it("--fix renders the repaired graph", () => {
