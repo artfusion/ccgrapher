@@ -16,6 +16,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildModel } from "../lib/graph-model";
+import { FIXTURES } from "../lib/fixtures";
+import { encodeSpecFragment } from "../lib/viewer-link";
 import type { CCEdge, CCNode } from "../lib/view-model";
 
 vi.mock("../app/canvas/canvas", () => ({
@@ -100,5 +103,50 @@ describe("the live run bar", () => {
       expect(status).toBeTruthy();
       expect(status?.textContent).not.toBe("");
     });
+  });
+});
+
+describe("a spec carried in the URL fragment", () => {
+  beforeEach(() => mockRunsEndpoint(NO_RUNS));
+
+  afterEach(() => {
+    window.location.hash = "";
+  });
+
+  it("loads that spec instead of the default fixture, and enters viewer mode", async () => {
+    const diamond = FIXTURES.diamond!;
+    window.location.hash = `#${encodeSpecFragment(diamond)}`;
+
+    render(<Editor />);
+    const canvas = await screen.findByTestId("canvas-mock");
+
+    const expectedNodeCount = (buildModel(diamond, false) as { nodes: unknown[] }).nodes.length;
+    expect(canvas.getAttribute("data-node-count")).toBe(String(expectedNodeCount));
+
+    // The editing surface — the example dropdown, the "open a spec" file
+    // picker, and the YAML textarea — is gone; the heat-file picker and the
+    // repair toggle are a different concern and stay.
+    expect(screen.queryByText("load an example…")).toBeNull();
+    expect(document.querySelector('input[accept*=".yaml"]')).toBeNull();
+    expect(document.querySelector("textarea")).toBeNull();
+    expect(screen.getByText("preview repaired")).toBeTruthy();
+  });
+
+  it("an explicit #view=1 with no spec still enters viewer mode, on the default fixture", async () => {
+    window.location.hash = "#view=1";
+
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+
+    expect(screen.queryByText("load an example…")).toBeNull();
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("an ordinary load with no fragment shows the full editing surface", async () => {
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+
+    expect(screen.queryByText("load an example…")).not.toBeNull();
+    expect(document.querySelector("textarea")).not.toBeNull();
   });
 });

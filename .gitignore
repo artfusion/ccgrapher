@@ -8,6 +8,9 @@ dist/
 # blanket *.svg / *.png.
 /out/
 
+# apps/web's static export (`next build` with output: "export").
+apps/web/out/
+
 # Where `ccg run` writes a trace when --trace does not say otherwise. The one
 # committed sample lives in examples/traces/ and is not covered by this.
 /runs/
