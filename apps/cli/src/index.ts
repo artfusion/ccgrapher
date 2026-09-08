@@ -24,7 +24,7 @@ Usage:
   ccg run <spec.yaml> --impl <module>  execute the spec and write a trace
   ccg serve <trace-dir>                stream a run's trace over SSE
   ccg trace stats <run.jsonl|dir>      summarise a trace's durations and cost
-  ccg trace audit <run.jsonl|dir>      hold a run against the capabilities its spec declares
+  ccg trace audit <run.jsonl|dir>      hold a run against what its spec declares — capabilities and nodes
 
 Lint options:
   --json            machine-readable output

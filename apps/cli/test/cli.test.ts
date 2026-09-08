@@ -500,6 +500,34 @@ describe("trace audit", () => {
     expect(run.stdout).toContain("mcp:web/fetch");
   });
 
+  // Declared-vs-observed at the node level: a node that started before its
+  // declared predecessor finished. `ccg run` itself can never produce this —
+  // the runner only starts a node once its wave's dependencies are done — so
+  // the evidence has to come from a trace it didn't write itself, the way a
+  // hooks adapter's timing could disagree with the graph.
+  it("1 when a node started before its declared predecessor finished", () => {
+    const reordered = join(out, "order-violation.jsonl");
+    writeFileSync(
+      reordered,
+      [
+        `{"v":1,"runId":"demo","seq":0,"ts":"2026-09-08T10:00:00.000Z","type":"run_started","spec":{"name":"linear-chain"},"source":"claude-code-hooks"}`,
+        `{"v":1,"runId":"demo","seq":1,"ts":"2026-09-08T10:00:00.100Z","type":"node_started","node":"setup"}`,
+        // review_a starts while setup is still open — the graph declares setup -> review_a.
+        `{"v":1,"runId":"demo","seq":2,"ts":"2026-09-08T10:00:00.900Z","type":"node_started","node":"review_a"}`,
+        `{"v":1,"runId":"demo","seq":3,"ts":"2026-09-08T10:00:01.000Z","type":"node_finished","node":"setup","durationMs":900}`,
+        `{"v":1,"runId":"demo","seq":4,"ts":"2026-09-08T10:00:01.500Z","type":"node_finished","node":"review_a","durationMs":600}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const run = ccg("trace", "audit", reordered, "--spec", example("linear-chain"));
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("ORDER_VIOLATION");
+    expect(run.stdout).toContain("review_a started before setup finished");
+    expect(run.stdout).toContain("setup -> review_a");
+  });
+
   it("--json carries the capability as a field, not only inside the message", () => {
     const run = ccg("trace", "audit", trace("capability-gap"), "--spec", spec, "--json");
     expect(run.status).toBe(1);
@@ -523,18 +551,20 @@ describe("trace audit", () => {
   // unrelated change, and the test went from meaningful to wrong without either
   // side touching the other's files.
   it("says so when the trace never mentioned a capability at all", () => {
+    // Every diamond node has to start and finish here, or NODE_NEVER_RAN fires
+    // for the rest and the "no findings" assertion below stops being true —
+    // this test is about the capability-silence message, not the node rules.
+    const diamondNodes = ["split", "worker_1", "worker_2", "worker_3", "worker_4", "worker_5", "checker", "merge"];
+    let seq = 0;
+    const lines = [`{"v":1,"runId":"silent","seq":${seq++},"ts":"2026-08-01T09:00:00.000Z","type":"run_started","spec":{"name":"diamond"},"source":"ccg-run"}`];
+    for (const node of diamondNodes) {
+      lines.push(`{"v":1,"runId":"silent","seq":${seq++},"ts":"2026-08-01T09:00:01.000Z","type":"node_started","node":"${node}"}`);
+      lines.push(`{"v":1,"runId":"silent","seq":${seq++},"ts":"2026-08-01T09:00:02.000Z","type":"node_finished","node":"${node}","durationMs":10}`);
+    }
+    lines.push(`{"v":1,"runId":"silent","seq":${seq++},"ts":"2026-08-01T09:00:03.000Z","type":"run_finished","ok":true,"durationMs":20}`);
+
     const silent = join(out, "no-capabilities.jsonl");
-    writeFileSync(
-      silent,
-      [
-        `{"v":1,"runId":"silent","seq":0,"ts":"2026-08-01T09:00:00.000Z","type":"run_started","spec":{"name":"diamond"},"source":"ccg-run"}`,
-        `{"v":1,"runId":"silent","seq":1,"ts":"2026-08-01T09:00:01.000Z","type":"node_started","node":"split"}`,
-        `{"v":1,"runId":"silent","seq":2,"ts":"2026-08-01T09:00:02.000Z","type":"node_finished","node":"split","durationMs":10}`,
-        `{"v":1,"runId":"silent","seq":3,"ts":"2026-08-01T09:00:03.000Z","type":"run_finished","ok":true,"durationMs":20}`,
-        "",
-      ].join("\n"),
-      "utf8",
-    );
+    writeFileSync(silent, `${lines.join("\n")}\n`, "utf8");
 
     const run = ccg("trace", "audit", silent, "--spec", example("diamond"));
     expect(run.status).toBe(0);

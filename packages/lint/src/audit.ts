@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { Graph } from "@ccgrapher/core";
+import { hasPath, type Graph } from "@ccgrapher/core";
 import { isTraceEvent, type TraceEvent, type TraceLine } from "@ccgrapher/trace";
 import { type Severity } from "./types.js";
 
@@ -38,14 +38,35 @@ import { type Severity } from "./types.js";
  * a finding about that run. Identical findings from several pooled runs collapse
  * into one, so a directory of thirty runs of the same broken workflow reports
  * the problem once.
+ *
+ * **Declared versus observed, at the node level too.** The three capability
+ * rules above hold `uses:` against what a run reports. Four more rules hold
+ * the graph's nodes and edges themselves against the same run: a node the spec
+ * declares that never started (`NODE_NEVER_RAN`), a `node_started` for an id
+ * the spec does not know (`UNDECLARED_NODE`), a node that started before its
+ * declared predecessor finished (`ORDER_VIOLATION` — the strongest of the four,
+ * because it means the dependency the graph promises was not honoured), and
+ * two nodes with no declared path between them that consistently never
+ * overlap across several runs (`OBSERVED_SERIALISATION` — a candidate hidden
+ * edge, reported only once there is more than a single run's worth of
+ * evidence). These reuse the same run-matching and the same "absent is not
+ * zero" doctrine as the capability rules; see each rule's implementation below
+ * for exactly what counts as evidence.
  */
 
 /** Errors first, the way `RULE_ORDER` orders the lint rules. Order here is report order. */
 export const AUDIT_RULE_ORDER = [
   "CAPABILITY_GAP",
+  "ORDER_VIOLATION",
   "UNUSED_CAPABILITY",
   "UNDECLARED_CAPABILITY",
+  "NODE_NEVER_RAN",
+  "UNDECLARED_NODE",
+  "OBSERVED_SERIALISATION",
 ] as const;
+
+/** Fewer than this many non-overlapping runs is a coincidence, not evidence. */
+const MIN_SERIALISATION_RUNS = 2;
 
 export type AuditRuleId = (typeof AUDIT_RULE_ORDER)[number];
 
@@ -66,7 +87,8 @@ export interface AuditFinding {
   readonly message: string;
   /** The node(s) the finding is about. Empty for a run-scoped finding no node can be blamed for. */
   readonly nodes: readonly string[];
-  readonly capability: string;
+  /** Set only for the three capability rules. The four node-level rules are not about any one capability. */
+  readonly capability?: string;
 }
 
 /** A run left out because it says it came from a different spec. */
@@ -103,6 +125,15 @@ export interface AuditResult {
    * reading only the finding count cannot see the difference.
    */
   readonly reportedCapabilities: boolean;
+  /**
+   * Did any audited run report a `node_started` event at all?
+   *
+   * The node-level rules need the same "clean vs. nothing was checked"
+   * distinction `reportedCapabilities` gives the capability rules — a trace
+   * from an adapter with no node attribution must not read as "every node in
+   * the spec never ran".
+   */
+  readonly reportedNodeEvents: boolean;
 }
 
 /** What the caller knows about the spec it is auditing against. */
@@ -119,9 +150,13 @@ export interface AuditOptions {
 export function auditRuleSeverity(rule: AuditRuleId): Severity {
   switch (rule) {
     case "CAPABILITY_GAP":
+    case "ORDER_VIOLATION":
       return "error";
     case "UNUSED_CAPABILITY":
     case "UNDECLARED_CAPABILITY":
+    case "NODE_NEVER_RAN":
+    case "UNDECLARED_NODE":
+    case "OBSERVED_SERIALISATION":
       return "warn";
   }
 }
@@ -132,6 +167,13 @@ const finding = (
   nodes: readonly string[],
   message: string,
 ): AuditFinding => ({ rule, severity: auditRuleSeverity(rule), message, nodes, capability });
+
+/** Same shape, for the four rules that are not about any one capability. */
+const nodeFinding = (
+  rule: AuditRuleId,
+  nodes: readonly string[],
+  message: string,
+): AuditFinding => ({ rule, severity: auditRuleSeverity(rule), message, nodes });
 
 /**
  * Audits a trace — one run's lines, or several runs concatenated — against the
@@ -170,6 +212,30 @@ export function audit(
   const skipped: SkippedRun[] = [];
   const changedSince: string[] = [];
   let reportedCapabilities = false;
+  let reportedNodeEvents = false;
+
+  /**
+   * Every node id the trace has *any* evidence for — for `NODE_NEVER_RAN`.
+   *
+   * Not only `node_started`. A gate node never gets one at all: it lives in
+   * `gate_waiting`/`gate_resolved` instead. And a node the runner skipped
+   * because its own dependency failed gets `node_failed` with no `node_started`
+   * ever preceding it (`runner`'s `Promise.allSettled`-per-wave marks it failed
+   * without attempting it). Both are real evidence the run engine accounted
+   * for the node — treating either as "never ran" would flag every gate and
+   * every legitimately-skipped node on an otherwise ordinary run.
+   */
+  const everObserved = new Set<string>();
+  /**
+   * One span per node per run, for `OBSERVED_SERIALISATION`. `finish` is the
+   * seq of the last finish/fail seen for that node in that run; `undefined`
+   * means it never finished there, which rules the run out as evidence.
+   *
+   * A fanOut node collapses to one span across its instances (first start,
+   * last finish) rather than one span per instance — the same simplification
+   * `open` already makes elsewhere in this file for counting purposes.
+   */
+  const spans = new Map<string, Map<string, { start: number; finish: number | undefined }>>();
 
   for (const [runId, events] of byRun) {
     // `seq` is the writer's counter and is what orders a stream; `ts` cannot,
@@ -194,7 +260,42 @@ export function audit(
 
     runIds.push(runId);
     if (ordered.some((e) => e.type.startsWith("capability_"))) reportedCapabilities = true;
-    auditRun(ordered, declared, declaredAnywhere, raw);
+    if (ordered.some((e) => e.type === "node_started")) reportedNodeEvents = true;
+    auditRun(ordered, declared, declaredAnywhere, graph, raw);
+
+    const runSpans = spans.get(runId) ?? new Map<string, { start: number; finish: number | undefined }>();
+    spans.set(runId, runSpans);
+    for (const event of ordered) {
+      if (event.type === "node_started") {
+        everObserved.add(event.node);
+        if (!runSpans.has(event.node)) runSpans.set(event.node, { start: event.seq, finish: undefined });
+      } else if (event.type === "node_finished" || event.type === "node_failed") {
+        everObserved.add(event.node);
+        const span = runSpans.get(event.node);
+        if (span) span.finish = event.seq;
+      } else if (event.type === "gate_waiting" || event.type === "gate_resolved") {
+        everObserved.add(event.node);
+      }
+    }
+  }
+
+  // Both rules below need to know a node ran at all before treating its
+  // absence, or its lack of overlap with another node, as evidence of
+  // anything — the same guard `reportedCapabilities` gives the three rules
+  // above it.
+  if (reportedNodeEvents) {
+    for (const node of graph.spec.nodes) {
+      if (!everObserved.has(node.id)) {
+        raw.push(
+          nodeFinding(
+            "NODE_NEVER_RAN",
+            [node.id],
+            `${node.id} is declared in the spec but no audited run shows any evidence it ran`,
+          ),
+        );
+      }
+    }
+    auditObservedSerialisation(graph, spans, raw);
   }
 
   return {
@@ -203,7 +304,55 @@ export function audit(
     skipped: skipped.sort((a, b) => a.runId.localeCompare(b.runId)),
     changedSince: changedSince.sort(),
     reportedCapabilities,
+    reportedNodeEvents,
   };
+}
+
+/**
+ * Two nodes with no declared path between them, in either direction, that
+ * never overlapped in time across several runs — a candidate hidden edge the
+ * spec does not declare.
+ *
+ * A single non-overlapping run is a coincidence a synchronous scheduler
+ * produces constantly; `MIN_SERIALISATION_RUNS` is the line between that and
+ * a pattern. Any run where the pair *did* overlap disproves the candidate
+ * outright, so one counterexample beats any number of quiet runs.
+ */
+function auditObservedSerialisation(
+  graph: Graph,
+  spans: ReadonlyMap<string, ReadonlyMap<string, { start: number; finish: number | undefined }>>,
+  out: AuditFinding[],
+): void {
+  const ids = graph.spec.nodes.map((n) => n.id);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = ids[i]!;
+      const b = ids[j]!;
+      if (hasPath(graph, a, b) || hasPath(graph, b, a)) continue;
+
+      let nonOverlapping = 0;
+      let overlapped = false;
+      for (const runSpans of spans.values()) {
+        const sa = runSpans.get(a);
+        const sb = runSpans.get(b);
+        if (!sa || !sb || sa.finish === undefined || sb.finish === undefined) continue;
+        if (sa.start <= sb.finish && sb.start <= sa.finish) {
+          overlapped = true;
+          break;
+        }
+        nonOverlapping++;
+      }
+      if (!overlapped && nonOverlapping >= MIN_SERIALISATION_RUNS) {
+        out.push(
+          nodeFinding(
+            "OBSERVED_SERIALISATION",
+            [a, b],
+            `${a} and ${b} share no declared path and never overlapped in ${nonOverlapping} audited runs — a candidate hidden edge`,
+          ),
+        );
+      }
+    }
+  }
 }
 
 /** One run's timeline. Findings are appended to `out` rather than returned, so pooled runs share a list. */
@@ -211,6 +360,7 @@ function auditRun(
   events: readonly TraceEvent[],
   declared: ReadonlyMap<string, readonly string[]>,
   declaredAnywhere: ReadonlySet<string>,
+  graph: Graph,
   out: AuditFinding[],
 ): void {
   const uses = (node: string) => declared.get(node) ?? [];
@@ -221,6 +371,10 @@ function auditRun(
   const open = new Map<string, number>();
   const started = new Set<string>();
   const invoked = new Set<string>();
+  /** How many times each node has finished (successfully or not) so far, for `ORDER_VIOLATION`. */
+  const finishedCount = new Map<string, number>();
+  /** How many times each node has started so far, for the same rule. */
+  const startedCount = new Map<string, number>();
   // A separator that cannot occur in either half, so the key is unambiguous.
   // Written as an escape rather than the byte itself: a literal NUL in the
   // source makes git treat this whole file as binary, and a source file with
@@ -272,6 +426,36 @@ function auditRun(
             ),
           );
         }
+
+        if (!graph.nodes.has(event.node)) {
+          out.push(
+            nodeFinding(
+              "UNDECLARED_NODE",
+              [event.node],
+              `${event.node} started but is not declared in the spec`,
+            ),
+          );
+        } else {
+          // A predecessor that has *started* but not yet finished is positive
+          // evidence the run did not wait for it — the trace clearly tracks
+          // that node, it just has not reported it done. A predecessor that
+          // never started at all says nothing either way (it might simply be
+          // outside this trace's coverage), so it is not evidence here, the
+          // same "absent is not zero" reasoning as everywhere else in this file.
+          for (const edge of graph.inbound.get(event.node) ?? []) {
+            const from = edge.from;
+            if ((startedCount.get(from) ?? 0) > 0 && (finishedCount.get(from) ?? 0) === 0) {
+              out.push(
+                nodeFinding(
+                  "ORDER_VIOLATION",
+                  [from, event.node],
+                  `${event.node} started before ${from} finished, though the spec declares ${from} -> ${event.node}`,
+                ),
+              );
+            }
+          }
+        }
+        startedCount.set(event.node, (startedCount.get(event.node) ?? 0) + 1);
         break;
       }
 
@@ -280,6 +464,7 @@ function auditRun(
         const remaining = (open.get(event.node) ?? 0) - 1;
         if (remaining > 0) open.set(event.node, remaining);
         else open.delete(event.node);
+        finishedCount.set(event.node, (finishedCount.get(event.node) ?? 0) + 1);
         break;
       }
 
@@ -387,6 +572,8 @@ function sortFindings(graph: Graph, findings: readonly AuditFinding[]): AuditFin
     if (byRule !== 0) return byRule;
     const byNode = position(a) - position(b);
     if (byNode !== 0) return byNode;
-    return a.capability.localeCompare(b.capability);
+    // The node-level rules have no capability to break the tie on; fall back
+    // to the message, which is unique per finding in practice.
+    return (a.capability ?? a.message).localeCompare(b.capability ?? b.message);
   });
 }
