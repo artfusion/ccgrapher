@@ -199,21 +199,29 @@ dropped.
 
 ```bash
 ccg render examples/diamond.yaml -o diagram.svg          # hand-drawn SVG
+ccg render examples/diamond.yaml -o diagram.html         # same picture, pan and zoom
 ccg render examples/diamond.yaml -o diagram.mmd          # Mermaid
 ccg render examples/diamond.yaml -o diagram.excalidraw   # Excalidraw scene
 ccg render examples/linear-chain.yaml --fix -o after.svg # draw the repaired graph
 ```
 
-The format comes from the extension, or pass `-f svg|mermaid|excalidraw`.
+The format comes from the extension, or pass `-f svg|html|mermaid|excalidraw`.
 
 - **SVG** — rough.js strokes, paper texture, the handwriting face embedded so the file renders
   identically anywhere. Fake edges are red and dashed with a "carries no data" label.
   `--no-grain` drops the paper texture (much smaller once rasterised); `--no-embed-font` references
   the typeface by name instead of inlining it.
+- **HTML** — the same SVG wrapped in one self-contained page: wheel zoom anchored at the cursor,
+  drag to pan, a fit button. No CDN, no network requests, so it opens and reads fine as a chat
+  attachment or a browser tab — reach for this over plain SVG whenever the graph is bigger than a
+  handful of nodes and the labels need to be legible up close.
 - **Mermaid** — `flowchart TD` with `look: handDrawn`. Renders on GitHub and in Notion. Each kind
   gets a distinguishable shape, and edges are labelled with what they carry.
-- **Excalidraw** — a scene you can open and nudge by hand. Arrows are bound to their boxes and
-  labels live inside their containers, so dragging a node takes everything with it.
+- **Excalidraw** — a scene you can open and nudge by hand: drag the `.excalidraw` file onto
+  [excalidraw.com](https://excalidraw.com), or open it with the Excalidraw extension in VS Code.
+  Arrows are bound to their boxes and labels live inside their containers, so dragging a node takes
+  everything with it. Edits made there are not written back to the spec — it is a picture to hand
+  someone, not a second source of truth.
 
 Every renderer is deterministic: same spec in, byte-identical output out.
 
