@@ -13,4 +13,11 @@ export default {
   // so this changes nothing about how the page runs — only where it can be
   // hosted from. `next build` writes the exportable output to `out/`.
   output: "export",
+  // Deployed at ccgrapher.artfusion.com/app/ — a subdirectory of the existing
+  // marketing site, not its own subdomain (Hostinger's hosting API rejects
+  // the multi-level subdomain that would have needed). basePath rewrites
+  // every internal asset reference at build time, so it also applies to
+  // `pnpm dev`: the app serves at http://localhost:3210/app during local
+  // development, not the bare root.
+  basePath: "/app",
 };
