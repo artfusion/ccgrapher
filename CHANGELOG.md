@@ -5,6 +5,33 @@ published npm packages, which move together; `apps/web vX.Y.Z` entries cover the
 private web canvas, which has its own train. Full notes accompany each
 [GitHub release](https://github.com/artfusion/ccgrapher/releases).
 
+## v0.5.0 — 2026-09-09
+
+- New `html` render format: the same picture as `svg`, wrapped in a self-contained
+  page with cursor-anchored wheel zoom and drag-to-pan. No CDN, no server — it opens
+  as a chat attachment or a browser tab and reads fine at any size.
+- `ccg trace audit` gains four rules that hold the graph's nodes and edges against a
+  run, not only its capabilities: `NODE_NEVER_RAN`, `UNDECLARED_NODE`,
+  `ORDER_VIOLATION` (a node started before its declared predecessor finished) and
+  `OBSERVED_SERIALISATION` (a candidate hidden edge, evidenced across several runs).
+- `HIDDEN_EDGE` now compares every pair of nodes with no declared path between them,
+  not only nodes on the same layer. A real cross-layer write collision was going
+  unreported.
+- `render-excalidraw`'s README says how to open the file it produces; the main
+  README documents all four render formats.
+
+## apps/web v0.4.0 — 2026-09-09
+
+- `next build` produces a static export. No Node server — the canvas has always
+  been client-only.
+- A spec carried in the URL fragment (`#spec=...`) loads directly and turns on a
+  read-only viewer mode: the editing surface hides, the repair toggle and the
+  live-run bar stay.
+- Deployed at ccgrapher.artfusion.com/app — `basePath: "/app"` so it sits in a
+  subdirectory of the existing site rather than needing its own subdomain.
+
+No published package changed.
+
 ## apps/web v0.3.0 — 2026-08-31
 
 - Mouse-wheel zoom and drag-to-pan on the canvas.
