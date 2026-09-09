@@ -151,6 +151,48 @@ describe("worktree suppresses the hidden-edge warning", () => {
   });
 });
 
+describe("HIDDEN_EDGE catches a collision across layers, not only within one", () => {
+  // a -> b -> c is a three-layer chain; d is a second, unrelated root. c and d
+  // land on different ranks (2 and 0) and share no path either way — exactly
+  // the shape the same-rank-only version of this rule used to miss.
+  const graph = buildGraph({
+    version: 1,
+    name: "cross-layer",
+    nodes: [
+      { id: "a", label: "a", kind: "split", in: {}, out: { x: "string" } },
+      { id: "b", label: "b", kind: "worker", in: { x: "string" }, out: { y: "string" } },
+      {
+        id: "c",
+        label: "c",
+        kind: "worker",
+        in: { y: "string" },
+        out: { z: "string" },
+        writes: ["shared.md"],
+      },
+      { id: "d", label: "d", kind: "worker", in: {}, out: { w: "string" }, writes: ["shared.md"] },
+    ],
+    edges: [
+      { from: "a", to: "b", carries: ["x"] },
+      { from: "b", to: "c", carries: ["y"] },
+    ],
+  } as WorkflowSpec);
+
+  it("flags c and d even though they sit two ranks apart", () => {
+    const found = lint(graph).findings.filter((f) => f.rule === "HIDDEN_EDGE");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.nodes.sort()).toEqual(["c", "d"]);
+    expect(found[0]!.message).toContain("shared.md");
+  });
+
+  it("says nothing once one side is isolated in its own worktree", () => {
+    const isolated = buildGraph({
+      ...graph.spec,
+      nodes: graph.spec.nodes.map((n) => (n.id === "d" ? { ...n, worktree: true } : n)),
+    });
+    expect(lint(isolated).findings.filter((f) => f.rule === "HIDDEN_EDGE")).toEqual([]);
+  });
+});
+
 describe("silent failure", () => {
   /** diamond's checker with its fan-in guard altered. */
   const checkerWith = (expects: number | undefined) => {
