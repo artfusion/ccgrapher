@@ -96,6 +96,12 @@ main {
   min-height: 0;
 }
 
+/* Viewer mode (app/editor.tsx) drops the source pane; give the canvas the
+   whole row instead of leaving its column empty. */
+.app.viewer main {
+  grid-template-columns: 1fr;
+}
+
 .pane {
   min-height: 0;
   min-width: 0;

@@ -15,6 +15,7 @@ import {
   type HeatLegend as HeatLegendData,
 } from "../lib/heat";
 import { DEFAULT_FIXTURE, FIXTURES } from "../lib/fixtures";
+import { decodeSpecFragment, isViewerHash } from "../lib/viewer-link";
 import {
   DEFAULT_SERVER_URL,
   useRunState,
@@ -34,6 +35,24 @@ const SPEC_WRITE_DEBOUNCE_MS = 75;
 export function Editor() {
   const [source, setSource] = useState(FIXTURES[DEFAULT_FIXTURE]!);
   const [repaired, setRepaired] = useState(false);
+
+  // A spec carried in the URL fragment (see lib/viewer-link.ts) — read once,
+  // client-side only, so a static export needs no server route to answer it.
+  // Starts false because a static page has no fragment at render time; the
+  // effect below corrects it on mount, before the reader has had a chance to
+  // look at anything.
+  const [viewerMode, setViewerMode] = useState(false);
+  useEffect(() => {
+    const hash = window.location.hash;
+    setViewerMode(isViewerHash(hash));
+    const fromUrl = decodeSpecFragment(hash);
+    if (fromUrl !== undefined) {
+      setSource(fromUrl);
+      setRepaired(false);
+    }
+    // Intentionally once: the fragment is how a link *arrives*, not a value
+    // this page ever writes back to, so there is nothing to keep in sync.
+  }, []);
 
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
   const [runId, setRunId] = useState<string>();
@@ -146,7 +165,7 @@ export function Editor() {
   const repairCount = model.ok ? model.result.repairs.length : 0;
 
   return (
-    <div className="app">
+    <div className={viewerMode ? "app viewer" : "app"}>
       <header>
         <h1>ccgrapher</h1>
         <p>
@@ -154,39 +173,43 @@ export function Editor() {
           goes wide instead of tall.
         </p>
         <div className="controls">
-          <select
-            value=""
-            onChange={(e) => {
-              const next = FIXTURES[e.target.value];
-              if (next) {
-                setSource(next);
-                setRepaired(false);
-              }
-            }}
-          >
-            <option value="">load an example…</option>
-            {Object.keys(FIXTURES).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {!viewerMode && (
+            <>
+              <select
+                value=""
+                onChange={(e) => {
+                  const next = FIXTURES[e.target.value];
+                  if (next) {
+                    setSource(next);
+                    setRepaired(false);
+                  }
+                }}
+              >
+                <option value="">load an example…</option>
+                {Object.keys(FIXTURES).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
 
-          <label className="filepick">
-            <input
-              type="file"
-              accept=".yaml,.yml,text/yaml,application/x-yaml"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                // So opening the same file twice in a row still fires a change.
-                e.target.value = "";
-                if (!file) return;
-                setSource(await file.text());
-                setRepaired(false);
-              }}
-            />
-            open a spec…
-          </label>
+              <label className="filepick">
+                <input
+                  type="file"
+                  accept=".yaml,.yml,text/yaml,application/x-yaml"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    // So opening the same file twice in a row still fires a change.
+                    e.target.value = "";
+                    if (!file) return;
+                    setSource(await file.text());
+                    setRepaired(false);
+                  }}
+                />
+                open a spec…
+              </label>
+            </>
+          )}
 
           <label className={repairCount === 0 ? "disabled" : ""}>
             <input
@@ -229,16 +252,18 @@ export function Editor() {
       </header>
 
       <main>
-        <section className="pane source">
-          <textarea
-            spellCheck={false}
-            value={source}
-            onChange={(e) => {
-              setSource(e.target.value);
-              setRepaired(false);
-            }}
-          />
-        </section>
+        {!viewerMode && (
+          <section className="pane source">
+            <textarea
+              spellCheck={false}
+              value={source}
+              onChange={(e) => {
+                setSource(e.target.value);
+                setRepaired(false);
+              }}
+            />
+          </section>
+        )}
 
         <section
           className={`pane canvas${dropping ? " dropping" : ""}`}
