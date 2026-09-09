@@ -24,8 +24,16 @@ function line(seq: number, event: Record<string, unknown>): TraceLine {
 }
 
 describe("the rule set", () => {
-  it("puts the error first, the way RULE_ORDER does", () => {
-    expect(AUDIT_RULE_ORDER.map(auditRuleSeverity)).toEqual(["error", "warn", "warn"]);
+  it("puts the errors first, the way RULE_ORDER does", () => {
+    expect(AUDIT_RULE_ORDER.map(auditRuleSeverity)).toEqual([
+      "error", // CAPABILITY_GAP
+      "error", // ORDER_VIOLATION
+      "warn", // UNUSED_CAPABILITY
+      "warn", // UNDECLARED_CAPABILITY
+      "warn", // NODE_NEVER_RAN
+      "warn", // UNDECLARED_NODE
+      "warn", // OBSERVED_SERIALISATION
+    ]);
   });
 });
 
@@ -58,8 +66,10 @@ describe("UNUSED_CAPABILITY", () => {
       line(3, { type: "capability_invoked", capability: "skill:summarise", node: "fetch_docs" }),
       line(4, { type: "node_finished", node: "fetch_docs", durationMs: 10 }),
     ];
-    // write_up declares skill:summarise and never ran, so it is not reported.
-    expect(audit(lines, graph).findings).toEqual([]);
+    // write_up declares skill:summarise and never ran, so no UNUSED/GAP finding
+    // is reported for it. write_up itself now correctly picks up NODE_NEVER_RAN,
+    // which is a different rule's business, not this test's.
+    expect(audit(lines, graph).findings.filter((f) => f.rule !== "NODE_NEVER_RAN")).toEqual([]);
   });
 
   it("a node-less invocation does not satisfy a node's declaration", () => {
@@ -69,7 +79,9 @@ describe("UNUSED_CAPABILITY", () => {
       line(1, { type: "capability_invoked", capability: "skill:summarise" }),
       line(2, { type: "node_finished", node: "write_up", durationMs: 10 }),
     ];
-    const findings = audit(lines, graph).findings;
+    // fetch_docs never appears at all here, so NODE_NEVER_RAN correctly fires
+    // for it — this test is only about the capability finding.
+    const findings = audit(lines, graph).findings.filter((f) => f.rule !== "NODE_NEVER_RAN");
     expect(findings.map((f) => f.rule)).toEqual(["UNUSED_CAPABILITY"]);
     expect(findings[0]!.nodes).toEqual(["write_up"]);
   });
@@ -142,6 +154,9 @@ describe("CAPABILITY_GAP", () => {
     expect(gaps[0]!.message).toContain("while the node was running");
   });
 
+  // fetch_docs never appears in any of the three traces below — only
+  // write_up's capability timeline is under test — so each filters out the
+  // NODE_NEVER_RAN it correctly and separately picks up for fetch_docs.
   it("a capability lost after the node closed is not that node's gap", () => {
     const graph = fixture("capability-audit");
     const lines = [
@@ -150,7 +165,7 @@ describe("CAPABILITY_GAP", () => {
       line(2, { type: "node_finished", node: "write_up", durationMs: 10 }),
       line(3, { type: "capability_lost", capability: "skill:summarise" }),
     ];
-    expect(audit(lines, graph).findings).toEqual([]);
+    expect(audit(lines, graph).findings.filter((f) => f.rule !== "NODE_NEVER_RAN")).toEqual([]);
   });
 
   it("a capability lost and then reported back is available again", () => {
@@ -162,7 +177,7 @@ describe("CAPABILITY_GAP", () => {
       line(3, { type: "capability_invoked", capability: "skill:summarise", node: "write_up" }),
       line(4, { type: "node_finished", node: "write_up", durationMs: 10 }),
     ];
-    expect(audit(lines, graph).findings).toEqual([]);
+    expect(audit(lines, graph).findings.filter((f) => f.rule !== "NODE_NEVER_RAN")).toEqual([]);
   });
 
   /**
@@ -177,7 +192,7 @@ describe("CAPABILITY_GAP", () => {
       line(1, { type: "capability_invoked", capability: "skill:summarise", node: "write_up" }),
       line(2, { type: "node_finished", node: "write_up", durationMs: 10 }),
     ];
-    expect(audit(lines, graph).findings).toEqual([]);
+    expect(audit(lines, graph).findings.filter((f) => f.rule !== "NODE_NEVER_RAN")).toEqual([]);
   });
 });
 
@@ -187,7 +202,7 @@ describe("clean control", () => {
   // touched no file this test touches. The guard is kept precisely so the next
   // fixture to gain one fails here loudly instead of leaving a control that
   // silently controls for nothing.
-  it("a uses-free spec and a trace with no capability events reports nothing", () => {
+  it("a uses-free spec and a trace with no capability events reports no capability finding", () => {
     const graph = fixture("research-desk");
     expect(graph.spec.nodes.every((n) => n.uses === undefined)).toBe(true);
     const lines = [
@@ -197,7 +212,10 @@ describe("clean control", () => {
       line(3, { type: "run_finished", ok: true, durationMs: 20 }),
     ];
     const result = audit(lines, graph);
-    expect(result.findings).toEqual([]);
+    // Only "plan" ran here, so NODE_NEVER_RAN correctly flags the rest — that
+    // is the node-level rules' job, not this test's concern. This test is
+    // only about a spec with no `uses:` anywhere producing no capability finding.
+    expect(result.findings.filter((f) => f.rule.includes("CAPABILITY"))).toEqual([]);
     expect(result.runIds).toEqual(["hand"]);
   });
 
@@ -213,6 +231,7 @@ describe("clean control", () => {
       skipped: [],
       changedSince: [],
       reportedCapabilities: false,
+      reportedNodeEvents: false,
     });
   });
 });
@@ -267,7 +286,10 @@ describe("pooling runs", () => {
     ];
     const result = audit(lines, graph);
     expect(result.runIds).toEqual(["a", "b"]);
-    expect(result.findings).toEqual([]);
+    // fetch_docs correctly picks up NODE_NEVER_RAN here — neither run starts
+    // it. What this test actually checks is that b's loss does not leak into
+    // a's timeline as a false CAPABILITY_GAP.
+    expect(result.findings.filter((f) => f.rule === "CAPABILITY_GAP")).toEqual([]);
   });
 });
 
@@ -422,5 +444,231 @@ describe("a run is only audited against the spec it came from", () => {
     expect(silent.reportedCapabilities).toBe(false);
     const spoke = audit([fromSpec("r", "capability-audit"), ...body("r")], graph);
     expect(spoke.reportedCapabilities).toBe(true);
+  });
+});
+
+describe("NODE_NEVER_RAN", () => {
+  const graph = fixture("capability-audit"); // fetch_docs -> write_up
+
+  it("flags a declared node that never started in any matched run", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(1, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings).toEqual([
+      {
+        rule: "NODE_NEVER_RAN",
+        severity: "warn",
+        nodes: ["write_up"],
+        message: "write_up is declared in the spec but no audited run shows any evidence it ran",
+      },
+    ]);
+  });
+
+  it("says nothing when no run reports a node_started at all — absence is not evidence", () => {
+    const lines = [line(0, { runId: "r1", type: "run_started", spec: { name: "capability-audit" } })];
+    expect(audit(lines, graph).findings).toEqual([]);
+  });
+
+  it("says nothing once every declared node has started somewhere across the pool", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(1, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+      line(2, { runId: "r2", type: "node_started", node: "write_up" }),
+      line(3, { runId: "r2", type: "node_finished", node: "write_up", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "NODE_NEVER_RAN")).toEqual([]);
+  });
+
+  // Regression: examples/traces/live-demo.jsonl has both shapes in one real
+  // run — a gate node ("review": gate_waiting/gate_resolved, never
+  // node_started) and a node the runner skipped because its own dependency
+  // failed ("count_lines": node_failed with no node_started ever preceding
+  // it). Neither is "never ran" — the trace has direct evidence for both.
+  it("a gate node is accounted for by gate_waiting/gate_resolved, not node_started", () => {
+    const gateGraph = fixture("live-demo");
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "plan" }),
+      line(1, { runId: "r1", type: "node_finished", node: "plan", durationMs: 10 }),
+      line(2, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(3, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+      line(4, { runId: "r1", type: "node_started", node: "fetch_code" }),
+      line(5, { runId: "r1", type: "node_finished", node: "fetch_code", durationMs: 10 }),
+      line(6, { runId: "r1", type: "node_started", node: "count_lines" }),
+      line(7, { runId: "r1", type: "node_finished", node: "count_lines", durationMs: 10 }),
+      line(8, { runId: "r1", type: "node_started", node: "summarise" }),
+      line(9, { runId: "r1", type: "node_finished", node: "summarise", durationMs: 10 }),
+      line(10, { runId: "r1", type: "gate_waiting", node: "review" }),
+      line(11, { runId: "r1", type: "gate_resolved", node: "review", decision: "approve" }),
+      line(12, { runId: "r1", type: "node_started", node: "publish" }),
+      line(13, { runId: "r1", type: "node_finished", node: "publish", durationMs: 10 }),
+    ];
+    expect(audit(lines, gateGraph).findings.filter((f) => f.rule === "NODE_NEVER_RAN")).toEqual([]);
+  });
+
+  it("a node skipped after its dependency failed is accounted for by node_failed alone", () => {
+    const gateGraph = fixture("live-demo");
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "plan" }),
+      line(1, { runId: "r1", type: "node_finished", node: "plan", durationMs: 10 }),
+      line(2, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(3, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+      line(4, { runId: "r1", type: "node_started", node: "fetch_code" }),
+      line(5, { runId: "r1", type: "node_failed", node: "fetch_code", error: "boom" }),
+      // count_lines never started — its only dependency failed — but the
+      // runner still reports it, as a failure rather than a silence.
+      line(6, { runId: "r1", type: "node_failed", node: "count_lines", error: "skipped: no result from fetch_code" }),
+    ];
+    const result = audit(lines, gateGraph);
+    expect(result.findings.filter((f) => f.rule === "NODE_NEVER_RAN" && f.nodes.includes("count_lines"))).toEqual(
+      [],
+    );
+  });
+});
+
+describe("ORDER_VIOLATION", () => {
+  const graph = fixture("capability-audit"); // a declared edge: fetch_docs -> write_up
+
+  it("flags a node that started before its declared predecessor finished", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      // write_up starts while fetch_docs is still open — the dependency was not honoured.
+      line(1, { runId: "r1", type: "node_started", node: "write_up" }),
+      line(2, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+      line(3, { runId: "r1", type: "node_finished", node: "write_up", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings).toEqual([
+      {
+        rule: "ORDER_VIOLATION",
+        severity: "error",
+        nodes: ["fetch_docs", "write_up"],
+        message:
+          "write_up started before fetch_docs finished, though the spec declares fetch_docs -> write_up",
+      },
+    ]);
+  });
+
+  it("says nothing when the predecessor finished first, as declared", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(1, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+      line(2, { runId: "r1", type: "node_started", node: "write_up" }),
+      line(3, { runId: "r1", type: "node_finished", node: "write_up", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings).toEqual([]);
+  });
+
+  it("says nothing when the predecessor never appears at all — absence is not evidence", () => {
+    // A thin trace that only tracks write_up says nothing about whether
+    // fetch_docs ran first; only a predecessor known to have started (and not
+    // yet finished) counts as evidence.
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "write_up" }),
+      line(1, { runId: "r1", type: "node_finished", node: "write_up", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "ORDER_VIOLATION")).toEqual([]);
+  });
+});
+
+describe("UNDECLARED_NODE", () => {
+  const graph = fixture("diamond");
+
+  it("flags a node_started for an id the spec does not know", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "ghost_worker" }),
+      line(1, { runId: "r1", type: "node_finished", node: "ghost_worker", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "UNDECLARED_NODE")).toEqual([
+      {
+        rule: "UNDECLARED_NODE",
+        severity: "warn",
+        nodes: ["ghost_worker"],
+        message: "ghost_worker started but is not declared in the spec",
+      },
+    ]);
+  });
+
+  it("says nothing about a node the spec does declare", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "split" }),
+      line(1, { runId: "r1", type: "node_finished", node: "split", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "UNDECLARED_NODE")).toEqual([]);
+  });
+});
+
+describe("OBSERVED_SERIALISATION", () => {
+  const graph = fixture("diamond"); // worker_2 and worker_3 share no declared path
+
+  const nonOverlapping = (runId: string, order: readonly [string, string]) => [
+    line(0, { runId, type: "node_started", node: order[0] }),
+    line(1, { runId, type: "node_finished", node: order[0], durationMs: 10 }),
+    line(2, { runId, type: "node_started", node: order[1] }),
+    line(3, { runId, type: "node_finished", node: order[1], durationMs: 10 }),
+  ];
+
+  it("needs more than one non-overlapping run before calling it a pattern", () => {
+    const result = audit(nonOverlapping("r1", ["worker_2", "worker_3"]), graph);
+    expect(result.findings.filter((f) => f.rule === "OBSERVED_SERIALISATION")).toEqual([]);
+  });
+
+  it("flags a pair with no declared path that never overlaps across several runs", () => {
+    const lines = [
+      ...nonOverlapping("r1", ["worker_2", "worker_3"]),
+      ...nonOverlapping("r2", ["worker_3", "worker_2"]),
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "OBSERVED_SERIALISATION")).toEqual([
+      {
+        rule: "OBSERVED_SERIALISATION",
+        severity: "warn",
+        nodes: ["worker_2", "worker_3"],
+        message:
+          "worker_2 and worker_3 share no declared path and never overlapped in 2 audited runs — a candidate hidden edge",
+      },
+    ]);
+  });
+
+  it("one overlapping run disproves the candidate outright", () => {
+    const overlapping = [
+      line(0, { runId: "r3", type: "node_started", node: "worker_2" }),
+      line(1, { runId: "r3", type: "node_started", node: "worker_3" }),
+      line(2, { runId: "r3", type: "node_finished", node: "worker_2", durationMs: 10 }),
+      line(3, { runId: "r3", type: "node_finished", node: "worker_3", durationMs: 10 }),
+    ];
+    const lines = [
+      ...nonOverlapping("r1", ["worker_2", "worker_3"]),
+      ...nonOverlapping("r2", ["worker_3", "worker_2"]),
+      ...overlapping,
+    ];
+    expect(audit(lines, graph).findings.filter((f) => f.rule === "OBSERVED_SERIALISATION")).toEqual([]);
+  });
+
+  it("says nothing about a pair the spec already connects, however indirectly", () => {
+    // split -> worker_2 is a declared path, so there is no edge to propose.
+    const lines = [
+      ...nonOverlapping("r1", ["split", "worker_2"]),
+      ...nonOverlapping("r2", ["worker_2", "split"]),
+    ];
+    const result = audit(lines, graph);
+    expect(
+      result.findings.some((f) => f.nodes.includes("split") && f.nodes.includes("worker_2")),
+    ).toBe(false);
+  });
+});
+
+describe("reportedNodeEvents", () => {
+  const graph = fixture("capability-audit");
+
+  it("is false for a trace that never mentions a node_started", () => {
+    const lines = [line(0, { runId: "r1", type: "run_started", spec: { name: "capability-audit" } })];
+    expect(audit(lines, graph).reportedNodeEvents).toBe(false);
+  });
+
+  it("is true once any matched run reports one", () => {
+    const lines = [
+      line(0, { runId: "r1", type: "node_started", node: "fetch_docs" }),
+      line(1, { runId: "r1", type: "node_finished", node: "fetch_docs", durationMs: 10 }),
+    ];
+    expect(audit(lines, graph).reportedNodeEvents).toBe(true);
   });
 });

@@ -221,6 +221,7 @@ export function traceAuditCommand(args: string[]): number {
       // So a consumer reading only the finding count can tell a clean audit
       // from one where nothing was checked.
       reportedCapabilities: result.reportedCapabilities,
+      reportedNodeEvents: result.reportedNodeEvents,
     };
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
@@ -238,6 +239,12 @@ export function traceAuditCommand(args: string[]): number {
     // bill of health, and saying so is cheaper than someone assuming otherwise.
     if (!result.reportedCapabilities) {
       out.push("  This trace reported no capability events at all — nothing here was checked.");
+    }
+    // Same reasoning for the node-level rules: a trace with no node
+    // attribution (a session adapter, say) must not read as "every node in
+    // the spec never ran".
+    if (!result.reportedNodeEvents) {
+      out.push("  This trace reported no node events at all — declared-vs-observed was not checked.");
     }
 
     if (result.skipped.length > 0) {
