@@ -1,6 +1,6 @@
 ---
 name: parallel-plan
-description: Before executing a multi-step plan, check which steps actually depend on each other and run the independent ones concurrently. Use when a plan has roughly five or more steps, when a session will merge several PRs or tickets, when fanning work out to subagents, or when the user asks what can be parallelised. Also catches a step that grades its own work and a fan-in with no count guard.
+description: Turn a plan, or a messy brain dump of features, fixes and ideas, into the order the work really has, by checking which steps actually depend on each other, running the independent ones concurrently, and showing the plan before and after. Use when the user pours out a stream of loosely related work and asks for a plan, an order or priorities, when a plan has roughly five or more steps, when a session will merge several PRs or tickets, when fanning work out to subagents, or when the user asks what can be parallelised. Also catches a step that grades its own work, a fan-in with no count guard, and concurrent steps that write the same file.
 ---
 
 # Parallel plan
@@ -44,6 +44,9 @@ just do the work.
 
 Reach for it also when:
 
+- the user has poured out a stream of loosely related work (features, fixes,
+  ideas, in no particular order) and asked for a plan. The first pass at an
+  order is usually a guess, and this is where the before and after differ most
 - a session will merge several PRs or tickets
 - the user asks "what can run in parallel?"
 - a plan has a review or verification step (the rules catch self-grading)
@@ -59,6 +62,10 @@ where you do not yet know the steps.
 The whole value is in declaring what each step **consumes** and **produces**.
 That act is what exposes the fake edges — you cannot write `in:` honestly and
 still believe step 7 was waiting on step 6.
+
+If what you were given is a brain dump rather than a plan, first pull out each
+distinct piece of work as a node. The before is those pieces in the order they
+were mentioned; the after is what the dependencies actually allow.
 
 Write it to a scratch file:
 
