@@ -11,9 +11,14 @@ declarations, never something a human drags. `goal:` is a caption and must never
 - ESM throughout, `.js` extensions in relative imports, strict TS with `noUncheckedIndexedAccess`,
   SPDX `Apache-2.0` header on every source file (CI enforces).
 - Commit style: conventional commits with a scope and an editorial subject after an em dash.
-- Releases: bump all publishable packages together, tag, GitHub release, then `tools/publish.sh`.
-  `apps/web` stays private and unpublished.
-- The trace contract (`@ccgrapher/trace`, once it exists) is additive-only within `v: 1`. It is a
-  compatibility surface; treat every schema change as a compatibility decision.
+- Releases: bump all publishable packages together, merge, then push a `vX.Y.Z` tag.
+  `.github/workflows/release.yml` publishes to npm through trusted publishing (it runs
+  `tools/publish.sh`); then publish the GitHub release. `apps/web` stays private and unpublished.
+- The trace contract (`@ccgrapher/trace`, documented in `docs/trace.md`) is additive-only within
+  `v: 1`. It is a compatibility surface; treat every schema change as a compatibility decision.
+- `plugin/` was submitted to Anthropic's plugin directory on 2026-10-03, and the listing tracks
+  `main`. Any change under `plugin/` raises `version` in `plugin/.claude-plugin/plugin.json` in the
+  same PR. Its README is the listing text, and `apps/cli/test/plugin-pin.test.ts` keeps the skill's
+  pinned CLI version in step with releases.
 - This repository holds code and public documentation only. Project planning lives elsewhere; a
   local, gitignored `CLAUDE.local.md` supplies that context when present.
