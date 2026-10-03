@@ -1,0 +1,12 @@
+{
+  "name": "ccgrapher",
+  "displayName": "ccgrapher",
+  "description": "Checks a multi-step plan for steps that were never waiting on each other, and shows which can run at the same time.",
+  "version": "0.1.0",
+  "author": {
+    "name": "artfusion"
+  },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/artfusion/ccgrapher",
+  "homepage": "https://github.com/artfusion/ccgrapher"
+}

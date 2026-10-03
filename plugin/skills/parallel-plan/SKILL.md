@@ -120,9 +120,17 @@ Rules of thumb while writing it:
 
 ### 2. Run it
 
+This step runs software. `npx` downloads the pinned package from the npm registry
+and runs it on the user's machine, so **ask first**, and run it only if the user
+agrees or has already asked for the lint, the waves or the picture. If they
+decline, do the same analysis by hand: write the `in:` and `out:` fields, walk
+every edge, and name the steps that are waiting on nothing. The commands below
+read the plan file and print or write the result; they make no network requests
+of their own.
+
 ```bash
-npx @ccgrapher/cli lint plan.yaml      # what is wrong with the shape
-npx @ccgrapher/cli plan plan.yaml --fix # how to actually run it
+npx @ccgrapher/cli@0.5.0 lint plan.yaml      # what is wrong with the shape
+npx @ccgrapher/cli@0.5.0 plan plan.yaml --fix # how to actually run it
 ```
 
 `lint` names every step that is waiting on nothing and proposes where the edge
@@ -135,8 +143,8 @@ rather than read it.
 ### 3. Draw it, before and after
 
 ```bash
-npx @ccgrapher/cli render plan.yaml -o before.svg
-npx @ccgrapher/cli render plan.yaml --fix -o after.svg
+npx @ccgrapher/cli@0.5.0 render plan.yaml -o before.svg
+npx @ccgrapher/cli@0.5.0 render plan.yaml --fix -o after.svg
 ```
 
 Fake edges come out red. `-f mermaid` instead of an `.svg` path gives you
@@ -144,7 +152,7 @@ something that pastes into a pull request or a ticket comment.
 
 Two habits make the picture worth having:
 
-- **Put the ticket ID at the front of `label:`.** `YOG-164 Stripe live-mode
+- **Put the ticket ID at the front of `label:`.** `PROJ-164 Stripe live-mode
   cutover`, not `Stripe cutover`. It costs nothing while you are writing the
   spec, and it is the difference between a nice diagram and one you can act on
   — the shapes become the board.
@@ -189,7 +197,8 @@ release passes a check that never ran.
 
 ## Worked example
 
-`examples/release-session.yaml` in the ccgrapher repo is a real session: nine
-pull requests shipped one after another. `ccg plan` on it as written reports 12
+The `release-session` example in the ccgrapher repository
+(github.com/artfusion/ccgrapher, under `examples/`) is a real session, given here
+for reference only: nine pull requests shipped one after another. `ccg plan` on it as written reports 12
 waves. With `--fix` it reports 5 — six of the nine were never waiting on
 anything. Nothing about the work changed; only the claim about its shape.
