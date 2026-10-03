@@ -15,7 +15,7 @@ If you use Claude Code, this is the whole product in one command:
 
 ```bash
 git clone https://github.com/artfusion/ccgrapher.git
-ln -s "$PWD/ccgrapher/skills/parallel-plan" ~/.claude/skills/parallel-plan
+ln -s "$PWD/ccgrapher/plugin/skills/parallel-plan" ~/.claude/skills/parallel-plan
 ```
 
 Now, before your agent executes a plan of five steps or more, it checks which of them actually
@@ -424,7 +424,7 @@ than a save-and-reload away.
 
 ## More on the skill
 
-`skills/parallel-plan/` triggers on plans of roughly five steps or more, or whenever work is being
+`plugin/skills/parallel-plan/` triggers on plans of roughly five steps or more, or whenever work is being
 fanned out to subagents. Below that the ceremony costs more than it saves, and a skill that fires
 on everything gets ignored. `template.yaml` is the starting point it copies.
 
