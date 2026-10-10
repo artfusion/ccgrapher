@@ -17,6 +17,28 @@ private web canvas, which has its own train. Full notes accompany each
   directory. `TARGETS` is unchanged; `ALL_TARGETS` and `isAnyTarget` include the new kind.
 - Model tiers now resolve through one table, `TIER_FAMILY`. The claude-code output is
   byte-identical to before.
+- `ccg run` starts a step the moment its inputs exist. The runner used to run each wave as a
+  barrier, so every step waited for the slowest step of the wave before it, even when its own
+  inputs had arrived long ago. Now a step starts once every step it has an edge from has finished
+  and delivered and its `expects` guard is met. The waves remain the plan's picture in `ccg plan`;
+  they are no longer a barrier in the run.
+- `ccg run --concurrency <n>`, and `concurrency` on the runner's options, bound how many node calls
+  run at once. Each fanned instance is one call; a gate waiting on a human and a skipped node take
+  none. The default is no limit, which is what a wave already did with everything in it. When more
+  is ready than there are slots, the lower rank goes first, then spec order, then instance; the
+  same order starts steps that become ready together, so traces are reproducible.
+- What changes on failure. As before, a failed step's descendants are skipped and branches that do
+  not depend on it carry on. The difference is timing: the skips are recorded the moment the
+  failure is known rather than when its wave ends, and an unrelated branch no longer waits on a
+  failed or slow neighbour at each wave boundary. A gate now pauses only its own descendants; under
+  waves it held up every later wave. When an `expects` guard or a missing gate resolver stops the
+  run, nothing new starts, including steps that became ready at the same moment, which under waves
+  would already have been started alongside it. Steps already running still finish and are
+  recorded before `run_finished`.
+- Trace events are unchanged in shape, and `ccg trace audit` finds nothing to report on traces
+  from the new scheduler. The committed `examples/traces/live-demo.jsonl` was written by the old
+  one; a rerun would differ only in the skip of `count_lines` arriving earlier.
+
 - `ccg render` draws the count guard. Every node that declares `expects` carries the number,
   bottom right, and the node group carries `data-expects`. A repair that adds a guard now shows
   in the picture; before, the picture could not tell a guarded fan-in from an unguarded one.
