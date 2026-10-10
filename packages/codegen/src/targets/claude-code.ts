@@ -3,7 +3,7 @@ import type { Graph, NodeSpec } from "@ccgrapher/core";
 import { objectSchema } from "../fields.js";
 import { inputsOf, stages } from "../stages.js";
 import { familyOf } from "../tiers.js";
-import { banner, boundaryWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
+import { banner, boundaryWarnings, crossRunWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
 
 /**
  * Emits a Workflow script: `agent()` for one job, `parallel()` for a rank with
@@ -33,6 +33,7 @@ export const claudeCodeEmitter: Emitter = {
             `'${node.id}' is a gate — the claude-code target cannot pause for a human, so the generated step will not wait for approval.`,
         ),
       ...boundaryWarnings(graph, "claude-code"),
+      ...crossRunWarnings(graph, "claude-code"),
     ];
   },
 

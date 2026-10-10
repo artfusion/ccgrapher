@@ -7,6 +7,31 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- A spec can now say what one run hands the next. `schedule:` is one opaque line; `stores:` names
+  state that outlives a run, each with an `owner` (`human` or `agent`) and, for progress state,
+  the effect it `records`; on a node, `effects:` names what cannot be taken back and `guards:` the
+  effects it makes at-most-once. All optional, and `version` stays 1. A guard or a `records` that
+  names an effect no node performs is rejected when the spec loads.
+- Three rules read them. `AUTHORITY_BREACH` (error) fires when a node that is not a gate writes a
+  store a person owns, or when a member of a `read-only` boundary has `writes` or `effects`.
+  `DUPLICATE_EFFECT` (warn) fires on an effect in a scheduled workflow that nothing at or before
+  it guards. `EARLY_COMMIT` (warn) fires when a store that records an effect is written anywhere
+  but strictly after it. None repairs; `--fix` still only moves edges. A "do this after that"
+  edge that carries nothing is still dropped by `--fix`, and the repaired pass now says what that
+  costs.
+- Each has a mark, in the same red ring as the others: `writes preferences` or "writes in
+  read-only", `unguarded post:brief-channel`, `ledger too early`. Mermaid and Excalidraw note the
+  same in the label.
+- `examples/daily-brief.yaml` is a scheduled workflow written with all of it, and lints clean.
+- plain-ts carries the new fields through codegen and back: the schedule and the stores as
+  header lines, effects and guards as doc-comment traits. claude-code, langgraph and
+  managed-agents say in a warning that they cannot.
+- Findings gain optional `effect` and `boundary` fields, and `resource` now also names the store
+  on `EARLY_COMMIT` and `AUTHORITY_BREACH`. `@ccgrapher/lint` exports `writeDenial`, the one
+  predicate behind both forms of `AUTHORITY_BREACH`.
+- A CLI from before this release ignores the new fields without a word, so a spec using them
+  lints clean there whatever it declares.
+
 - `ccg codegen -t managed-agents -o <dir>` writes the directory `ant apply` reads for Claude
   Managed Agents: one agent per model node, named by node id, plus one environment. Plain-code
   nodes and gates get no agent and are listed in a generated README. Without `-o` it exits 2, and

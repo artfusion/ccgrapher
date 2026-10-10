@@ -18,6 +18,50 @@ function groupFor(svg: string, id: string): string {
   return next < 0 ? svg.slice(start) : svg.slice(start, next);
 }
 
+describe("marks for what one run hands the next", () => {
+  const brief = () => fixture("daily-brief");
+
+  it("rings an unguarded effect and names it", () => {
+    const svg = renderSvg(brief(), { findingMarks: [{ rule: "DUPLICATE_EFFECT", id: "post", effect: "post:brief-channel" }] });
+    expect(groupFor(svg, "post")).toContain('data-findings="DUPLICATE_EFFECT"');
+    expect(groupFor(svg, "post")).toMatch(/>unguarded [^<]+</);
+  });
+
+  it("gives one caption to a step that writes several stores too early", () => {
+    const early = findingsOn(
+      "commit_state",
+      [
+        { rule: "EARLY_COMMIT", id: "commit_state", store: "bookmarks" },
+        { rule: "EARLY_COMMIT", id: "commit_state", store: "ledger" },
+      ],
+      undefined,
+    );
+    expect(early.captions).toEqual([["2 stores too early", "commits early", "too early"]]);
+    expect(findingsOn("commit_state", [{ rule: "EARLY_COMMIT", id: "commit_state", store: "ledger" }], undefined).captions[0]![0]).toBe(
+      "ledger too early",
+    );
+  });
+
+  it("says which kind of authority was breached", () => {
+    const store = findingsOn("decide", [{ rule: "AUTHORITY_BREACH", id: "decide", store: "preferences" }], undefined);
+    const bounded = findingsOn("decide", [{ rule: "AUTHORITY_BREACH", id: "decide", boundary: "look" }], undefined);
+    expect(store.captions[0]![0]).toBe("writes preferences");
+    expect(bounded.captions[0]).toEqual(["writes in read-only", "read-only"]);
+  });
+
+  it("captions an authority breach ahead of the warnings, since it is an error", () => {
+    const found = findingsOn(
+      "decide",
+      [
+        { rule: "DUPLICATE_EFFECT", id: "decide", effect: "post:x" },
+        { rule: "AUTHORITY_BREACH", id: "decide", store: "preferences" },
+      ],
+      undefined,
+    );
+    expect(found.rules).toEqual(["AUTHORITY_BREACH", "DUPLICATE_EFFECT"]);
+  });
+});
+
 describe("a mark for each node finding", () => {
   it("rings a verifier that grades its own work and says so", () => {
     const svg = renderSvg(fixture("self-grading"), { findingMarks: [{ rule: "SELF_GRADING", id: "check_own" }] });

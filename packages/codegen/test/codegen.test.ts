@@ -25,6 +25,7 @@ const ALL = [
   "linear-chain",
   "self-grading",
   "wide-fanin",
+  "daily-brief",
 ] as const;
 
 const AsyncFunction = Object.getPrototypeOf(async function () {
@@ -271,6 +272,45 @@ describe("boundaries — carried by plain-ts, declared lossy elsewhere", () => {
     for (const target of TARGETS) {
       expect(codegenWarnings(fixture("diamond"), target).filter((w) => w.startsWith("boundary"))).toEqual([]);
       expect(codegen(fixture("diamond"), target)).not.toContain("// Boundary:");
+    }
+  });
+});
+
+describe("schedule, stores, effects and guards: carried by plain-ts, declared lossy elsewhere", () => {
+  const brief = () => fixture("daily-brief");
+
+  it("writes the schedule and one banner line per store", () => {
+    const code = codegen(brief(), "plain-ts");
+    expect(code).toContain("// Schedule: 0 7 * * *\n");
+    expect(code).toContain("// Store: preferences owner=human\n");
+    expect(code).toContain("// Store: bookmarks owner=agent records=post:brief-channel\n");
+  });
+
+  it("writes effects and guards as traits after uses", () => {
+    const code = codegen(brief(), "plain-ts");
+    expect(code).toContain("/** post the brief — worker, plain code, expects 2, uses mcp:channel/post, effects post:brief-channel. */");
+    expect(code).toContain("uses mcp:channel/read, guards post:brief-channel. */");
+  });
+
+  it("warns nothing from plain-ts, which carries them all", () => {
+    expect(codegenWarnings(brief(), "plain-ts")).toEqual([]);
+  });
+
+  it.each(["claude-code", "langgraph", "managed-agents"] as const)("%s says what it cannot carry", (target) => {
+    const warnings = codegenWarnings(brief(), target);
+    expect(warnings).toContain(
+      `the schedule survives only as a banner comment in the ${target} target: nothing in the generated code runs it, and ingest cannot read it back.`,
+    );
+    expect(warnings).toContain(
+      `stores 'preferences', 'bookmarks', 'ledger' survive only as banner comments in the ${target} target: ingest cannot read them back, and nothing in the generated code keeps an owner or an order.`,
+    );
+    expect(warnings).toContain(`'post' declares effects post:brief-channel, which the ${target} target does not carry.`);
+    expect(warnings).toContain(`'check_destination' declares guards post:brief-channel, which the ${target} target does not carry.`);
+  });
+
+  it("says nothing of them for a spec without them", () => {
+    for (const target of [...TARGETS, "managed-agents"] as const) {
+      expect(codegenWarnings(fixture("diamond"), target).filter((w) => /schedule|store|effects|guards/.test(w))).toEqual([]);
     }
   });
 });

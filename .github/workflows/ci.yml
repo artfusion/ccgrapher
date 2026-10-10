@@ -56,7 +56,8 @@ jobs:
           node apps/cli/dist/index.js lint \
             examples/diamond.yaml \
             examples/research-desk.yaml \
-            examples/route-auth-audit.yaml
+            examples/route-auth-audit.yaml \
+            examples/daily-brief.yaml
 
           # #1 — diamond renders four layers with five workers on one row.
           node apps/cli/dist/index.js render examples/diamond.yaml -o diamond.svg

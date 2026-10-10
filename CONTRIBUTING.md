@@ -62,7 +62,7 @@ Two things to know before writing one:
 
 Audit rules live in [`packages/lint/src/audit.ts`](packages/lint/src/audit.ts) and compare a run's
 trace against its spec. They follow the same four steps, with two differences. The id goes in
-`AUDIT_RULE_ORDER` rather than `RULE_ORDER`, so the six lint rules stay six — an audit rule needs a
+`AUDIT_RULE_ORDER` rather than `RULE_ORDER`, so the lint rules stay rules about a spec on its own: an audit rule needs a
 run and a spec alone can never produce one. And the fixture is a *pair*: a spec in `examples/` plus
 a trace in `examples/traces/`, with the expected findings written in the spec's header comment.
 

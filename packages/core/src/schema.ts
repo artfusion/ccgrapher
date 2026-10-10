@@ -39,6 +39,13 @@ export const FanOut = z.object({
 });
 export type FanOut = z.infer<typeof FanOut>;
 
+/**
+ * The id rule for everything a spec names that is not a node or a field:
+ * capabilities, effects, boundaries and stores. Codegen writes these into
+ * comments that are split on commas and whitespace, so neither may appear.
+ */
+const ID = /^[^\s,]+$/;
+
 /** Field name -> freeform type descriptor ("string", "url", "YYYY-MM-DD", "string[]"). */
 const FieldMap = z.record(z.string(), z.string());
 
@@ -65,9 +72,20 @@ export const NodeSpec = z.object({
    * through codegen and back split traits on commas and ids on spaces, so an id
    * containing either would not survive the round trip.
    */
-  uses: z
-    .array(z.string().regex(/^[^\s,]+$/, "no commas or whitespace inside a capability id"))
-    .optional(),
+  uses: z.array(z.string().regex(ID, "no commas or whitespace inside a capability id")).optional(),
+  /**
+   * External effects this node performs: a message sent, a post made, a charge
+   * taken. Things a later step cannot take back, so a rerun that performs one
+   * again does it twice. Opaque ids, by convention `<verb>:<target>`, such as
+   * `post:brief-channel`. Same id rule as `uses`, for the same reason.
+   */
+  effects: z.array(z.string().regex(ID, "no commas or whitespace inside an effect id")).optional(),
+  /**
+   * Effects this node makes at most once: it checks whether the effect already
+   * happened (reading the destination, or holding an idempotency key) before it
+   * or a descendant performs it. Each id must be an effect some node declares.
+   */
+  guards: z.array(z.string().regex(ID, "no commas or whitespace inside an effect id")).optional(),
   /** A verifier that shares context with the worker it grades is self-grading. */
   freshContext: z.boolean().optional(),
   /**
@@ -128,8 +146,8 @@ export type EdgeSpec = z.infer<typeof EdgeSpec>;
 
 /**
  * What the members of a boundary may do. `read-only` means no member writes
- * anything: no `writes` entry, and no external effect once effects can be
- * declared. `read-write` is the default and claims nothing.
+ * anything: no `writes` entry and no `effects`. `read-write` is the default and
+ * claims nothing.
  */
 export const BoundaryAccess = z.enum(["read-only", "read-write"]);
 export type BoundaryAccess = z.infer<typeof BoundaryAccess>;
@@ -144,7 +162,7 @@ export type BoundaryAccess = z.infer<typeof BoundaryAccess>;
  * budget are expected to attach here later, as further optional fields.
  *
  * Like `uses`, a boundary is a claim. `access` is decidable from the spec for
- * declared `writes`, and that is what the linter can check. Whether a tool a
+ * declared `writes` and `effects`, and that is what the linter checks. Whether a tool a
  * member `uses` is itself read-only is not, because capability ids are opaque.
  *
  * A node belongs to at most one boundary. Nesting and overlap are out of scope:
@@ -156,7 +174,7 @@ export type BoundaryAccess = z.infer<typeof BoundaryAccess>;
  * whitespace.
  */
 export const BoundarySpec = z.object({
-  id: z.string().regex(/^[^\s,]+$/, "no commas or whitespace inside a boundary id"),
+  id: z.string().regex(ID, "no commas or whitespace inside a boundary id"),
   /** A short caption drawn on the region. */
   label: z.string().min(1).optional(),
   members: z.array(z.string().min(1)).min(1),
@@ -164,11 +182,42 @@ export const BoundarySpec = z.object({
 });
 export type BoundarySpec = z.infer<typeof BoundarySpec>;
 
+/** Who may write a store. A `gate` is the only human actor a spec has. */
+export const StoreOwner = z.enum(["human", "agent"]);
+export type StoreOwner = z.infer<typeof StoreOwner>;
+
+/**
+ * State that outlives a run: what the next run reads to know where this one
+ * left off, or what a person keeps for the workflow to follow. A node writes a
+ * store by naming it in `writes`.
+ *
+ * `owner: human` means a person writes it and the workflow only reads it, so
+ * the only node that may write it is a gate. `records` marks progress state:
+ * the store says an effect has happened, so it may only be written once that
+ * effect has. A design that claims before it acts leaves `records` off.
+ */
+export const StoreSpec = z.object({
+  owner: StoreOwner,
+  records: z.string().regex(ID, "no commas or whitespace inside an effect id").optional(),
+});
+export type StoreSpec = z.infer<typeof StoreSpec>;
+
 export const WorkflowSpec = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   /** Rendered as a caption, never as a node. */
   goal: z.string().optional(),
+  /**
+   * When the workflow runs on its own: a cron line, or words. Opaque, one line.
+   * What matters to the linter is only that it is there: a scheduled workflow
+   * will be fired again, and retried, so any effect it performs may happen twice.
+   */
+  schedule: z
+    .string()
+    .regex(/^\S(?:[^\r\n]*\S)?$/, "one line, with no leading or trailing space")
+    .optional(),
+  /** Cross-run state, keyed by store id. See `StoreSpec`. */
+  stores: z.record(z.string().regex(ID, "no commas or whitespace inside a store id"), StoreSpec).optional(),
   nodes: z.array(NodeSpec).min(1),
   edges: z.array(EdgeSpec).default([]),
   boundaries: z.array(BoundarySpec).optional(),

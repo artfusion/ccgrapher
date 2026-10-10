@@ -19,6 +19,9 @@ const ALL = [
   // The one with a finding worth keeping: `ci` declares expects: 9 and eight
   // results reach it. If ingest dropped an edge that would quietly become nine.
   "release-session",
+  // Every field that says what one run hands the next: schedule, stores,
+  // effects and guards, beside writes and uses.
+  "daily-brief",
 ] as const;
 
 const roundTrip = (name: string) => ingest(codegen(fixture(name), "plain-ts"));
@@ -104,6 +107,26 @@ describe("what survives the trip", () => {
     const { spec: back, warnings } = ingest(codegen(buildGraph(spec), "plain-ts"));
     expect(warnings).toEqual([]);
     expect(back).toEqual(spec);
+  });
+
+  /**
+   * Property-style: many specs, each a different mix of the fields one run hands
+   * the next, every one carried through codegen and back unchanged. The specs
+   * are drawn from a seeded generator, so a failure names a seed that repeats.
+   */
+  it.each(Array.from({ length: 40 }, (_, seed) => seed))("keeps schedule, stores, effects and guards (seed %i)", (seed) => {
+    const spec = crossRunSpec(fixture("daily-brief").spec, seed);
+    const { spec: back, warnings } = ingest(codegen(buildGraph(spec), "plain-ts"));
+    expect(warnings).toEqual([]);
+    expect(back).toEqual(spec);
+  });
+
+  it("loses schedule and stores without a banner, as it loses the name and goal", () => {
+    const { spec } = ingest(codegen(fixture("daily-brief"), "plain-ts", { banner: false }));
+    expect(spec.schedule).toBeUndefined();
+    expect(spec.stores).toBeUndefined();
+    // Node traits live in the doc comments, not the banner, so they stay.
+    expect(spec.nodes.find((n) => n.id === "post")?.effects).toEqual(["post:brief-channel"]);
   });
 
   it("drops a member the code no longer has, and says so", () => {
@@ -545,4 +568,65 @@ describe("parsers", () => {
     expect(descriptorFor('"keep" | "drop"')).toBe("keep|drop");
     expect(descriptorFor("Record<string, unknown>")).toBe("object");
   });
+
+  it("reads effects and guards after uses", () => {
+    const traits = parseTraits("post it — worker, uses mcp:a/b, effects post:x send:y.z, guards post:x.", "post");
+    expect(traits.uses).toEqual(["mcp:a/b"]);
+    expect(traits.effects).toEqual(["post:x", "send:y.z"]);
+    expect(traits.guards).toEqual(["post:x"]);
+  });
 });
+
+/** mulberry32: a small seeded generator, so a property test repeats exactly. */
+function seeded(seed: number): () => number {
+  let a = seed + 0x6d2b79f5;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Ids of the awkward kinds the rule allows: colons, slashes, dots, dashes. */
+const EFFECT_IDS = ["post:brief-channel", "send:mail/digest", "charge:card.v2", "notify:a_b-c", "e"] as const;
+const STORE_IDS = ["ledger", "state.v2", "prefs/main", "q:1"] as const;
+const SCHEDULES = ["0 7 * * *", "every weekday at 07:00", "@daily"] as const;
+
+/**
+ * A valid spec on the shape of `base`, with a seeded mix of schedule, stores,
+ * effects, guards and store writes. Every guard and every `records` names an
+ * effect some node performs, as the loader requires.
+ */
+function crossRunSpec(base: WorkflowSpec, seed: number): WorkflowSpec {
+  const random = seeded(seed);
+  const some = <T>(items: readonly T[]): T[] => items.filter(() => random() < 0.4);
+
+  const performed = new Set<string>();
+  const nodes = base.nodes.map(({ effects: _e, guards: _g, ...node }) => {
+    const effects = some(EFFECT_IDS);
+    for (const effect of effects) performed.add(effect);
+    const writes = [...new Set([...(node.writes ?? []), ...some(STORE_IDS)])];
+    return { ...node, ...(writes.length > 0 && { writes }), ...(effects.length > 0 && { effects }) };
+  });
+  const declared = [...performed];
+  const guarded = nodes.map((node) => {
+    const guards = some(declared);
+    return guards.length > 0 ? { ...node, guards } : node;
+  });
+
+  const stores: NonNullable<WorkflowSpec["stores"]> = {};
+  for (const id of some(STORE_IDS)) {
+    const records = declared.length > 0 && random() < 0.5 ? declared[Math.floor(random() * declared.length)] : undefined;
+    stores[id] = { owner: random() < 0.5 ? "human" : "agent", ...(records && { records }) };
+  }
+  const schedule = random() < 0.6 ? SCHEDULES[Math.floor(random() * SCHEDULES.length)] : undefined;
+
+  const { schedule: _s, stores: _t, ...rest } = base;
+  return {
+    ...rest,
+    ...(schedule && { schedule }),
+    ...(Object.keys(stores).length > 0 && { stores }),
+    nodes: guarded,
+  };
+}

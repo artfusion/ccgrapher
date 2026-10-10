@@ -21,7 +21,10 @@ is also ringed in solid red: with no `expects` it reads "no count guard", with o
 
 Every other rule arrives in `findingMarks`. A starved node, a verifier that grades its own
 work and an overloaded fan-in are ringed the same way and captioned: `no repo`,
-`grades own work`, `200 in, no reduce`. A node has room for one caption, so with several
+`grades own work`, `200 in, no reduce`. So are a step that writes what is not its to write
+(`writes preferences`, "writes in read-only"), an effect a scheduled workflow does not guard
+(`unguarded post:brief-channel`) and a store written before the effect it records
+(`ledger too early`). A node has room for one caption, so with several
 findings it names the first in rule order and counts the rest (`no repo +1`), using a
 shorter form where the box is tight. Two concurrent writers of one file are joined by a thin
 solid red line, labelled with the file and routed above their row or round the margin, so it

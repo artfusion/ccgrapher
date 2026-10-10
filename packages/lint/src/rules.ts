@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-import { effectiveInboundCount, hasPath, roots, type EdgeSpec, type Graph } from "@ccgrapher/core";
+import {
+  ancestors,
+  effectiveInboundCount,
+  hasPath,
+  roots,
+  type EdgeSpec,
+  type Graph,
+  type NodeSpec,
+} from "@ccgrapher/core";
 import { ruleSeverity, type Finding, type Phase, type RuleId } from "./types.js";
 
 /** Fields an edge genuinely transports: declared by the source AND consumed by the target. */
@@ -225,13 +233,150 @@ export function silentFailure(graph: Graph, phase: Phase): Finding[] {
   return out;
 }
 
+/**
+ * An effect in a scheduled workflow that nothing makes at-most-once. A schedule
+ * fires again, and a failed run is retried, so a post with no check before it
+ * is a post that can happen twice. The check is a node declaring the effect in
+ * `guards`: the performer itself (an idempotency key) or any node it waits on.
+ *
+ * Only a scheduled workflow is checked. A one-off run can repeat an effect too,
+ * when someone reruns it by hand, but then a person is there to see it.
+ */
+export function duplicateEffects(graph: Graph, phase: Phase): Finding[] {
+  if (graph.spec.schedule === undefined) return [];
+  const out: Finding[] = [];
+  for (const node of graph.spec.nodes) {
+    const upstream = [node, ...ancestors(graph, node.id)];
+    for (const effect of node.effects ?? []) {
+      if (upstream.some((n) => n.guards?.includes(effect))) continue;
+      out.push({
+        ...finding(
+          "DUPLICATE_EFFECT",
+          phase,
+          `${node.id} performs '${effect}' on a schedule, and neither it nor any step before it guards '${effect}'; a rerun would perform it again`,
+          [node.id],
+        ),
+        effect,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Progress state written before the effect it records. A store with
+ * `records: E` says E has happened, so every node that writes it must come
+ * strictly after every node that performs E: after, not beside, and not the
+ * same step, whose order inside is unknown. Written early, a run that fails in
+ * between leaves the store saying E happened when it did not, and the next run
+ * skips it for good.
+ */
+export function earlyCommits(graph: Graph, phase: Phase): Finding[] {
+  const out: Finding[] = [];
+  for (const [store, spec] of Object.entries(graph.spec.stores ?? {})) {
+    const effect = spec.records;
+    if (effect === undefined) continue;
+    const performers = graph.spec.nodes.filter((n) => n.effects?.includes(effect));
+    const writers = graph.spec.nodes.filter((n) => n.writes?.includes(store));
+    for (const writer of writers) {
+      for (const performer of performers) {
+        if (writer.id !== performer.id && hasPath(graph, performer.id, writer.id)) continue;
+        const message =
+          writer.id === performer.id
+            ? `${writer.id} writes '${store}', which records '${effect}', in the same step that performs it; move the write to a step after it`
+            : `${writer.id} writes '${store}', which records '${effect}', without waiting for ${performer.id} to perform it; a run that fails in between skips '${effect}' next time`;
+        out.push({
+          ...finding("EARLY_COMMIT", phase, message, writer.id === performer.id ? [writer.id] : [writer.id, performer.id]),
+          resource: store,
+          effect,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** Why a node may not write something. See `writeDenial`. */
+export type WriteDenial =
+  | { readonly kind: "read-only"; readonly boundary: string }
+  | { readonly kind: "human-owned"; readonly store: string };
+
+/**
+ * The one authority predicate: whether `node` may write `resource`, a `writes`
+ * entry or an effect it performs, and if not, why. Authority is declared in two
+ * places and checked here for both. On the actor: a member of a `read-only`
+ * boundary writes nothing and performs nothing. On the resource: a store a
+ * person owns may be written by a gate, the only human actor, and by nothing else.
+ *
+ * Whether a tool a node `uses` writes is not decidable here, because capability
+ * ids are opaque; only what the spec declares is checked.
+ */
+export function writeDenial(graph: Graph, node: NodeSpec, resource: string): WriteDenial | undefined {
+  const boundary = (graph.spec.boundaries ?? []).find((b) => b.members.includes(node.id));
+  if (boundary?.access === "read-only") return { kind: "read-only", boundary: boundary.id };
+  if (graph.spec.stores?.[resource]?.owner === "human" && node.kind !== "gate") {
+    return { kind: "human-owned", store: resource };
+  }
+  return undefined;
+}
+
+/** A write or an effect the spec itself says is not the node's to make. */
+export function authorityBreaches(graph: Graph, phase: Phase): Finding[] {
+  const out: Finding[] = [];
+  for (const node of graph.spec.nodes) {
+    const writes = node.writes ?? [];
+    const effects = node.effects ?? [];
+    const denials = [...writes, ...effects].flatMap((r) => {
+      const denial = writeDenial(graph, node, r);
+      return denial ? [denial] : [];
+    });
+
+    const readOnly = denials.find((d) => d.kind === "read-only");
+    if (readOnly) {
+      const what = [
+        ...(writes.length > 0 ? [`writes ${quoted(writes)}`] : []),
+        ...(effects.length > 0 ? [`performs ${quoted(effects)}`] : []),
+      ].join(" and ");
+      out.push({
+        ...finding(
+          "AUTHORITY_BREACH",
+          phase,
+          `${node.id} is in read-only boundary '${readOnly.boundary}' but ${what}`,
+          [node.id],
+        ),
+        boundary: readOnly.boundary,
+      });
+      continue;
+    }
+
+    for (const denial of denials) {
+      if (denial.kind !== "human-owned") continue;
+      out.push({
+        ...finding(
+          "AUTHORITY_BREACH",
+          phase,
+          `${node.id} writes '${denial.store}', which a person owns; only a gate may write it`,
+          [node.id],
+        ),
+        resource: denial.store,
+      });
+    }
+  }
+  return out;
+}
+
+const quoted = (ids: readonly string[]) => ids.map((id) => `'${id}'`).join(", ");
+
 export function runAllRules(graph: Graph, phase: Phase): Finding[] {
   return [
     ...fakeEdges(graph, phase),
     ...missingInputs(graph, phase),
+    ...authorityBreaches(graph, phase),
     ...hiddenEdges(graph, phase),
     ...selfGrading(graph, phase),
     ...contextCollapse(graph, phase),
     ...silentFailure(graph, phase),
+    ...duplicateEffects(graph, phase),
+    ...earlyCommits(graph, phase),
   ];
 }

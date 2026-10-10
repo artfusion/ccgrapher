@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { BoundarySpec, EdgeSpec, NodeSpec, WorkflowSpec } from "@ccgrapher/core";
+import type { BoundarySpec, EdgeSpec, NodeSpec, StoreSpec, WorkflowSpec } from "@ccgrapher/core";
 import {
   Node,
   Project,
@@ -56,10 +56,14 @@ export function ingest(source: string, options: { name?: string } = {}): IngestR
 
   const boundaries = keepKnownMembers(readBoundaries(source), known, warnings);
 
+  const stores = readStores(source);
+
   const spec: WorkflowSpec = {
     version: 1,
     name,
     ...(banner.goal ? { goal: banner.goal } : {}),
+    ...(banner.schedule ? { schedule: banner.schedule } : {}),
+    ...(Object.keys(stores).length > 0 ? { stores } : {}),
     nodes,
     edges: withCarries(edges, nodes),
     ...(boundaries.length > 0 ? { boundaries } : {}),
@@ -160,6 +164,8 @@ function collectNodes(
       out: interfaces.get(outName) ?? {},
       ...(traits.writes ? { writes: traits.writes } : {}),
       ...(traits.uses ? { uses: traits.uses } : {}),
+      ...(traits.effects ? { effects: traits.effects } : {}),
+      ...(traits.guards ? { guards: traits.guards } : {}),
       ...(traits.freshContext ? { freshContext: traits.freshContext } : {}),
       ...(traits.expects !== undefined ? { expects: traits.expects } : {}),
       ...(traits.fanOut ? { fanOut: traits.fanOut } : {}),
@@ -479,10 +485,22 @@ function withCarries(edges: Recovered[], nodes: NodeSpec[]): EdgeSpec[] {
   });
 }
 
-function readBanner(source: string): { name?: string; goal?: string } {
+function readBanner(source: string): { name?: string; goal?: string; schedule?: string } {
   const name = /^\/\/ Spec: (.+)$/m.exec(source)?.[1]?.trim();
   const goal = /^\/\/ Goal: (.+)$/m.exec(source)?.[1]?.trim();
-  return { ...(name && { name }), ...(goal && { goal }) };
+  const schedule = /^\/\/ Schedule: (.+)$/m.exec(source)?.[1]?.trim();
+  return { ...(name && { name }), ...(goal && { goal }), ...(schedule && { schedule }) };
+}
+
+/** `// Store: <id> owner=<human|agent> records=<effect>`, as codegen's `storeLine` writes it. */
+const STORE_LINE = /^\/\/ Store: (\S+) owner=(human|agent)(?: records=(\S+))?$/gm;
+
+function readStores(source: string): Record<string, StoreSpec> {
+  const stores: Record<string, StoreSpec> = {};
+  for (const m of source.matchAll(STORE_LINE)) {
+    stores[m[1]!] = { owner: m[2] as StoreSpec["owner"], ...(m[3] && { records: m[3] }) };
+  }
+  return stores;
 }
 
 /**

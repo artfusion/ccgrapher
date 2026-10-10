@@ -21,6 +21,8 @@ export type NodeTraits = Pick<
   | "expects"
   | "writes"
   | "uses"
+  | "effects"
+  | "guards"
   | "fanOut"
 >;
 
@@ -70,6 +72,10 @@ export function parseTraits(doc: string, fallbackLabel: string): NodeTraits {
       traits.writes = trait.slice(7).trim().split(/\s+/).filter(Boolean);
     } else if (trait.startsWith("uses ")) {
       traits.uses = trait.slice(5).trim().split(/\s+/).filter(Boolean);
+    } else if (trait.startsWith("effects ")) {
+      traits.effects = trait.slice(8).trim().split(/\s+/).filter(Boolean);
+    } else if (trait.startsWith("guards ")) {
+      traits.guards = trait.slice(7).trim().split(/\s+/).filter(Boolean);
     }
   }
 

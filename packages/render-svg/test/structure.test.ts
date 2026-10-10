@@ -16,6 +16,13 @@ const specs = readdirSync(examples)
   .map((f) => f.replace(/\.yaml$/, ""))
   .sort();
 
+/** daily-brief broken three ways, for the marks no example draws: the rules about what one run hands the next. */
+const variants = fileURLToPath(new URL("../../lint/test/fixtures/daily-brief/", import.meta.url));
+const variantSpecs = readdirSync(variants)
+  .filter((f) => f.endsWith(".yaml"))
+  .map((f) => f.replace(/\.yaml$/, ""))
+  .sort();
+
 interface Render {
   label: string;
   svg: string;
@@ -37,8 +44,8 @@ function render(label: string, graph: Graph, options: { plain?: boolean; title?:
  * default), the same with `--plain`, and, where there is anything to repair, the
  * repaired graph with its own findings (`--fix`).
  */
-function renders(name: string): Render[] {
-  const original: Graph = loadGraph(`${examples}${name}.yaml`);
+function renders(name: string, dir = examples): Render[] {
+  const original: Graph = loadGraph(`${dir}${name}.yaml`);
   const result = lint(original);
 
   const out = [render(name, original), render(`${name} (plain)`, original, { plain: true })];
@@ -182,7 +189,7 @@ const matches = (entry: { render: string; key: string }, label: string, v: Viola
   (entry.render === "*" || entry.render === label) && entry.key === keyOf(v);
 
 describe("structural lint over every example", () => {
-  const all = [...specs.flatMap(renders), ...crowded()];
+  const all = [...specs.flatMap((n) => renders(n)), ...variantSpecs.flatMap((n) => renders(n, variants)), ...crowded()];
 
   it("covers every example spec, as written, plain and repaired", () => {
     expect(specs.length).toBeGreaterThanOrEqual(6);
@@ -209,7 +216,7 @@ describe("structural lint over every example", () => {
   });
 
   it("is deterministic", () => {
-    const again = [...specs.flatMap(renders), ...crowded()];
+    const again = [...specs.flatMap((n) => renders(n)), ...variantSpecs.flatMap((n) => renders(n, variants)), ...crowded()];
     expect(again.map((r) => r.svg)).toEqual(all.map((r) => r.svg));
     expect(again.map((r) => r.violations)).toEqual(all.map((r) => r.violations));
   });

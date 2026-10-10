@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
 const example = (name: string) => join(root, "examples", `${name}.yaml`);
+/** daily-brief broken one way at a time: the fixtures for the rules about what one run hands the next. */
+const variant = (name: string) => join(root, "packages/lint/test/fixtures/daily-brief", `${name}.yaml`);
 const trace = (name: string) => join(root, "examples/traces", `${name}.jsonl`);
 const traceDir = () => join(root, "examples/traces");
 const out = mkdtempSync(join(tmpdir(), "ccg-cli-"));
@@ -286,10 +288,18 @@ describe("render guards", () => {
       SELF_GRADING: [],
       CONTEXT_COLLAPSE: ["arriving"],
       SILENT_FAILURE: ["arriving"],
+      DUPLICATE_EFFECT: ["effect"],
+      EARLY_COMMIT: ["effect", "resource"],
+      // Against a person's store; the read-only form carries `boundary` instead.
+      AUTHORITY_BREACH: ["resource"],
     };
     const seen = new Set<string>();
-    for (const name of ["release-session", "linear-chain", "self-grading", "wide-fanin"]) {
-      for (const report of JSON.parse(ccg("lint", example(name), "--json").stdout)) {
+    const specs = [
+      ...["release-session", "linear-chain", "self-grading", "wide-fanin"].map(example),
+      ...["unguarded-post", "early-commit", "agent-writes-preferences"].map(variant),
+    ];
+    for (const spec of specs) {
+      for (const report of JSON.parse(ccg("lint", spec, "--json").stdout)) {
         for (const f of report.findings as Array<{ rule: string }>) {
           seen.add(f.rule);
           expect(Object.keys(f).sort()).toEqual([...BASE, ...DETAIL[f.rule]!].sort());
@@ -309,11 +319,14 @@ describe("render: every lint rule has a mark", () => {
     SELF_GRADING: { spec: "self-grading", svg: ">grades own work<", mermaid: "· grades own work", excalidraw: "· grades own work" },
     CONTEXT_COLLAPSE: { spec: "wide-fanin", svg: ">200 raw in<", mermaid: "· 200 in, no reduce", excalidraw: "· 200 in, no reduce" },
     SILENT_FAILURE: { spec: "release-session", svg: ">9 ≠ 8<", mermaid: "9 ≠ 8", excalidraw: "9 ≠ 8" },
+    AUTHORITY_BREACH: { spec: variant("agent-writes-preferences"), svg: ">writes pref…<", mermaid: "· writes preferences, a person's", excalidraw: "· writes preferences, a person's" },
+    DUPLICATE_EFFECT: { spec: variant("unguarded-post"), svg: ">unguarded post:brief-ch…<", mermaid: "· unguarded post:brief-channel", excalidraw: "· unguarded post:brief-channel" },
+    EARLY_COMMIT: { spec: variant("ordering-edge"), fix: true, svg: ">2 stores too early<", mermaid: "· writes bookmarks, ledger too early", excalidraw: "· writes bookmarks, ledger too early" },
   };
   let count = 0;
   const draw = (ext: string, spec: string, ...flags: string[]) => {
     const file = join(out, `marks-${count++}.${ext}`);
-    expect(ccg("render", example(spec), ...flags, "-o", file).status).toBe(0);
+    expect(ccg("render", spec.includes("/") ? spec : example(spec), ...flags, "-o", file).status).toBe(0);
     return readFileSync(file, "utf8");
   };
 

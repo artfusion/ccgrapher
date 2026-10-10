@@ -12,6 +12,11 @@ export {
   selfGrading,
   contextCollapse,
   silentFailure,
+  duplicateEffects,
+  earlyCommits,
+  authorityBreaches,
+  writeDenial,
+  type WriteDenial,
   runAllRules,
   CONTEXT_COLLAPSE_THRESHOLD,
 } from "./rules.js";

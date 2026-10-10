@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { EdgeSpec, Graph } from "@ccgrapher/core";
 
+/** Errors first, then warnings: the order findings are reported and captioned in. */
 export const RULE_ORDER = [
   "FAKE_EDGE",
   "MISSING_INPUT",
+  "AUTHORITY_BREACH",
   "HIDDEN_EDGE",
   "SELF_GRADING",
   "CONTEXT_COLLAPSE",
   "SILENT_FAILURE",
+  "DUPLICATE_EFFECT",
+  "EARLY_COMMIT",
 ] as const;
 
 export type RuleId = (typeof RULE_ORDER)[number];
@@ -36,8 +40,16 @@ export interface Finding {
   readonly arriving?: number;
   /** The input nothing supplies, on MISSING_INPUT findings only. Additive, for renderers. */
   readonly field?: string;
-  /** The file both nodes write, on HIDDEN_EDGE findings only. Additive, for renderers. */
+  /**
+   * What was written. The file both nodes write, on HIDDEN_EDGE; the store, on
+   * EARLY_COMMIT and on AUTHORITY_BREACH against a person's store. Additive, for
+   * renderers.
+   */
   readonly resource?: string;
+  /** The effect, on DUPLICATE_EFFECT and EARLY_COMMIT findings only. Additive, for renderers. */
+  readonly effect?: string;
+  /** The read-only boundary, on AUTHORITY_BREACH findings of that form only. Additive, for renderers. */
+  readonly boundary?: string;
 }
 
 /**
@@ -74,11 +86,14 @@ export function ruleSeverity(rule: RuleId): Severity {
   switch (rule) {
     case "FAKE_EDGE":
     case "MISSING_INPUT":
+    case "AUTHORITY_BREACH":
       return "error";
     case "HIDDEN_EDGE":
     case "SELF_GRADING":
     case "CONTEXT_COLLAPSE":
     case "SILENT_FAILURE":
+    case "DUPLICATE_EFFECT":
+    case "EARLY_COMMIT":
       return "warn";
   }
 }
