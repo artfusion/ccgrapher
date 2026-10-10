@@ -306,6 +306,20 @@ describe("finding marks", () => {
     expect(byId("halo-draft_b")).toBeDefined();
   });
 
+  it("rings who does the work and notes it after the shared context", () => {
+    const marked = renderExcalidraw(fixture("self-grading"), {
+      findingMarks: [
+        { rule: "MONOCULTURE", id: "check_own", tier: "cheap" },
+        { rule: "SELF_GRADING", id: "check_own" },
+        { rule: "TIER_MISMATCH", id: "draft_a", tier: "strong" },
+      ],
+    });
+    const text = JSON.stringify(marked);
+    expect(text).toContain("· grades own work · cheap checks cheap");
+    expect(text).toContain("· strong per item");
+    expect(marked.elements.some((e) => e["id"] === "halo-draft_a")).toBe(true);
+  });
+
   it("rings a node finding and notes it in the label", () => {
     expect(byId("halo-check_own")).toBeDefined();
     expect(byId("text-check_own")["text"]).toBe("grade the drafts · cheap · grades own work · expects 2");

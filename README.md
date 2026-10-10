@@ -243,7 +243,7 @@ dependency between them land on the same row automatically. The diamond shape fa
 
 ---
 
-## The nine lint rules
+## The eleven lint rules
 
 | Rule | Severity | Fires when |
 | --- | --- | --- |
@@ -252,10 +252,12 @@ dependency between them land on the same row automatically. The diamond shape fa
 | `AUTHORITY_BREACH` | error | A node that is not a gate writes a store a person owns, or a member of a `read-only` boundary has `writes` or `effects`. |
 | `HIDDEN_EDGE` | warn | Two concurrent nodes share a `writes` entry and neither is isolated. |
 | `SELF_GRADING` | warn | A `verifier` is not marked `freshContext`. |
+| `MONOCULTURE` | warn | A `verifier` checks work done on its own tier, or by the same declared `agent:` in `uses`. |
 | `CONTEXT_COLLAPSE` | warn | More than 30 results arrive with no intermediate `reduce`. |
 | `SILENT_FAILURE` | warn | A real fan-in has no `expects` guard, or the guard is wrong. |
 | `DUPLICATE_EFFECT` | warn | A scheduled workflow performs an effect that neither the node nor any step before it `guards`. |
 | `EARLY_COMMIT` | warn | A node writes a store that `records` an effect without coming strictly after every node that performs it. |
+| `TIER_MISMATCH` | warn | A fanned-out worker is `strong`, or the first `synthesize` step below a fan-out is `cheap`. |
 
 Three things about this that aren't obvious:
 
@@ -268,6 +270,18 @@ become real. Findings therefore carry `phase: "raw" | "repaired"`.
 before its real dependency has produced anything. So the proposal is always "repoint to the nearest
 ancestor that supplies the missing field", and only when nothing upstream can supply it is the edge
 dropped.
+
+**Who does the work is checked, not only drawn.** A spec names a tier and never a model id, and a
+target turns each tier into one model, so two steps on one tier run on one model. A verifier on
+the same tier as the work it checks shares its blind spots, fresh context or not, and
+`MONOCULTURE` says so; a shared `agent:` counts whatever the tiers. "The work it checks" is what
+reaches the verifier along edges that carry something, seen through plain-code steps, which
+dedupe or concatenate without judging anything. A node with no tier never matches, since unknown
+is not equal to anything, and plain code has no model to share. `TIER_MISMATCH` is advice rather
+than a defect: many cheap readers and one strong step to put them together is the usual shape, and
+a spec that turns it round may mean to. It is a warning, which leaves the exit code alone, so
+there is no third level for it. Neither rule fires on any example except `self-grading`, whose
+cheap verifier grades two cheap drafters.
 
 **An edge that only says "after" is still a fake edge.** If the step that records a post waits on
 the post by an edge that carries nothing, `--fix` drops the edge, and the repaired pass then reports
@@ -304,11 +318,13 @@ so the picture is the lint report:
 | `MISSING_INPUT` | a solid red ring and flag on the node, captioned with the field: `no repo` |
 | `HIDDEN_EDGE` | both writers ringed and joined by a thin solid red line, labelled with the file |
 | `SELF_GRADING` | the verifier ringed, "grades own work" |
+| `MONOCULTURE` | the verifier ringed, with what it shares: `same agent: reviewer`, or `cheap checks cheap` |
 | `CONTEXT_COLLAPSE` | the overloaded node ringed, with the count: `200 in, no reduce` |
 | `SILENT_FAILURE` | the fan-in ringed, "no count guard", or `9 ≠ 8` when the guard disagrees |
 | `AUTHORITY_BREACH` | the writer ringed, with the store, `writes preferences`, or "writes in read-only" |
 | `DUPLICATE_EFFECT` | the step performing the effect ringed, with the effect: `unguarded post:brief-channel` |
 | `EARLY_COMMIT` | the early writer ringed, with the store, `ledger too early`, or `2 stores too early` |
+| `TIER_MISMATCH` | the step ringed, with the tier the wrong way round: `strong per item`, or `cheap synthesis` |
 
 A node has room for one caption, so a node with several findings names the first in rule order
 and counts the rest: `no rubric +2`. Dashes are kept for structure (a human gate, an isolated
@@ -638,7 +654,7 @@ Two things worth knowing when reading its output:
 | Package | Does |
 | --- | --- |
 | [`core`](packages/core) | Zod schema, YAML parsing, cycle detection, longest-path ranks |
-| [`lint`](packages/lint) | The nine rules and the two-pass repair pipeline |
+| [`lint`](packages/lint) | The eleven rules and the two-pass repair pipeline |
 | [`layout`](packages/layout) | dagre wrapper → positioned nodes and routed edges |
 | [`render-svg`](packages/render-svg) | rough.js + paper texture + embedded font |
 | [`render-mermaid`](packages/render-mermaid) | `flowchart TD` with `look: handDrawn` |
@@ -685,7 +701,8 @@ double as the negative controls in the test suite. `linear-chain` is deliberatel
 linter's fixture. `self-grading` and `wide-fanin` were added because nothing in the original drop
 exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`. `daily-brief` is clean and is the one that runs
 on a schedule; its broken variants, one per rule about what one run hands the next, sit with the
-linter's tests in `packages/lint/test/fixtures/daily-brief`. `live-demo` is the one that executes: it lints
+linter's tests in `packages/lint/test/fixtures/daily-brief`; research-desk's, with the tiers moved
+and an agent shared, sit in `packages/lint/test/fixtures/research-desk`. `live-demo` is the one that executes: it lints
 clean, sleeps rather than calling a model, fails one node on purpose and stops at a human gate.
 
 `release-session` is the one to read if you want to see why this is worth doing. It is not an agent

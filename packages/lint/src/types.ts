@@ -8,10 +8,12 @@ export const RULE_ORDER = [
   "AUTHORITY_BREACH",
   "HIDDEN_EDGE",
   "SELF_GRADING",
+  "MONOCULTURE",
   "CONTEXT_COLLAPSE",
   "SILENT_FAILURE",
   "DUPLICATE_EFFECT",
   "EARLY_COMMIT",
+  "TIER_MISMATCH",
 ] as const;
 
 export type RuleId = (typeof RULE_ORDER)[number];
@@ -50,6 +52,14 @@ export interface Finding {
   readonly effect?: string;
   /** The read-only boundary, on AUTHORITY_BREACH findings of that form only. Additive, for renderers. */
   readonly boundary?: string;
+  /**
+   * The model tier the finding is about: the one a verifier shares with what it
+   * checks, on MONOCULTURE; the one that is the wrong way round, on
+   * TIER_MISMATCH. Additive, for renderers.
+   */
+  readonly tier?: string;
+  /** The agent type a verifier shares with what it checks, on MONOCULTURE only. Additive, for renderers. */
+  readonly agent?: string;
 }
 
 /**
@@ -90,10 +100,14 @@ export function ruleSeverity(rule: RuleId): Severity {
       return "error";
     case "HIDDEN_EDGE":
     case "SELF_GRADING":
+    case "MONOCULTURE":
     case "CONTEXT_COLLAPSE":
     case "SILENT_FAILURE":
     case "DUPLICATE_EFFECT":
     case "EARLY_COMMIT":
+    // Advice rather than a defect. Warn is the lowest level there is, and a
+    // warning already leaves the exit code alone, so no third level is needed.
+    case "TIER_MISMATCH":
       return "warn";
   }
 }

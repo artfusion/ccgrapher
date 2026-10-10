@@ -34,7 +34,10 @@ export type FindingMark =
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
   | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
-  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly agent: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly tier: string }
+  | { readonly rule: "TIER_MISMATCH"; readonly id: string; readonly tier: string };
 
 /** Mermaid's shape vocabulary, mapped so a kind is legible without a legend. */
 const SHAPE: Record<NodeKind, readonly [string, string]> = {
@@ -171,9 +174,11 @@ const NOTE_ORDER = [
   "AUTHORITY_BREACH",
   "HIDDEN_EDGE",
   "SELF_GRADING",
+  "MONOCULTURE",
   "CONTEXT_COLLAPSE",
   "DUPLICATE_EFFECT",
   "EARLY_COMMIT",
+  "TIER_MISMATCH",
 ] as const;
 
 function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
@@ -188,6 +193,8 @@ function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
     }
     if (m.rule === "AUTHORITY_BREACH" && m.id === id) notes.push({ rule: m.rule, text: authorityNote(m) });
     if (m.rule === "DUPLICATE_EFFECT" && m.id === id) notes.push({ rule: m.rule, text: `unguarded ${m.effect}` });
+    if (m.rule === "MONOCULTURE" && m.id === id) notes.push({ rule: m.rule, text: monocultureNote(m) });
+    if (m.rule === "TIER_MISMATCH" && m.id === id) notes.push({ rule: m.rule, text: tierNote(m) });
   }
   const early = marks.flatMap((m) => (m.rule === "EARLY_COMMIT" && m.id === id ? [m.store] : []));
   if (early.length > 0) notes.push({ rule: "EARLY_COMMIT", text: `writes ${early.join(", ")} too early` });
@@ -195,6 +202,12 @@ function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
     .sort((a, b) => NOTE_ORDER.indexOf(a.rule) - NOTE_ORDER.indexOf(b.rule))
     .map((n) => n.text);
 }
+
+const monocultureNote = (m: Extract<FindingMark, { rule: "MONOCULTURE" }>) =>
+  "agent" in m ? `same agent as its work: ${m.agent}` : `${m.tier} checks ${m.tier}`;
+
+const tierNote = (m: Extract<FindingMark, { rule: "TIER_MISMATCH" }>) =>
+  m.tier === "strong" ? "strong per item" : "cheap synthesis of a fan-out";
 
 const authorityNote = (m: Extract<FindingMark, { rule: "AUTHORITY_BREACH" }>) =>
   "boundary" in m ? `writes in read-only ${m.boundary}` : `writes ${m.store}, a person's`;

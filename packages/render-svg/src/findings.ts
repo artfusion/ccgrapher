@@ -29,7 +29,10 @@ export type FindingMark =
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
   | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
-  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly agent: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly tier: string }
+  | { readonly rule: "TIER_MISMATCH"; readonly id: string; readonly tier: string };
 
 /** The rules a node can carry, in the linter's order. */
 const NODE_RULES = [
@@ -37,10 +40,12 @@ const NODE_RULES = [
   "AUTHORITY_BREACH",
   "HIDDEN_EDGE",
   "SELF_GRADING",
+  "MONOCULTURE",
   "CONTEXT_COLLAPSE",
   "SILENT_FAILURE",
   "DUPLICATE_EFFECT",
   "EARLY_COMMIT",
+  "TIER_MISMATCH",
 ] as const;
 type NodeRule = (typeof NODE_RULES)[number];
 
@@ -92,6 +97,24 @@ export function findingsOn(
         break;
       case "EARLY_COMMIT":
         if (m.id === id) early.push(m.store);
+        break;
+      case "MONOCULTURE":
+        if (m.id !== id) break;
+        entries.push({
+          rule: m.rule,
+          forms:
+            "agent" in m
+              ? [`same agent: ${shorten(m.agent, 12)}`, "same agent", "monoculture"]
+              : [`${m.tier} checks ${m.tier}`, "same tier", "monoculture"],
+        });
+        break;
+      case "TIER_MISMATCH":
+        if (m.id === id) {
+          entries.push({
+            rule: m.rule,
+            forms: m.tier === "strong" ? ["strong per item", "strong reader", "tier"] : ["cheap synthesis", "cheap synth", "tier"],
+          });
+        }
         break;
     }
   }

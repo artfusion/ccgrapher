@@ -42,6 +42,28 @@ describe("marks for what one run hands the next", () => {
     );
   });
 
+  it("says who does the work: the shared agent, the shared tier, or the tier the wrong way round", () => {
+    const on = (mark: FindingMark) => findingsOn("v", [mark], undefined).captions[0];
+    expect(on({ rule: "MONOCULTURE", id: "v", agent: "analyst" })).toEqual(["same agent: analyst", "same agent", "monoculture"]);
+    expect(on({ rule: "MONOCULTURE", id: "v", tier: "cheap" })).toEqual(["cheap checks cheap", "same tier", "monoculture"]);
+    expect(on({ rule: "TIER_MISMATCH", id: "v", tier: "strong" })).toEqual(["strong per item", "strong reader", "tier"]);
+    expect(on({ rule: "TIER_MISMATCH", id: "v", tier: "cheap" })).toEqual(["cheap synthesis", "cheap synth", "tier"]);
+  });
+
+  it("captions a shared context ahead of a shared model, and the tier advice last", () => {
+    const found = findingsOn(
+      "v",
+      [
+        { rule: "TIER_MISMATCH", id: "v", tier: "cheap" },
+        { rule: "MONOCULTURE", id: "v", tier: "cheap" },
+        { rule: "SELF_GRADING", id: "v" },
+      ],
+      undefined,
+    );
+    expect(found.rules).toEqual(["SELF_GRADING", "MONOCULTURE", "TIER_MISMATCH"]);
+    expect(fitCaption(found.captions, 400)).toBe("grades own work +2");
+  });
+
   it("says which kind of authority was breached", () => {
     const store = findingsOn("decide", [{ rule: "AUTHORITY_BREACH", id: "decide", store: "preferences" }], undefined);
     const bounded = findingsOn("decide", [{ rule: "AUTHORITY_BREACH", id: "decide", boundary: "look" }], undefined);

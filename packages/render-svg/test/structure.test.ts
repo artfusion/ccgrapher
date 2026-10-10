@@ -23,6 +23,13 @@ const variantSpecs = readdirSync(variants)
   .map((f) => f.replace(/\.yaml$/, ""))
   .sort();
 
+/** research-desk with the tiers moved, for the marks about who does the work. */
+const desks = fileURLToPath(new URL("../../lint/test/fixtures/research-desk/", import.meta.url));
+const deskSpecs = readdirSync(desks)
+  .filter((f) => f.endsWith(".yaml"))
+  .map((f) => f.replace(/\.yaml$/, ""))
+  .sort();
+
 interface Render {
   label: string;
   svg: string;
@@ -189,7 +196,12 @@ const matches = (entry: { render: string; key: string }, label: string, v: Viola
   (entry.render === "*" || entry.render === label) && entry.key === keyOf(v);
 
 describe("structural lint over every example", () => {
-  const all = [...specs.flatMap((n) => renders(n)), ...variantSpecs.flatMap((n) => renders(n, variants)), ...crowded()];
+  const all = [
+    ...specs.flatMap((n) => renders(n)),
+    ...variantSpecs.flatMap((n) => renders(n, variants)),
+    ...deskSpecs.flatMap((n) => renders(n, desks)),
+    ...crowded(),
+  ];
 
   it("covers every example spec, as written, plain and repaired", () => {
     expect(specs.length).toBeGreaterThanOrEqual(6);
@@ -216,7 +228,12 @@ describe("structural lint over every example", () => {
   });
 
   it("is deterministic", () => {
-    const again = [...specs.flatMap((n) => renders(n)), ...variantSpecs.flatMap((n) => renders(n, variants)), ...crowded()];
+    const again = [
+    ...specs.flatMap((n) => renders(n)),
+    ...variantSpecs.flatMap((n) => renders(n, variants)),
+    ...deskSpecs.flatMap((n) => renders(n, desks)),
+    ...crowded(),
+  ];
     expect(again.map((r) => r.svg)).toEqual(all.map((r) => r.svg));
     expect(again.map((r) => r.violations)).toEqual(all.map((r) => r.violations));
   });

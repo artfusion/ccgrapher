@@ -5,6 +5,7 @@
 #
 # Expected lint output:
 #   SELF_GRADING  verifier check_own is not marked freshContext
+#   MONOCULTURE   verifier check_own checks draft_a and draft_b on the same tier, cheap
 #   HIDDEN_EDGE   draft_a and draft_b run concurrently and both write 'out/draft.md'
 #   Critical path: 4 layers (nothing to repair -- every edge carries real data)
 version: 1

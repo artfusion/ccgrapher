@@ -9,12 +9,15 @@ const findings = (name: string) => lint(loadGraph(`${examples}${name}.yaml`)).fi
 const variants = fileURLToPath(new URL("./fixtures/daily-brief/", import.meta.url));
 const variant = (name: string) => lint(loadGraph(`${variants}${name}.yaml`)).findings;
 const ACROSS_RUNS = ["unguarded-post", "early-commit", "agent-writes-preferences"] as const;
+const desks = fileURLToPath(new URL("./fixtures/research-desk/", import.meta.url));
+const desk = (name: string) => lint(loadGraph(`${desks}${name}.yaml`)).findings;
 
 describe("renderMarksFor", () => {
   it("gives every rule a mark: each example finding becomes something a renderer draws", () => {
     const all = [
       ...["linear-chain", "release-session", "self-grading", "wide-fanin"].flatMap(findings),
       ...ACROSS_RUNS.flatMap(variant),
+      ...desk("cheap-report"),
     ];
     expect(new Set(all.map((f) => f.rule))).toEqual(new Set(RULE_ORDER));
     for (const f of all) {
@@ -43,6 +46,13 @@ describe("renderMarksFor", () => {
       { rule: "EARLY_COMMIT", id: "commit_state", store: "ledger" },
       { rule: "AUTHORITY_BREACH", id: "decide", store: "preferences" },
     ]);
+  });
+
+  it("marks who does the work by the shared agent if there is one, else the tier", () => {
+    expect(renderMarksFor(findings("self-grading")).findingMarks).toContainEqual({ rule: "MONOCULTURE", id: "check_own", tier: "cheap" });
+    expect(renderMarksFor(desk("same-agent")).findingMarks).toEqual([{ rule: "MONOCULTURE", id: "skeptic_source", agent: "analyst" }]);
+    expect(renderMarksFor(desk("cheap-report")).findingMarks).toEqual([{ rule: "TIER_MISMATCH", id: "report", tier: "cheap" }]);
+    expect(renderMarksFor(desk("strong-readers")).findingMarks).toContainEqual({ rule: "TIER_MISMATCH", id: "research", tier: "strong" });
   });
 
   it("marks a read-only breach by its boundary, not by a store", () => {
