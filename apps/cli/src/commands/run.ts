@@ -116,9 +116,8 @@ function asOutput(node: string, value: unknown): NodeOutput | undefined {
 /**
  * Ask on the terminal, one gate at a time.
  *
- * Two gates on one rank run concurrently, because that is what the rank says
- * about them, and two readline interfaces reading one stdin would each take
- * half the keystrokes. So the terminal is serialised even though the graph is
+ * Two gates can be waiting at once, because nothing connects them, and two
+ * readline interfaces reading one stdin would each take half the keystrokes. So the terminal is serialised even though the graph is
  * not: the run is still parallel, only the asking is queued.
  */
 function terminalGate(): GateResolver {
@@ -278,6 +277,8 @@ export interface RunOptions {
   readonly serve: boolean;
   readonly port: number;
   readonly timeoutMs?: number;
+  /** How many node calls may run at once. Absent means no limit. */
+  readonly concurrency?: number;
 }
 
 /**
@@ -410,6 +411,7 @@ export async function runSpec(options: RunOptions): Promise<number> {
       },
       gate: gates.length > 0 ? gate : undefined,
       timeoutMs: options.timeoutMs,
+      concurrency: options.concurrency,
       // Passed straight through, absence included: the module either looked or
       // it did not, and this command has no business inventing an answer.
       capabilities,
@@ -465,6 +467,8 @@ export function runCommand(args: string[]): number {
       port: { type: "string", default: String(DEFAULT_PORT) },
       /** Per node, in seconds. */
       timeout: { type: "string" },
+      /** How many node calls may run at once. */
+      concurrency: { type: "string" },
     },
     allowPositionals: true,
     allowNegative: true,
@@ -490,6 +494,15 @@ export function runCommand(args: string[]): number {
     timeoutMs = Math.round(seconds * 1000);
   }
 
+  let concurrency: number | undefined;
+  if (values.concurrency !== undefined) {
+    concurrency = Number(values.concurrency);
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      stderr("ccg run: --concurrency must be a whole number of at least 1\n");
+      return USAGE;
+    }
+  }
+
   const port = Number(values.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     stderr("ccg run: --port must be a whole number from 0 to 65535\n");
@@ -503,6 +516,7 @@ export function runCommand(args: string[]): number {
     serve: values.serve,
     port,
     timeoutMs,
+    concurrency,
   }).then(
     (code) => {
       process.exitCode = code;

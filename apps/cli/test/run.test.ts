@@ -219,6 +219,26 @@ describe("the live demo", () => {
     expect(JSON.stringify(state.nodes.get("review")?.gatePayload)).toContain("live-demo");
   });
 
+  it("keeps to --concurrency and ends the same way", async () => {
+    const run = options(example("live-demo.yaml"), example("live-demo.impl.mjs"), {
+      serve: true,
+      concurrency: 1,
+    });
+    const { code } = await runAndAnswer(run, "review", "approve");
+    expect(code).toBe(1);
+
+    // fetch_docs and fetch_code could run together; with one slot they take turns.
+    const open = new Set<string>();
+    let most = 0;
+    for (const line of readTrace(run.trace!)) {
+      if (line.type === "node_started") open.add(line.node);
+      if (line.type === "node_finished" || line.type === "node_failed") open.delete(line.node);
+      most = Math.max(most, open.size);
+    }
+    expect(most).toBe(1);
+    expect(statuses(fold(run.trace!))).toMatchObject({ fetch_code: "failed", publish: "done" });
+  });
+
   it("carries both halves of the capability it declares", async () => {
     const run = options(example("live-demo.yaml"), example("live-demo.impl.mjs"), { serve: true });
     await runAndAnswer(run, "review", "approve");
@@ -398,6 +418,16 @@ describe("through the real binary", () => {
     const run = spawnSync("node", [cli, "run", fixture("run-clean.yaml")], { encoding: "utf8" });
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("--impl");
+  });
+
+  it("2 on a --concurrency that is not a whole number of at least 1", () => {
+    const run = spawnSync(
+      "node",
+      [cli, "run", fixture("run-clean.yaml"), "--impl", fixture("run-clean.impl.mjs"), "--concurrency", "0"],
+      { encoding: "utf8" },
+    );
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("--concurrency");
   });
 
   it("2 on a --timeout that is not a positive number of seconds", () => {
