@@ -68,8 +68,8 @@ nodes:
     label: majority survives
     kind: reduce
     model: null
-    expects: 3
-    in:  { vote: "keep|drop" }
+    expects: 4                           # the finding, and a vote on it from each skeptic
+    in:  { finding: object, vote: "keep|drop" }
     out: { survivor: object }
 
   - id: report
@@ -92,6 +92,7 @@ edges:
   - { from: dedupe, to: skeptic_correct, carries: [finding] }
   - { from: dedupe, to: skeptic_current, carries: [finding] }
   - { from: dedupe, to: skeptic_source,  carries: [finding] }
+  - { from: dedupe, to: vote,            carries: [finding] }   # the votes say keep or drop; this is what survives
   - { from: skeptic_correct, to: vote, carries: [vote] }
   - { from: skeptic_current, to: vote, carries: [vote] }
   - { from: skeptic_source,  to: vote, carries: [vote] }

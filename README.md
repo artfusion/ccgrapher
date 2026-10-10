@@ -166,6 +166,16 @@ An edge is real when `carries` names fields that exist in the source's `out` **a
 `in`. If nothing survives that intersection, the edge is a wait with nothing behind it — and that is
 what `FAKE_EDGE` reports.
 
+What no rule checks is the other direction: whether a step's outputs could be made from what it is
+handed. Field names are free text, and a step that does real work renames things on the way
+through (`dedupe` turns `claim`, `source` and `date` into a `finding`), so an output named in no
+input is the normal case and proves nothing. Read each step's `out` against its `in` and ask where
+the data comes from. In `research-desk`, `vote` once received only the three votes and claimed to
+pass on the finding that survived them. Each edge it had was real, so nothing fired; the edge from
+`dedupe` carrying `finding` was simply missing, and easy to miss, because the path through the
+skeptics already ordered the two. A step that passes data on needs an edge from wherever that data
+was made, even when another path already makes it wait.
+
 ### Boundaries
 
 A boundary names a group of nodes that one constraint covers, so the constraint is said once rather

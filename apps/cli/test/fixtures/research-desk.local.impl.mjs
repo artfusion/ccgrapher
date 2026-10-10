@@ -9,6 +9,7 @@ export async function dedupe(context) {
 }
 
 export async function vote(context) {
+  const finding = context.inputs.find((input) => input.from === "dedupe")?.output.finding;
   const keep = context.inputs.filter((input) => input.output.vote === "keep").length;
-  return { output: { survivor: { keep } } };
+  return { output: { survivor: keep >= 2 ? finding : null } };
 }
