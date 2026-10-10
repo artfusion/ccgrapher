@@ -169,8 +169,19 @@ Web canvas (`apps/web`, its own train; not in the published packages):
 - Undo and redo for edits made in the panel, one step per edit, back to the exact text. Typing in
   the text area, loading a spec or drawing a link starts the history afresh.
 - The canvas now redraws whenever the laid-out picture changes, not only when the number of steps
-  does, so a rewired dependency moves its box. It reframes when it does; animating the move is
-  separate work.
+  does, so a rewired dependency moves its box.
+- And the move can be watched. An edit, whether typed, made in the panel, a repair applied or the
+  repaired preview switched on, now moves the boxes already drawn to where the new declarations
+  put them, in a little over half a second. A new step fades in where it will stay, a step that
+  goes fades out where it was, and the links stay attached throughout. Switching the preview on
+  for `linear-chain` shows the chain fold into its waves. Layout still decides every position; the
+  canvas only travels between two it has computed.
+- A second edit during a move sets off from wherever the boxes have got to. With reduced motion
+  asked for, every change lands at once.
+- Pan and zoom are left alone by an edit. Only loading a spec frames it afresh, and a new `fit`
+  button in the corner brings the whole graph back into view.
+- While the text does not parse, the last picture that did stays on the canvas, faded and inert,
+  under the error, so typing through a broken line no longer loses the view.
 
 ## v0.5.0 — 2026-09-09
 

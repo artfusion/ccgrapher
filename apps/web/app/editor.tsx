@@ -50,6 +50,20 @@ export function Editor() {
   }, []);
   const [repaired, setRepaired] = useState(false);
 
+  // A spec *loaded* (an example, a file, a link) is a new drawing: the canvas
+  // remounts on it and frames it afresh. Everything else (typing, the panel,
+  // a repair, the preview toggle, a drawn link) is an edit, and moves the
+  // boxes of the drawing already on screen without touching pan or zoom.
+  const [loaded, setLoaded] = useState(0);
+  const loadSource = useCallback(
+    (next: string) => {
+      setSource(next);
+      setRepaired(false);
+      setLoaded((n) => n + 1);
+    },
+    [setSource],
+  );
+
   // The step the inspector is showing. Kept by id, so a step that briefly
   // disappears while its id is being retyped comes back selected.
   const [selectedId, setSelectedId] = useState<string>();
@@ -70,10 +84,7 @@ export function Editor() {
     const hash = window.location.hash;
     setViewerMode(isViewerHash(hash));
     const fromUrl = decodeSpecFragment(hash);
-    if (fromUrl !== undefined) {
-      setSource(fromUrl);
-      setRepaired(false);
-    }
+    if (fromUrl !== undefined) loadSource(fromUrl);
     // Intentionally once: the fragment is how a link *arrives*, not a value
     // this page ever writes back to, so there is nothing to keep in sync.
   }, []);
@@ -104,16 +115,25 @@ export function Editor() {
   // microseconds, so there is nothing to debounce.
   const model = useMemo(() => buildModel(source, repaired), [source, repaired]);
 
+  // While the text does not parse (half-way through typing a line, say) the
+  // canvas keeps the last picture that did, greyed and inert under the error,
+  // so the pan and zoom survive and the boxes move on from where they were
+  // once the spec parses again. A load clears it: a file that does not parse
+  // has no picture of its own to show.
+  const [held, setHeld] = useState<{ model: Model; loaded: number }>();
+  if (model.ok && (held?.model !== model || held.loaded !== loaded)) setHeld({ model, loaded });
+  const drawn = model.ok ? model : held?.loaded === loaded ? held.model : undefined;
+
   // ── canvas -> YAML ──────────────────────────────────────────────────────
   // The only two things a canvas edit is allowed to be: a link connecting or
   // disconnecting — `Canvas` enforces that a drag never reaches this handler
   // at all (see app/canvas/canvas.tsx). `Canvas` is uncontrolled and
-  // event-driven rather than a two-way sync, so there is no controlled-loop
-  // risk here to mutex against: a spec change remounts the canvas (new
-  // `key`, fresh `initialCells`), which constructs a graph rather than
-  // mutating an existing one, so it fires no `change:source`/`change:target`
-  // of its own. Only the debounce is needed, so a user drawing a link across
-  // several ports in quick succession writes the YAML once.
+  // event-driven rather than a two-way sync. A spec change does update the
+  // mounted graph in place, but every write that makes is marked as the
+  // canvas's own and `GraphSync` ignores it (app/canvas/canvas.tsx), so a
+  // change arriving from the spec is never written back as an edit. Only the
+  // debounce is needed here, so a user drawing a link across several ports in
+  // quick succession writes the YAML once.
   const writeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onCanvasSpecChange = useCallback(
     (next: WorkflowSpec) => {
@@ -153,17 +173,17 @@ export function Editor() {
   // moment ago and could not find — so it lives in the branch where the run
   // lives, and disappears with it when heat takes the canvas.
   const overlaid = useMemo(() => {
-    if (!model.ok) return { nodes: [], edges: [], legend: undefined };
+    if (!drawn) return { nodes: [], edges: [], legend: undefined };
     if (heat) {
-      const { nodes, legend } = applyHeat(model.nodes, heat);
+      const { nodes, legend } = applyHeat(drawn.nodes, heat);
       // Heat is keyed by node; it has nothing to say about an edge.
-      return { nodes, edges: model.edges, legend };
+      return { nodes, edges: drawn.edges, legend };
     }
-    const overlaid = applyRunState(model.nodes, model.edges, connection?.run);
+    const overlaid = applyRunState(drawn.nodes, drawn.edges, connection?.run);
     // Capabilities are keyed by node too, so the edges pass straight through.
     const nodes = applyCapabilityState(overlaid.nodes, connection?.run);
     return { nodes, edges: overlaid.edges, legend: undefined };
-  }, [model, connection?.run, heat]);
+  }, [drawn, connection?.run, heat]);
 
   // The inspected step is marked on its card. Like every overlay, a flag in
   // `data` and nothing else: selecting a step moves nothing.
@@ -179,23 +199,6 @@ export function Editor() {
           },
     [overlaid, selectedId, viewerMode],
   );
-
-  // The canvas is uncontrolled (see app/canvas/canvas.tsx), so a laid-out
-  // picture that differs from the mounted one needs a fresh mount to be seen.
-  // Keyed on what layout decided (every box, its size and ports, every edge
-  // and what it carries) and on nothing an overlay decides, so a run's frames
-  // and a heat file never remount it, while an edit that moves a step does.
-  const layoutKey = useMemo(() => {
-    if (!model.ok) return "";
-    const ports = new Map(
-      model.base.spec.nodes.map((n) => [n.id, [Object.keys(n.in), Object.keys(n.out)]]),
-    );
-    return JSON.stringify([
-      repaired,
-      model.nodes.map((n) => [n.id, n.position, n.width, n.height, ports.get(n.id)]),
-      model.edges.map((e) => [e.id, e.label]),
-    ]);
-  }, [model, repaired]);
 
   const loadHeat = async (files: readonly File[]) => {
     const loaded: Record<string, HeatData> = {};
@@ -238,10 +241,7 @@ export function Editor() {
                 value=""
                 onChange={(e) => {
                   const next = FIXTURES[e.target.value];
-                  if (next) {
-                    setSource(next);
-                    setRepaired(false);
-                  }
+                  if (next) loadSource(next);
                 }}
               >
                 <option value="">load an example…</option>
@@ -261,8 +261,7 @@ export function Editor() {
                     // So opening the same file twice in a row still fires a change.
                     e.target.value = "";
                     if (!file) return;
-                    setSource(await file.text());
-                    setRepaired(false);
+                    loadSource(await file.text());
                   }}
                 />
                 open a spec…
@@ -343,23 +342,23 @@ export function Editor() {
             void loadHeat([...e.dataTransfer.files]);
           }}
         >
-          {!model.ok ? (
-            <pre className="error">{model.error}</pre>
-          ) : (
-            <Canvas
-              // Remounted only when the laid-out picture changes (see
-              // `layoutKey`), so the fresh canvas draws where the new
-              // declarations put each step. Run state is deliberately not in
-              // this key: it changes on every event, and a key that moved
-              // with it would remount the whole canvas several times a second.
-              key={layoutKey}
-              nodes={view.nodes}
-              edges={view.edges}
-              specNodes={model.graph.spec.nodes}
-              baseSpec={model.graph.spec}
-              onSpecChange={onCanvasSpecChange}
-              onSelect={viewerMode ? undefined : selectFromCanvas}
-            />
+          {drawn && (
+            <div className={model.ok ? "canvas-host" : "canvas-host held"} inert={!model.ok}>
+              <Canvas
+                // Remounted only when a spec is loaded. An edit reaches the
+                // mounted canvas as new props and moves its boxes in place.
+                key={loaded}
+                nodes={view.nodes}
+                edges={view.edges}
+                specNodes={drawn.graph.spec.nodes}
+                baseSpec={drawn.graph.spec}
+                onSpecChange={onCanvasSpecChange}
+                onSelect={viewerMode ? undefined : selectFromCanvas}
+              />
+            </div>
+          )}
+          {!model.ok && (
+            <pre className={drawn ? "error over" : "error"}>{model.error}</pre>
           )}
 
           {view.legend && <HeatLegend legend={view.legend} />}
