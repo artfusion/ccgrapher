@@ -133,6 +133,24 @@ edges:
   - { from: a, to: report, carries: [notes] }
   - { from: stamp, to: tag, carries: [v] }
 `,
+  /**
+   * An urgent step at the end of a chain, so the chain is washed and the step is
+   * marked: a fanned ancestor, a ring on the urgent step itself, and a high step
+   * on its own beside them.
+   */
+  "an urgent step and the chain it pulls": `
+version: 1
+name: urgent chain
+nodes:
+  - { id: plan, label: plan the fix, kind: split, in: { q: string }, out: { file: string } }
+  - { id: scan, label: scan each file, kind: worker, fanOut: { over: file, cap: 4 }, in: { file: string }, out: { hit: string } }
+  - { id: docs, label: update the docs, kind: worker, priority: high, in: { file: string }, out: { page: string } }
+  - { id: fix, label: patch the hole, kind: verifier, priority: urgent, prioritySetBy: on-call, in: { hit: string }, out: { patch: string } }
+edges:
+  - { from: plan, to: scan, carries: [file] }
+  - { from: plan, to: docs, carries: [file] }
+  - { from: scan, to: fix, carries: [hit] }
+`,
 } as const;
 
 const crowded = (): Render[] =>
@@ -215,6 +233,10 @@ describe("structural lint over every example", () => {
     // The two corner cases the inline specs exist for.
     expect(all.some((r) => /data-link="[^"]+"/.test(r.svg) && r.label === "writers a row apart")).toBe(true);
     expect(all.find((r) => r.label === "several findings on one node")!.svg).toContain(">no rubric +2<");
+    // And the urgency marks: a mark on the urgent and the high step, a wash on what they pull.
+    const urgent = all.find((r) => r.label === "an urgent step and the chain it pulls")!.svg;
+    expect(urgent.match(/data-mark="priority"/g)).toHaveLength(2);
+    expect(urgent.match(/data-wash="priority"/g)).toHaveLength(4);
   });
 
   it.each(all.map((r) => [r.label, r] as const))("%s has no unlisted violations", (label, r) => {

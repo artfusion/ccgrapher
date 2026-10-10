@@ -121,6 +121,39 @@ describe("what survives the trip", () => {
     expect(back).toEqual(spec);
   });
 
+  /**
+   * Who set a priority is free text, so the awkward cases are the point: a comma
+   * and a full stop that would end a trait, a quote, a backslash, something
+   * that looks like a fan-out sentence, and the two characters that would shut
+   * the doc comment early.
+   */
+  it.each([
+    "on-call",
+    "on-call, payments.",
+    'the "release" rota',
+    "back\\slash",
+    "Runs once per file, capped at 3",
+    "ends a comment */ early",
+    "café — night shift",
+  ])("keeps priority and who set it: %s", (setBy) => {
+    const base = fixture("research-desk").spec;
+    const spec: WorkflowSpec = {
+      ...base,
+      nodes: base.nodes.map((n) =>
+        n.id === "skeptic_source"
+          ? { ...n, priority: "urgent", prioritySetBy: setBy }
+          : n.id === "research"
+            ? { ...n, priority: "high" }
+            : n.id === "vote"
+              ? { ...n, priority: "normal" }
+              : n,
+      ),
+    };
+    const { spec: back, warnings } = ingest(codegen(buildGraph(spec), "plain-ts"));
+    expect(warnings).toEqual([]);
+    expect(back).toEqual(spec);
+  });
+
   it("loses schedule and stores without a banner, as it loses the name and goal", () => {
     const { spec } = ingest(codegen(fixture("daily-brief"), "plain-ts", { banner: false }));
     expect(spec.schedule).toBeUndefined();

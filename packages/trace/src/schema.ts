@@ -94,6 +94,20 @@ export const NodeStarted = z.object({
   node: z.string().min(1),
   instance: z.number().int().nonnegative().optional(),
   of: z.number().int().positive().optional(),
+  /**
+   * The raised priority the step started at, when it had one: `urgent` or
+   * `high` from `ccg run`. Absent means normal.
+   *
+   * An open string, not an enum, for the same reason `source` is open: a value
+   * added later must not make an older reader reject the whole line, because
+   * losing a `node_started` would leave a step that finished without having
+   * begun.
+   */
+  priority: z.string().min(1).optional(),
+  /** The step the priority belongs to, when this one inherited it by being waited on. */
+  inheritedFrom: z.string().min(1).optional(),
+  /** Who set the priority, as the spec's `prioritySetBy` says. */
+  prioritySetBy: z.string().min(1).optional(),
 });
 export type NodeStarted = z.infer<typeof NodeStarted>;
 

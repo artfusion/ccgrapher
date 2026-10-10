@@ -190,7 +190,7 @@ export interface LinkEndpoint {
  *
  * Patches `edges` on the already-parsed spec rather than reconstructing
  * nodes — every field the canvas doesn't model (`model`, `writes`, `uses`,
- * `freshContext`, `expects`, `fanOut`, `worktree`, top-level `goal:`)
+ * `freshContext`, `expects`, `fanOut`, `worktree`, `priority`, top-level `goal:`)
  * survives untouched.
  */
 export function graphToSpec(

@@ -3,7 +3,16 @@ import type { Graph, NodeSpec } from "@ccgrapher/core";
 import { objectSchema } from "../fields.js";
 import { inputsOf, stages } from "../stages.js";
 import { familyOf } from "../tiers.js";
-import { banner, boundaryWarnings, crossRunWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
+import {
+  banner,
+  boundaryWarnings,
+  crossRunWarnings,
+  identifier,
+  priorityWarnings,
+  quote,
+  type Emitter,
+  type EmitOptions,
+} from "../types.js";
 
 /**
  * Emits a Workflow script: `agent()` for one job, `parallel()` for a rank with
@@ -34,6 +43,7 @@ export const claudeCodeEmitter: Emitter = {
         ),
       ...boundaryWarnings(graph, "claude-code"),
       ...crossRunWarnings(graph, "claude-code"),
+      ...priorityWarnings(graph, "claude-code"),
     ];
   },
 

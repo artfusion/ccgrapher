@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { agentTag, renderStyle, type Graph, type NodeKind, type NodeSpec } from "@ccgrapher/core";
+import {
+  agentTag,
+  effectivePriorities,
+  priorityCaption,
+  renderStyle,
+  type EffectivePriority,
+  type Graph,
+  type NodeKind,
+  type NodeSpec,
+} from "@ccgrapher/core";
 
 export interface MermaidOptions {
   /** Mermaid v11's sketch renderer. On by default — it is the cheap way to the look. */
@@ -61,6 +70,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
   const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
   const findingMarks = options.findingMarks ?? [];
+  const priorities = effectivePriorities(graph);
 
   const lines: string[] = [];
 
@@ -86,7 +96,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
 
   for (const node of graph.spec.nodes) {
     const [open, close] = SHAPE[node.kind];
-    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id), findingNotes(node.id, findingMarks))}"${close}`);
+    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id), findingNotes(node.id, findingMarks), priorities.get(node.id))}"${close}`);
   }
 
   lines.push(...boundaries(graph));
@@ -162,10 +172,21 @@ function boundaries(graph: Graph): string[] {
 const BOUNDARY_CLASS =
   "  classDef boundary fill:none,stroke:#736A63,stroke-width:1.4px,stroke-dasharray:12 6,color:#736A63;";
 
-function label(node: NodeSpec, arriving: number | undefined, notes: readonly string[]): string {
+/**
+ * Urgency is a label note, after who does the step: `urgent, set by on-call` on
+ * the step that carries it, `urgent, needed by fix` on one it pulls forward.
+ * No style line: in this output a coloured outline means a finding.
+ */
+function label(
+  node: NodeSpec,
+  arriving: number | undefined,
+  notes: readonly string[],
+  priority: EffectivePriority | undefined,
+): string {
   const badge = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
+  const urgency = priority ? ` · ${escape(priorityCaption(priority))}` : "";
   const found = notes.map((n) => ` · ${escape(n)}`).join("");
-  return `${escape(node.label)}${badge}${escape(whoNote(node))}${found}${guardNote(node, arriving)}`;
+  return `${escape(node.label)}${badge}${escape(whoNote(node))}${urgency}${found}${guardNote(node, arriving)}`;
 }
 
 /** Rule order, as the linter reports it; the count guard's note always comes last. */

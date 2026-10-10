@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expectsShortfall, rankGraph, type Graph, type NodeSpec } from "@ccgrapher/core";
+import {
+  effectivePriorities,
+  expectsShortfall,
+  PRIORITY_WEIGHT,
+  rankGraph,
+  type Graph,
+  type NodeSpec,
+} from "@ccgrapher/core";
 import { TraceEvent } from "@ccgrapher/trace";
 import {
   ExpectsError,
@@ -46,7 +53,9 @@ interface Queued extends ReadyStep {
  * unbounded unless the caller says otherwise. When more is ready than there are
  * slots, `readyOrder` decides who goes next; it also fixes the order in which
  * steps that became ready together are started, so a run's trace is
- * reproducible.
+ * reproducible. A node's `priority`, and the priority its ancestors inherit
+ * from it, weigh in there and nowhere else: they reorder ready work, never
+ * hold a step back from its inputs, and never interrupt a step once started.
  *
  * Everything that touches the world is injected: the executor, the gate
  * resolver, the clock, the event sink. There is no fs, no network, no process
@@ -131,7 +140,18 @@ export async function execute(
     of?: number,
   ): Promise<Attempt> => {
     const nodeStartedAt = now();
-    emit({ type: "node_started", node: node.id, instance, of });
+    // A raised priority is said on the start it may have moved, and only then,
+    // so a run with no priority writes the trace it always did.
+    const raised = priorities.get(node.id);
+    emit({
+      type: "node_started",
+      node: node.id,
+      instance,
+      of,
+      ...(raised && { priority: raised.priority }),
+      ...(raised?.inheritedFrom !== undefined && { inheritedFrom: raised.inheritedFrom }),
+      ...(raised?.setBy !== undefined && { prioritySetBy: raised.setBy }),
+    });
 
     const controller = new AbortController();
     const context: NodeContext = {
@@ -223,6 +243,8 @@ export async function execute(
   const { rank } = rankGraph(graph);
   const order = new Map([...graph.nodes.keys()].map((id, index) => [id, index]));
   const limit = options.concurrency ?? Number.POSITIVE_INFINITY;
+  /** Raised priorities only; a spec without any leaves this empty and the run exactly as before. */
+  const priorities = effectivePriorities(graph);
 
   /** For each node, how many of the distinct nodes it has an edge from have not settled yet. */
   const unsettled = new Map<string, number>();
@@ -230,12 +252,16 @@ export async function execute(
     unsettled.set(id, new Set((graph.inbound.get(id) ?? []).map((edge) => edge.from)).size);
   }
 
-  const stepOf = (id: string, instance?: number): ReadyStep => ({
-    node: graph.nodes.get(id)!,
-    rank: rank.get(id) ?? 0,
-    order: order.get(id) ?? 0,
-    instance,
-  });
+  const stepOf = (id: string, instance?: number): ReadyStep => {
+    const raised = priorities.get(id);
+    return {
+      node: graph.nodes.get(id)!,
+      rank: rank.get(id) ?? 0,
+      order: order.get(id) ?? 0,
+      instance,
+      ...(raised && { priority: PRIORITY_WEIGHT[raised.priority] }),
+    };
+  };
 
   /** Ready and waiting for a slot. Reordered by `readyOrder` every time slots are handed out. */
   const queue: Queued[] = [];

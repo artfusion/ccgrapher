@@ -20,6 +20,16 @@ export interface Theme {
    * that the caption reads as text on the paper (4.9:1), which `muted` is not.
    */
   readonly boundary: string;
+  /**
+   * The urgency mark, and the chevrons in it. A blue that no other mark uses,
+   * so moving first is never read as a finding (red) or as data (orange).
+   */
+  readonly urgent: string;
+  /**
+   * The light wash behind a step that runs at a raised priority, its own or
+   * one it inherits by being waited on: the chain an urgent step pulls forward.
+   */
+  readonly urgentWash: string;
   /** Very light per-kind tint so the roles read apart at a glance. */
   readonly fill: Readonly<Record<NodeKind, string>>;
   readonly fontFamily: string;
@@ -38,6 +48,8 @@ export const DEFAULT_THEME: Theme = {
   quiet: "#675F58",
   dangerInk: "#B03A26",
   boundary: "#736A63",
+  urgent: "#2C5D8A",
+  urgentWash: "#CCDDEE",
   fill: {
     goal: "#FFFFFF",
     split: "#FFFFFF",

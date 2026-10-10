@@ -24,6 +24,8 @@ export type NodeTraits = Pick<
   | "effects"
   | "guards"
   | "fanOut"
+  | "priority"
+  | "prioritySetBy"
 >;
 
 /**
@@ -46,7 +48,20 @@ export function parseTraits(doc: string, fallbackLabel: string): NodeTraits {
   const [, label, rest] = /^(.*?)\s+—\s+(.*)$/.exec(text) ?? [];
   if (label) traits.label = label.trim();
 
-  const body = rest ?? text;
+  let body = rest ?? text;
+
+  // Who set the priority is free text, so codegen quotes it as JSON in a
+  // sentence of its own. Taken out first, so nothing in it reads as a trait.
+  const setBy = /\s*Priority set by ("(?:[^"\\]|\\.)*")\./.exec(body);
+  if (setBy) {
+    try {
+      const value: unknown = JSON.parse(setBy[1]!);
+      if (typeof value === "string") traits.prioritySetBy = value;
+    } catch {
+      // Not ours after all: leave the sentence where it was.
+    }
+    if (traits.prioritySetBy !== undefined) body = body.replace(setBy[0], "");
+  }
   // Everything before the sentence that describes the fan-out.
   const [, list] = /^(.*?)\.(?:\s|$)/.exec(body) ?? [, body];
 
@@ -76,6 +91,9 @@ export function parseTraits(doc: string, fallbackLabel: string): NodeTraits {
       traits.effects = trait.slice(8).trim().split(/\s+/).filter(Boolean);
     } else if (trait.startsWith("guards ")) {
       traits.guards = trait.slice(7).trim().split(/\s+/).filter(Boolean);
+    } else if (trait.startsWith("priority: ")) {
+      const level = trait.slice(10).trim();
+      if (level === "urgent" || level === "high" || level === "normal") traits.priority = level;
     }
   }
 

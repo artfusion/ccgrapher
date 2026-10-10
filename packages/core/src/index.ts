@@ -4,6 +4,7 @@ export {
   ModelTier,
   FanOut,
   NodeSpec,
+  Priority,
   EdgeSpec,
   BoundaryAccess,
   BoundarySpec,
@@ -32,5 +33,13 @@ export {
 } from "./graph.js";
 
 export { rankGraph, criticalPath, type Ranking } from "./ranks.js";
+
+export {
+  PRIORITY_WEIGHT,
+  effectivePriorities,
+  priorityCaption,
+  type EffectivePriority,
+  type RaisedPriority,
+} from "./priority.js";
 
 export { parseSpec, formatSpec } from "./load.js";

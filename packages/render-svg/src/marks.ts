@@ -31,6 +31,15 @@
  * of every slot. Dashes already mean structure here (a human gate, an isolated
  * worktree), so a finding is told apart by colour and a solid line, never by a
  * new dash.
+ *
+ * Urgency is not a slot either, because all four are taken. It sits outside the
+ * box on the opposite corner to the finding flag: a small disc on the top-right
+ * corner of everything the node draws (the fan-out stack included), holding
+ * two chevrons for `urgent` and one for `high`. Who set it goes in the node's
+ * `<title>`, so it shows on hover rather than crowding the box. A step that
+ * inherits the priority gets no mark of its own, only the wash behind it
+ * (`renderPriorityWash`), so the chain reads as one highlighted path ending at
+ * the marked step. Neither moves anything: the waves are dependency truth.
  */
 
 export type MarkSlot = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -111,6 +120,65 @@ export function renderFindingHalo(box: MarkBox, colour: string, ground: string):
     // The exclamation mark is drawn, not typeset, so it needs no font.
     `<ellipse cx="${r(cx)}" cy="${r(cy - 1.6)}" rx="1.1" ry="2.6" fill="${ground}"/>`,
     `<circle cx="${r(cx)}" cy="${r(cy + 3.1)}" r="1.15" fill="${ground}"/>`,
+  ].join("");
+}
+
+/** How far the wash reaches beyond what the node draws: inside the finding ring, outside the worktree halo. */
+const WASH_GAP = 6;
+/** The urgency disc's centre, out from the corner, and its radius: clear of the box itself. */
+const PRIORITY_OFFSET = 10;
+const PRIORITY_RADIUS = 8.5;
+/** One chevron: half its width, and how thick its arms are, vertically. */
+const CHEVRON_HALF = 5;
+const CHEVRON_THICK = 2.8;
+
+/**
+ * The light wash behind a step at a raised priority. `extent` is everything the
+ * node draws, its fan-out stack included. Translucent, and without a stroke, so
+ * it reads as a highlighter behind the box and never as a second outline.
+ */
+export function renderPriorityWash(extent: MarkBox, wash: string): string {
+  return `<rect data-wash="priority" x="${r(extent.x - WASH_GAP)}" y="${r(extent.y - WASH_GAP)}" width="${r(extent.width + WASH_GAP * 2)}" height="${r(extent.height + WASH_GAP * 2)}" rx="8" fill="${wash}" opacity="0.9"/>`;
+}
+
+/** An upward chevron with its apex at (cx, top). */
+function chevron(cx: number, top: number, colour: string): string {
+  const w = CHEVRON_HALF;
+  const t = CHEVRON_THICK;
+  const points = [
+    [cx, top],
+    [cx + w, top + w],
+    [cx + w, top + w + t],
+    [cx, top + t],
+    [cx - w, top + w + t],
+    [cx - w, top + w],
+  ];
+  return `<polygon points="${points.map(([x, y]) => `${r(x!)},${r(y!)}`).join(" ")}" fill="${colour}"/>`;
+}
+
+/**
+ * The urgency mark on the top-right corner of `extent`: a disc of paper, so it
+ * reads over the wash and any ring, with two chevrons for `urgent` and one for
+ * `high`.
+ */
+export function renderPriorityMark(
+  extent: MarkBox,
+  priority: "urgent" | "high",
+  colour: string,
+  ground: string,
+): string {
+  const cx = extent.x + extent.width + PRIORITY_OFFSET;
+  const cy = extent.y - PRIORITY_OFFSET;
+  const height = CHEVRON_HALF + CHEVRON_THICK;
+  const chevrons =
+    priority === "urgent"
+      ? [chevron(cx, cy - (height + 4) / 2, colour), chevron(cx, cy - (height + 4) / 2 + 4, colour)]
+      : [chevron(cx, cy - height / 2, colour)];
+  return [
+    `<g data-mark="priority">`,
+    `<circle cx="${r(cx)}" cy="${r(cy)}" r="${PRIORITY_RADIUS}" fill="${ground}" stroke="${colour}" stroke-width="1.2"/>`,
+    ...chevrons,
+    `</g>`,
   ].join("");
 }
 

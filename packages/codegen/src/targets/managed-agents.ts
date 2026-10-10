@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SpecError, type Graph, type NodeSpec } from "@ccgrapher/core";
 import { modelIdOf } from "../tiers.js";
-import { banner, crossRunWarnings, type DirectoryEmitter, type EmitOptions, type Files } from "../types.js";
+import {
+  banner,
+  crossRunWarnings,
+  priorityWarnings,
+  type DirectoryEmitter,
+  type EmitOptions,
+  type Files,
+} from "../types.js";
 import { toYaml, type YamlValue } from "../yaml.js";
 
 /**
@@ -53,6 +60,8 @@ export const managedAgentsEmitter: DirectoryEmitter = {
             `boundary '${boundary.id}' is read-only, and nothing on the platform stops an MCP tool one of its members uses from writing.`,
         ),
       ...crossRunWarnings(graph, "managed-agents"),
+      // The order lives in the runner, which reads the spec rather than these files.
+      ...priorityWarnings(graph, "managed-agents", "; `ccg run --managed-agents` reads it from the spec and keeps it"),
     ];
   },
 

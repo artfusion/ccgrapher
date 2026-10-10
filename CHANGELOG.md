@@ -7,6 +7,25 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- A node can say it is urgent: `priority: urgent | high | normal`, and `prioritySetBy:` for who
+  asked, one line of free text. Both optional, and `version` stays 1. It is a scheduling hint and
+  not an edge: ranks, waves and every lint rule read the graph as they would without it.
+- `ccg run` puts the higher priority first when more is ready than `--concurrency` allows, ahead
+  of rank and spec order. Every step an urgent step waits on inherits its priority until it starts,
+  so the urgent step is not left behind its own prerequisites. Nothing starts before its inputs
+  exist and nothing running is stopped. Without a limit the run is the same, and a spec with no
+  priority writes the trace it always did. `@ccgrapher/core` exports `effectivePriorities`, the one
+  place the inheritance is worked out.
+- `node_started` gains `priority`, `inheritedFrom` and `prioritySetBy`, all optional, written only
+  for a step started at a raised priority. `priority` is an open string, so a level added later
+  does not cost an older reader the line.
+- The SVG marks the urgent step on its top right corner, two chevrons for urgent and one for high,
+  and lays a pale blue wash behind it and every step it pulls forward. Who set it, or which step
+  needs it, is in the node's title. Mermaid and Excalidraw note the same in the label.
+- plain-ts carries both fields through codegen and back; claude-code, langgraph and
+  managed-agents say in a warning that they cannot. The web inspector offers both, as it offers
+  any field the schema gains.
+
 - Who does the work is now checked as well as drawn. `MONOCULTURE` (warn) fires on a verifier
   that checks work done on its own tier, or by the same declared `agent:`: a shared model shares
   blind spots, and a fresh context does not change that. The work it checks is what reaches it

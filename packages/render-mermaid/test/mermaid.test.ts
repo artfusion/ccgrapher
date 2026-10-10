@@ -279,3 +279,31 @@ describe("finding marks", () => {
     expect(links(marked)).toEqual(links(plain));
   });
 });
+
+describe("urgency", () => {
+  const urgent = () => {
+    const graph = fixture("research-desk");
+    return buildGraph({
+      ...graph.spec,
+      nodes: graph.spec.nodes.map((n) =>
+        n.id === "skeptic_source" ? { ...n, priority: "urgent" as const, prioritySetBy: "on-call" } : n,
+      ),
+    });
+  };
+
+  it("notes it on the urgent step, with who set it, and on each step it pulls forward", () => {
+    const out = renderMermaid(urgent());
+    expect(out).toContain('skeptic_source{{"is the source real? · strong · urgent, set by on-call"}}');
+    expect(out).toContain('dedupe[["dedupe by source · urgent, needed by skeptic_source · expects 5"]]');
+    expect(out).toContain('plan[/"plan the angles · strong · urgent, needed by skeptic_source"\\]');
+    expect(out).toContain('skeptic_correct{{"is it correct? · strong"}}');
+  });
+
+  it("changes nothing but those labels: no style line, no edge", () => {
+    const plain = renderMermaid(fixture("research-desk")).split("\n");
+    const out = renderMermaid(urgent()).split("\n");
+    const changed = out.filter((line, i) => line !== plain[i]).map((line) => line.trim().split(/[[{(/]/)[0]);
+    expect(out).toHaveLength(plain.length);
+    expect(changed).toEqual(["plan", "research", "dedupe", "skeptic_source"]);
+  });
+});

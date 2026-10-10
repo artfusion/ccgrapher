@@ -96,12 +96,19 @@ function docComment(node: NodeSpec): string {
   if (node.uses?.length) traits.push(`uses ${node.uses.join(" ")}`);
   if (node.effects?.length) traits.push(`effects ${node.effects.join(" ")}`);
   if (node.guards?.length) traits.push(`guards ${node.guards.join(" ")}`);
+  if (node.priority) traits.push(`priority: ${node.priority}`);
 
   const fan = node.fanOut
     ? ` Runs once per ${node.fanOut.over}${node.fanOut.cap ? `, capped at ${node.fanOut.cap}` : ""}.`
     : "";
+  // Free text, so it gets a sentence of its own, quoted: a comma or a full stop
+  // in it would otherwise read as the end of a trait. `*\/` keeps the comment shut.
+  const setBy =
+    node.prioritySetBy !== undefined
+      ? ` Priority set by ${JSON.stringify(node.prioritySetBy).replace(/\*\//g, "*\\/")}.`
+      : "";
 
-  return `/** ${node.label} — ${traits.join(", ")}.${fan} */`;
+  return `/** ${node.label} — ${traits.join(", ")}.${fan}${setBy} */`;
 }
 
 function single(graph: Graph, node: NodeSpec): string[] {

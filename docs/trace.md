@@ -35,7 +35,7 @@ defines it; fields marked optional may be absent.
 | Type | Says | Fields beyond the envelope |
 |---|---|---|
 | `run_started` | The run began. The only event that carries the spec. | `spec.name`, `spec.hash` (optional), `source`, `args` (optional) |
-| `node_started` | A node, or one instance of a fanned node, began. | `node`, `instance` (optional), `of` (optional) |
+| `node_started` | A node, or one instance of a fanned node, began. | `node`, and optionally `instance`, `of`, `priority`, `inheritedFrom`, `prioritySetBy` |
 | `node_log` | A line of output. | `line`, `node` (optional: absent means the run itself) |
 | `node_finished` | A node, or instance, succeeded. | `node`, `durationMs`, `instance`, `output`, `usage` (all but the first two optional) |
 | `node_failed` | A node, or instance, failed. | `node`, `error`, `instance`, `durationMs` (optional) |
@@ -51,6 +51,16 @@ defines it; fields marked optional may be absent.
 learns how many instances to wait for. `ccg trace audit` reads it that way too: a
 step after a fanned one is in order only once every copy has finished, counting
 the copies that started or the `of` they announced, whichever is more.
+
+`priority` on `node_started` says the step started at a raised priority, its
+own or one it inherited. `ccg run` writes `urgent` or `high`, and writes nothing
+for a step at normal priority, so a run of a spec with no priority in it reads
+exactly as it did before the field existed. `inheritedFrom` names the step whose
+priority it is, when that is not this one: an urgent step passes its priority up
+to every unstarted step it waits on, so they are not left behind other work. And
+`prioritySetBy` is who asked, as the spec says. `priority` is an open string
+rather than a closed list, for the reason given below: a level added later must
+not cost an older reader the whole line.
 
 **Absent means unknown.** Every token and cost field in `usage` is optional. A
 reader renders an absent number as "n/a", never as 0, and sums only what is
@@ -123,6 +133,7 @@ migration note, and not a quiet edit.
 | 0.3.0 | The contract itself: the envelope and the eight run and node events. |
 | 0.4.0 | `capability_available`, `capability_lost`, `capability_invoked`, and the `claude-code-hooks` source. Older readers fold them as no update. |
 | 0.5.0 | None. `ccg trace audit` gained rules, but they read the same events. |
+| Unreleased | `priority`, `inheritedFrom` and `prioritySetBy` on `node_started`, all optional. Older readers ignore them. |
 
 One transport detail from that history is worth knowing. `ccg serve` at 0.3.1 and
 earlier forwarded only the event types it knew, so a newer writer's events
