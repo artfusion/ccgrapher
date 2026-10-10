@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildGraph, rankGraph, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
@@ -25,11 +26,20 @@ const ALL = [
   "wide-fanin",
 ] as const;
 
+/** Every example, not only the ones the geometry tests name. */
+const EVERY = readdirSync(examples)
+  .filter((f) => f.endsWith(".yaml"))
+  .map((f) => f.replace(/\.yaml$/, ""))
+  .sort();
+
 describe("the picture agrees with the linter", () => {
   // If dagre ever laid a node on a different row than core ranks it, the
   // diagram would contradict the layer count the lint report prints. This is
-  // the invariant that stops that happening quietly.
-  it.each(ALL)("%s: laid-out rows match core ranks exactly", (name) => {
+  // the invariant that stops that happening quietly. dagre's own longest-path
+  // ranker measures from the sinks and did exactly that to daily-brief and
+  // live-demo, so the rows come from core now. The render suite holds every
+  // other spec in the repository to the same rule.
+  it.each(EVERY)("%s: laid-out rows match core ranks exactly", (name) => {
     const graph = fixture(name);
     const positioned = layoutGraph(graph);
     const { rank } = rankGraph(graph);

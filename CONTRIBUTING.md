@@ -31,7 +31,9 @@ The linter's "6 layers → 4" figure comes from `core` and must never come from 
 or the diagram and the report could disagree without anyone noticing.
 
 `packages/layout/test/layout.test.ts` asserts that dagre's rows match `core`'s ranks on every
-fixture. If you change layout, that test is the one that matters.
+example, and the structural check in `packages/render-svg/test/structure.test.ts` reads each box's
+row back off the rendered picture for every spec in the repository. If you change layout, those
+are the tests that matter.
 
 ## Adding a lint rule
 

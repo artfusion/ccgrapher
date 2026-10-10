@@ -7,6 +7,18 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- Every step is drawn on the row of its wave. Layout handed the ranking to dagre's own
+  `longest-path` ranker, which counts from the bottom, so a step nothing waits on for a while sank
+  to sit just above whatever reads it: in `daily-brief`, `check_destination` runs in wave 2 and was
+  drawn on row 6, and in the repaired `release-session`, four of the pull requests were drawn a row
+  below the wave they merge in. The legend numbers by wave, so in those pictures a step's number
+  and its row disagreed. Layout now gives dagre the ranks core computes, and dagre places the boxes
+  without choosing their rows. Pictures with no such step are unchanged to the byte;
+  `docs/release-session-after.svg` and its PNG are redrawn with six pull requests on one row.
+- The structural check over the rendered pictures reads each box's row off the picture and fails
+  when it is not the step's wave. It now runs over every spec in the repository, the linter's and
+  the CLI's test fixtures and the plugin's template included, and not only the examples.
+
 - `ccg explain <spec> -o page.html` writes one page that explains a spec in three panels. The full
   loop is the picture, numbered, with pan and zoom. One run, step by step lists the steps in the
   order they run, numbered as on the picture. What it is made of lists the files `ccg codegen`
