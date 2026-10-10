@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { Graph, NodeSpec } from "@ccgrapher/core";
+import type { BoundarySpec, Graph, NodeSpec } from "@ccgrapher/core";
 
 export const TARGETS = ["claude-code", "plain-ts", "langgraph"] as const;
 export type Target = (typeof TARGETS)[number];
@@ -38,8 +38,32 @@ export function banner(graph: Graph, options: EmitOptions, target: Target): stri
     "// The graph and the runtime cannot drift: regenerate rather than editing here.",
     `// Spec: ${graph.spec.name}`,
     ...(graph.spec.goal ? [`// Goal: ${graph.spec.goal}`] : []),
+    ...(graph.spec.boundaries ?? []).map(boundaryLine),
     "",
   ];
+}
+
+/**
+ * `// Boundary: gather (read-only): research dedupe vote — gather and check`.
+ * The id and members are space-free, so spaces can separate them; the label
+ * goes last because it is the one part that may contain anything. `ingest`
+ * reads this line back, so the format is a contract with it.
+ */
+export function boundaryLine(boundary: BoundarySpec): string {
+  const access = boundary.access ? ` (${boundary.access})` : "";
+  const label = boundary.label ? ` — ${boundary.label}` : "";
+  return `// Boundary: ${boundary.id}${access}: ${boundary.members.join(" ")}${label}`;
+}
+
+/**
+ * For the targets `ingest` cannot read back. The boundary still appears in the
+ * banner, as a comment, but nothing in the generated code holds a member to it.
+ */
+export function boundaryWarnings(graph: Graph, target: Target): string[] {
+  return (graph.spec.boundaries ?? []).map(
+    (boundary) =>
+      `boundary '${boundary.id}' survives only as a banner comment in the ${target} target: ingest cannot read it back${boundary.access === "read-only" ? ", and nothing in the generated code keeps its members read-only" : ""}.`,
+  );
 }
 
 export const quote = (text: string) => JSON.stringify(text);

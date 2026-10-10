@@ -67,6 +67,8 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
     lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id))}"${close}`);
   }
 
+  lines.push(...boundaries(graph));
+
   const fakeIndices: number[] = [];
   graph.edges.forEach((edge, i) => {
     const isFake = fake.has(`${edge.from}->${edge.to}`);
@@ -89,6 +91,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   lines.push("  classDef agent fill:#FFFFFF,stroke:#2B2724,stroke-width:2px;");
   lines.push("  classDef code fill:#F1EEE9,stroke:#2B2724,stroke-width:1.5px;");
   lines.push("  classDef human fill:#F6F0DC,stroke:#2B2724,stroke-width:1.5px,stroke-dasharray:5 3;");
+  if (graph.spec.boundaries?.length) lines.push(BOUNDARY_CLASS);
   for (const [style, ids] of byStyle) {
     if (ids.length > 0) lines.push(`  class ${ids.join(",")} ${style};`);
   }
@@ -106,6 +109,36 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   const body = lines.join("\n");
   return options.fenced ? `\`\`\`mermaid\n${body}\n\`\`\`` : body;
 }
+
+/**
+ * One subgraph per boundary, listing nodes already declared above, styled as a
+ * dashed muted region to match the SVG. Mermaid keeps a subgraph's members
+ * together, so it may reorder a row to do so, but it ranks them by their edges
+ * as before; a boundary changes no row in the Mermaid picture either. A
+ * subgraph cannot be split the way the SVG splits a region around a non-member,
+ * which is the one place the two renderers differ: Mermaid moves the
+ * non-member aside instead.
+ *
+ * The subgraph id is suffixed so it can never collide with a node id.
+ */
+function boundaries(graph: Graph): string[] {
+  return (graph.spec.boundaries ?? []).flatMap((boundary) => {
+    const id = `${boundary.id.replace(/[^A-Za-z0-9_]/g, "_")}__boundary`;
+    const caption = boundary.access === "read-only"
+      ? `${boundary.label ?? boundary.id} · read-only`
+      : (boundary.label ?? boundary.id);
+    return [
+      `  subgraph ${id}["${escape(caption)}"]`,
+      ...boundary.members.map((member) => `    ${member}`),
+      "  end",
+      `  class ${id} boundary;`,
+    ];
+  });
+}
+
+/** A class rather than a `style` line: in this output `style` is kept for findings. */
+const BOUNDARY_CLASS =
+  "  classDef boundary fill:none,stroke:#736A63,stroke-width:1.4px,stroke-dasharray:12 6,color:#736A63;";
 
 function label(node: NodeSpec, arriving: number | undefined): string {
   const badge = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";

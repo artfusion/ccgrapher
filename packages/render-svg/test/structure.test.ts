@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { withEdges, type Graph } from "@ccgrapher/core";
+import { buildGraph, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
 import { describe, expect, it } from "vitest";
@@ -213,6 +213,23 @@ describe("the checker sees the real markup", () => {
       ),
     };
     expect(geometry(svg, through).map((v) => v.rule)).toContain("edge-through-node");
+  });
+});
+
+describe("boundary regions pass the checker", () => {
+  // No example splits a boundary, so build one that must: the odd workers of the
+  // diamond, with an even worker between each pair.
+  const graph = buildGraph({
+    ...loadGraph(`${examples}diamond.yaml`).spec,
+    boundaries: [{ id: "odd", label: "odd workers", members: ["worker_1", "worker_3", "worker_5"], access: "read-only" }],
+  });
+  const layout = layoutGraph(graph);
+  const svg = renderSvg(layout);
+
+  it("splits into one region per member and adds no violation of its own", () => {
+    expect(layout.regions).toHaveLength(3);
+    const plain = renderSvg(layoutGraph(loadGraph(`${examples}diamond.yaml`)));
+    expect(checkSvg(svg, layout).map(keyOf)).toEqual(checkSvg(plain).map(keyOf));
   });
 });
 

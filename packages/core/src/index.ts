@@ -5,6 +5,8 @@ export {
   FanOut,
   NodeSpec,
   EdgeSpec,
+  BoundaryAccess,
+  BoundarySpec,
   WorkflowSpec,
   renderStyle,
   type RenderStyle,

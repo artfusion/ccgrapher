@@ -9,6 +9,8 @@ export {
   type LayoutOptions,
 } from "./layout.js";
 
+export { boundaryRegions, REGION_PAD, REGION_PAD_Y, type PositionedRegion } from "./regions.js";
+
 export {
   wrapLabel,
   measureNode,

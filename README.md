@@ -161,6 +161,41 @@ An edge is real when `carries` names fields that exist in the source's `out` **a
 `in`. If nothing survives that intersection, the edge is a wait with nothing behind it — and that is
 what `FAKE_EDGE` reports.
 
+### Boundaries
+
+A boundary names a group of nodes that one constraint covers, so the constraint is said once rather
+than repeated on every member or left out of the picture. It is optional and sits beside `nodes` and
+`edges`.
+
+```yaml
+boundaries:
+  - id: gather
+    label: gather and check
+    members: [research, dedupe, skeptic_correct, skeptic_current, skeptic_source, vote]
+    access: read-only
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string, **required** | Unique among boundaries. No commas or whitespace. |
+| `label` | string | A short caption drawn on the region. |
+| `members` | string[], **required** | Node ids. A node belongs to at most one boundary. |
+| `access` | `read-only` \| `read-write` | What the members may do. `read-only` means no member writes anything. Defaults to `read-write`, which claims nothing. |
+
+A boundary is drawn as a dashed region behind its members and never becomes a node. It changes no
+rank and moves no box; the region is drawn around wherever the layout put the members. When those
+members do not sit side by side, a single rectangle would also enclose nodes that are not in the
+boundary, so the region is drawn in pieces instead, one around each run of adjacent members, each
+carrying the caption. Mermaid draws a subgraph and keeps the members together by moving the others
+aside within their row. Nesting and overlapping boundaries are not supported, and a spec that puts a
+node in two boundaries is rejected.
+
+Like `uses`, a boundary is a claim. `read-only` can be checked against each member's `writes`; it
+cannot be checked against what a tool in `uses` does, since a capability id says nothing about
+that. Limits such as a spend cap are expected to attach to a boundary later. Generated plain-ts
+code carries boundaries in its header and `ccg ingest` reads them back; the other targets say in a
+warning that they cannot.
+
 ### Layers
 
 You never declare layers. A node sits one row below its deepest dependency, so any two nodes with no

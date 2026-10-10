@@ -2,6 +2,7 @@
 import { rankGraph, type EdgeSpec, type Graph, type NodeSpec, type Ranking } from "@ccgrapher/core";
 import dagre from "@dagrejs/dagre";
 import { DEFAULT_METRICS, measureNode, type Metrics } from "./measure.js";
+import { boundaryRegions, type PositionedRegion } from "./regions.js";
 
 export interface Point {
   readonly x: number;
@@ -31,6 +32,8 @@ export interface PositionedEdge {
 export interface PositionedGraph {
   readonly nodes: readonly PositionedNode[];
   readonly edges: readonly PositionedEdge[];
+  /** Regions drawn behind the members of each boundary. Empty when the spec has none. */
+  readonly regions: readonly PositionedRegion[];
   readonly width: number;
   readonly height: number;
   readonly ranking: Ranking;
@@ -172,8 +175,13 @@ function normalise(input: {
   const dx = margin - Math.min(...xs);
   const dy = margin - Math.min(...ys);
 
+  const placed = nodes.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy }));
+
+  // Regions sit inside the margin (the region padding is far smaller), so they leave
+  // the extent alone: a boundary never changes the size of the drawing.
   return {
-    nodes: nodes.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy })),
+    nodes: placed,
+    regions: boundaryRegions(graph.spec.boundaries ?? [], placed),
     edges: edges.map((e) => ({
       ...e,
       points: e.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),

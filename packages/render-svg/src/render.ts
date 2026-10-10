@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { renderStyle } from "@ccgrapher/core";
-import { DEFAULT_METRICS, type Point, type PositionedEdge, type PositionedGraph, type PositionedNode } from "@ccgrapher/layout";
+import { DEFAULT_METRICS, type Point, type PositionedEdge, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 // The `bin/` ESM build uses extensionless relative imports, which Node's
 // resolver rejects outside a bundler. The bundled build is a single file with
 // no internal imports, so it loads headlessly. Types still come from `bin/`.
@@ -56,12 +56,14 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   // A long goal line can be wider than the graph it captions, so the canvas
   // has to account for it or the text runs off the edge.
   const title = options.title ?? positioned.graph.spec.name;
-  const width = showHeader
+  const graphWidth = showHeader
     ? Math.max(positioned.width, headerWidth(title, positioned.graph.spec.goal, theme))
     : positioned.width;
+  const width = Math.max(graphWidth, regionsWidth(positioned.regions));
   const height = positioned.height + offsetY;
 
   const body = [
+    ...renderRegions(positioned.regions, theme),
     ...positioned.edges.map((edge) => renderEdge(gen, edge, theme, fake.has(`${edge.from}->${edge.to}`))),
     ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id))),
   ].join("\n    ");
@@ -136,6 +138,62 @@ function renderHeader(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+const REGION_CAPTION_SIZE = 15;
+/** Clear of the rounded corner (rx 14), so no stray dash sits before the caption. */
+const REGION_CAPTION_INSET = 18;
+const REGION_CAPTION_GAP = 5;
+/**
+ * The paper patch is sized to what Caveat actually sets, about 0.38 of the font
+ * size per character. `charRatio` (0.52) is a deliberate overestimate for
+ * fitting text inside boxes; used here it would erase dashes the caption does
+ * not cover. The canvas check in `regionsWidth` keeps the safe overestimate.
+ */
+const REGION_CAPTION_RATIO = 0.38;
+
+/** The caption: the boundary's label, or its id, and its access when that claims something. */
+function regionCaption(region: PositionedRegion): string {
+  const { id, label, access } = region.boundary;
+  return access === "read-only" ? `${label ?? id} · read-only` : (label ?? id);
+}
+
+/** Where a region's caption ends, so a caption wider than its region still fits the canvas. */
+function regionsWidth(regions: readonly PositionedRegion[]): number {
+  let right = 0;
+  for (const region of regions) {
+    const text = regionCaption(region).length * REGION_CAPTION_SIZE * DEFAULT_METRICS.charRatio;
+    right = Math.max(right, region.x + REGION_CAPTION_INSET + text + REGION_CAPTION_GAP * 2);
+  }
+  return Math.ceil(right);
+}
+
+/** Every region in one layer, drawn first so it sits behind edges and nodes. */
+function renderRegions(regions: readonly PositionedRegion[], theme: Theme): string[] {
+  if (regions.length === 0) return [];
+  return [`<g data-layer="boundaries">${regions.map((region) => renderRegion(region, theme)).join("")}</g>`];
+}
+
+/**
+ * A boundary's region: a dashed, rounded rectangle behind its members, with
+ * the caption set into the top edge on a patch of paper. Dashes mean structure
+ * in this picture, as on a gate or a worktree halo, so this is dashed too; it
+ * is told apart from the halo by its rounded corners, longer dashes and the
+ * padding the layout gives it. Crisp rather than rough, so it never competes
+ * with the nodes it holds.
+ */
+function renderRegion(region: PositionedRegion, theme: Theme): string {
+  const { x, y, width, height } = region;
+  const caption = regionCaption(region);
+  const textX = x + REGION_CAPTION_INSET;
+  const textWidth = caption.length * REGION_CAPTION_SIZE * REGION_CAPTION_RATIO;
+  return [
+    `<g data-boundary="${escapeAttr(region.boundary.id)}" data-members="${escapeAttr(region.members.join(" "))}">`,
+    `<rect x="${r(x)}" y="${r(y)}" width="${r(width)}" height="${r(height)}" rx="14" fill="none" stroke="${theme.boundary}" stroke-width="1.4" stroke-dasharray="12 6"/>`,
+    `<rect x="${r(textX - REGION_CAPTION_GAP)}" y="${r(y - REGION_CAPTION_SIZE / 2)}" width="${r(textWidth + REGION_CAPTION_GAP * 2)}" height="${r(REGION_CAPTION_SIZE)}" fill="${theme.paper}"/>`,
+    `<text x="${r(textX)}" y="${r(y + REGION_CAPTION_SIZE * 0.32)}" font-size="${REGION_CAPTION_SIZE}" fill="${theme.boundary}">${escapeText(caption)}</text>`,
+    `</g>`,
+  ].join("");
 }
 
 function renderNode(

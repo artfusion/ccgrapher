@@ -232,7 +232,8 @@ describe("claude-code — ccg: markers", () => {
 
 describe("claude-code — the gates it cannot honour", () => {
   it("warns by name, and only where there is a gate", () => {
-    const warnings = codegenWarnings(fixture("research-desk"), "claude-code");
+    // research-desk also has a boundary, which this target warns about too.
+    const warnings = codegenWarnings(fixture("research-desk"), "claude-code").filter((w) => !w.startsWith("boundary"));
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("'gate'");
@@ -249,6 +250,28 @@ describe("claude-code — the gates it cannot honour", () => {
 
   it("is a claude-code problem, not everyone's", () => {
     expect(codegenWarnings(fixture("research-desk"), "plain-ts")).toEqual([]);
+  });
+});
+
+describe("boundaries — carried by plain-ts, declared lossy elsewhere", () => {
+  it("writes one banner line per boundary, label last", () => {
+    expect(codegen(fixture("research-desk"), "plain-ts")).toContain(
+      "// Boundary: gather (read-only): research dedupe skeptic_correct skeptic_current skeptic_source vote — gather and check\n",
+    );
+  });
+
+  it.each(["claude-code", "langgraph"] as const)("%s warns that it cannot carry a boundary back", (target) => {
+    const warnings = codegenWarnings(fixture("research-desk"), target).filter((w) => w.startsWith("boundary"));
+    expect(warnings).toEqual([
+      `boundary 'gather' survives only as a banner comment in the ${target} target: ingest cannot read it back, and nothing in the generated code keeps its members read-only.`,
+    ]);
+  });
+
+  it("says nothing about boundaries for a spec without one", () => {
+    for (const target of TARGETS) {
+      expect(codegenWarnings(fixture("diamond"), target).filter((w) => w.startsWith("boundary"))).toEqual([]);
+      expect(codegen(fixture("diamond"), target)).not.toContain("// Boundary:");
+    }
   });
 });
 
