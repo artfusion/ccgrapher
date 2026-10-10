@@ -37,11 +37,15 @@ interface Render {
 }
 
 /** Render a graph as `ccg render` does: every finding lint makes of it, marked. */
-function render(label: string, graph: Graph, options: { plain?: boolean; title?: string } = {}): Render {
+function render(
+  label: string,
+  graph: Graph,
+  options: { plain?: boolean; title?: string; steps?: "legend" } = {},
+): Render {
   const raw = lint(graph).findings.filter((f) => f.phase === "raw");
   const marks = options.plain ? {} : renderMarksFor(raw);
   const layout = layoutGraph(graph);
-  const svg = renderSvg(layout, { ...marks, ...(options.title && { title: options.title }) });
+  const svg = renderSvg(layout, { ...marks, ...(options.title && { title: options.title }), ...(options.steps && { steps: options.steps }) });
   return { label, svg, violations: checkSvg(svg, layout) };
 }
 
@@ -49,16 +53,23 @@ function render(label: string, graph: Graph, options: { plain?: boolean; title?:
  * Every render a user can ask for: the graph as written with its findings marked
  * (rings, captions, dead edges, shared-write lines, as `ccg render` does by
  * default), the same with `--plain`, and, where there is anything to repair, the
- * repaired graph with its own findings (`--fix`).
+ * repaired graph with its own findings (`--fix`), and both again with the
+ * steps numbered and the legend written under them (`--legend`).
  */
 function renders(name: string, dir = examples): Render[] {
   const original: Graph = loadGraph(`${dir}${name}.yaml`);
   const result = lint(original);
 
-  const out = [render(name, original), render(`${name} (plain)`, original, { plain: true })];
+  const out = [
+    render(name, original),
+    render(`${name} (plain)`, original, { plain: true }),
+    render(`${name} (steps)`, original, { steps: "legend" }),
+  ];
   if (result.repairs.length > 0) {
     const title = `${name} (repaired)`;
-    out.push(render(title, withEdges(original, result.repairedEdges), { title }));
+    const repaired = withEdges(original, result.repairedEdges);
+    out.push(render(title, repaired, { title }));
+    out.push(render(`${name} (repaired, steps)`, repaired, { title, steps: "legend" }));
   }
   return out;
 }
@@ -154,7 +165,10 @@ edges:
 } as const;
 
 const crowded = (): Render[] =>
-  Object.entries(CROWDED).map(([label, yaml]) => render(label, buildGraph(parseSpec(yaml))));
+  Object.entries(CROWDED).flatMap(([label, yaml]) => [
+    render(label, buildGraph(parseSpec(yaml))),
+    render(`${label} (steps)`, buildGraph(parseSpec(yaml)), { steps: "legend" }),
+  ]);
 
 /**
  * Known faults, each named and given a reason. A render may break a rule only if

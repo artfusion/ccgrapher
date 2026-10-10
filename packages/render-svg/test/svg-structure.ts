@@ -10,7 +10,14 @@
 // metrics the renderer itself uses.
 import { DEFAULT_METRICS, type PositionedGraph } from "@ccgrapher/layout";
 
-export type Rule = "node-overlap" | "edge-through-node" | "label-clipped" | "text-overflow" | "contrast";
+export type Rule =
+  | "node-overlap"
+  | "edge-through-node"
+  | "label-clipped"
+  | "text-overflow"
+  | "step-collision"
+  | "legend-overlap"
+  | "contrast";
 
 export interface Violation {
   readonly rule: Rule;
@@ -100,6 +107,10 @@ function depth(a: Box, b: Box): { x: number; y: number } {
   };
 }
 
+/** The gap between two boxes; zero when they touch or overlap. */
+const separation = (a: Box, b: Box): number =>
+  Math.hypot(Math.max(0, a.x0 - b.x1, b.x0 - a.x1), Math.max(0, a.y0 - b.y1, b.y0 - a.y1));
+
 const overlaps = (a: Box, b: Box, tolerance: number): boolean => {
   const d = depth(a, b);
   return d.x > tolerance && d.y > tolerance;
@@ -161,7 +172,16 @@ interface SceneNode {
   readonly extras: readonly Box[];
   /** Everything the node occupies: its box plus the extras. */
   readonly footprint: Box;
+  /** Round marks drawn on the box's edge, such as a finding halo's flag. */
+  readonly flags: readonly Box[];
   readonly texts: readonly TextBox[];
+}
+
+/** A step's number beside its box (`data-step`). */
+interface SceneBadge {
+  readonly number: string;
+  readonly of: string;
+  readonly box: Box;
 }
 
 interface SceneEdge {
@@ -178,8 +198,13 @@ interface Scene {
   readonly height: number;
   readonly nodes: SceneNode[];
   readonly edges: SceneEdge[];
-  /** Text outside any node or edge: the header. */
+  /** Text outside any node or edge: the header and the boundary captions. */
   readonly loose: TextBox[];
+  readonly badges: SceneBadge[];
+  /** The outline of each boundary region. */
+  readonly regions: Box[];
+  /** The step legend's text under the graph (`data-legend`). */
+  readonly legend: TextBox[];
 }
 
 function translateOf(el: El): { x: number; y: number } | null {
@@ -227,6 +252,15 @@ function readNode(g: El, dx: number, dy: number): SceneNode {
     frame,
     extras,
     footprint: union([frame, ...extras]),
+    // The finding flag, and the urgency disc in its own group.
+    flags: [...g.children, ...g.children.filter((c) => c.attrs["data-mark"] !== undefined).flatMap((c) => c.children)]
+      .filter((c) => c.name === "circle")
+      .map((c) => {
+        const cx = Number(c.attrs["cx"]) + dx;
+        const cy = Number(c.attrs["cy"]) + dy;
+        const rad = Number(c.attrs["r"]);
+        return { x0: cx - rad, y0: cy - rad, x1: cx + rad, y1: cy + rad };
+      }),
     texts: g.children.filter((c) => c.name === "text").flatMap((t) => textBoxes(t, dx, dy, BODY_CHAR_RATIO)),
   };
 }
@@ -260,15 +294,40 @@ function readScene(svg: El): Scene {
     nodes: [],
     edges: [],
     loose: [],
+    badges: [],
+    regions: [],
+    legend: [],
   };
   const walk = (el: El, dx: number, dy: number): void => {
     for (const child of el.children) {
       if (child.attrs["data-node"] !== undefined) scene.nodes.push(readNode(child, dx, dy));
       else if (child.attrs["data-edge"] !== undefined || child.attrs["data-link"] !== undefined)
         scene.edges.push(readEdge(child, dx, dy));
-      else if (child.name === "text") scene.loose.push(...textBoxes(child, dx, dy, HEADER_CHAR_RATIO));
+      else if (child.attrs["data-step"] !== undefined) {
+        const pill = child.children.find((c) => c.name === "rect");
+        const x = Number(pill?.attrs["x"]) + dx;
+        const y = Number(pill?.attrs["y"]) + dy;
+        scene.badges.push({
+          number: child.attrs["data-step"],
+          of: child.attrs["data-step-of"] ?? "",
+          box: { x0: x, y0: y, x1: x + Number(pill?.attrs["width"]), y1: y + Number(pill?.attrs["height"]) },
+        });
+      } else if (child.attrs["data-legend"] !== undefined) {
+        const t = translateOf(child) ?? { x: 0, y: 0 };
+        scene.legend.push(
+          ...child.children.filter((c) => c.name === "text").flatMap((c) => textBoxes(c, dx + t.x, dy + t.y, BODY_CHAR_RATIO)),
+        );
+      } else if (child.name === "text") scene.loose.push(...textBoxes(child, dx, dy, HEADER_CHAR_RATIO));
       else if (child.name === "g") {
         const t = translateOf(child);
+        if (child.attrs["data-boundary"] !== undefined) {
+          const outline = child.children.find((c) => c.name === "rect");
+          if (outline) {
+            const x = Number(outline.attrs["x"]) + dx;
+            const y = Number(outline.attrs["y"]) + dy;
+            scene.regions.push({ x0: x, y0: y, x1: x + Number(outline.attrs["width"]), y1: y + Number(outline.attrs["height"]) });
+          }
+        }
         if (t) walk(child, dx + t.x, dy + t.y);
       }
     }
@@ -354,6 +413,8 @@ function checkGeometry(scene: Scene): Violation[] {
   }
   const everyText = [
     ...scene.loose.map((t) => ({ owner: "header", t })),
+    ...scene.legend.map((t) => ({ owner: "the legend", t })),
+    ...scene.badges.map((b) => ({ owner: `the step of ${b.of}`, t: { text: b.number, box: b.box } })),
     ...scene.edges.flatMap((e) => e.labels.map((t) => ({ owner: `${e.from}->${e.to}`, t }))),
     ...scene.nodes.flatMap((n) => n.texts.map((t) => ({ owner: n.id, t }))),
   ];
@@ -390,6 +451,76 @@ function checkGeometry(scene: Scene): Violation[] {
             subject: `"${a.text}" collides with "${b.text}" in ${node.id}`,
             detail: `text "${a.text}" (${fmt(a.box)}) and "${b.text}" (${fmt(b.box)}) overlap inside ${node.id}`,
           });
+        }
+      }
+    }
+  }
+  out.push(...checkSteps(scene));
+  return out;
+}
+
+/**
+ * Step numbers sit outside their box, so they are held to what an edge label is
+ * and more: clear of every box and its flag, every route, every other piece of
+ * text, every other number and every boundary outline. The legend sits wholly
+ * under the drawing, and no two of its texts meet.
+ */
+function checkSteps(scene: Scene): Violation[] {
+  const out: Violation[] = [];
+  const hit = (b: SceneBadge, against: string, detail: string) =>
+    out.push({ rule: "step-collision", subject: `${b.number} of ${b.of} against ${against}`, detail: `step ${b.number} (${fmt(b.box)}) ${detail}` });
+
+  const texts = [...scene.loose, ...scene.edges.flatMap((e) => e.labels)];
+  scene.badges.forEach((b, i) => {
+    for (const node of scene.nodes) {
+      if (overlaps(b.box, node.footprint, 0)) hit(b, node.id, `runs into ${node.id} (${fmt(node.footprint)})`);
+      for (const flag of node.flags) {
+        if (overlaps(b.box, flag, 0)) hit(b, `the flag of ${node.id}`, `covers the finding flag of ${node.id}`);
+      }
+    }
+    // A number nearer another box than its own reads as that box's.
+    const own = scene.nodes.find((n) => n.id === b.of);
+    if (own) {
+      const gap = (n: SceneNode) => separation(b.box, n.frame);
+      for (const other of scene.nodes) {
+        if (other !== own && gap(other) <= gap(own)) hit(b, `nearer ${other.id}`, `is nearer ${other.id} than its own box, ${b.of}`);
+      }
+    }
+    for (const edge of scene.edges) {
+      if (edge.routes.some((route) => route.some((p, k) => k > 0 && segmentHits(route[k - 1]!, p, b.box)))) {
+        hit(b, `${edge.from}->${edge.to}`, `sits on the route ${edge.from} to ${edge.to}`);
+      }
+    }
+    for (const t of texts) {
+      if (overlaps(b.box, t.box, 0)) hit(b, `"${t.text}"`, `covers the text "${t.text}" (${fmt(t.box)})`);
+    }
+    for (const other of scene.badges.slice(i + 1)) {
+      if (overlaps(b.box, other.box, 0)) hit(b, `${other.number} of ${other.of}`, `meets step ${other.number} (${fmt(other.box)})`);
+    }
+    for (const region of scene.regions) {
+      const crosses = overlaps(b.box, region, 0) && !(b.box.x0 > region.x0 && b.box.y0 > region.y0 && b.box.x1 < region.x1 && b.box.y1 < region.y1);
+      if (crosses) hit(b, `the boundary at ${fmt(region)}`, `crosses a boundary outline (${fmt(region)})`);
+    }
+  });
+
+  if (scene.legend.length > 0) {
+    const legend = union(scene.legend.map((t) => t.box));
+    const drawing = [
+      ...scene.nodes.map((n) => n.footprint.y1),
+      ...scene.edges.flatMap((e) => e.routes.flatMap((route) => route.map((p) => p.y))),
+      ...scene.badges.map((b) => b.box.y1),
+      ...scene.regions.map((r) => r.y1),
+    ];
+    const bottom = Math.max(...drawing);
+    if (legend.y0 < bottom) {
+      out.push({ rule: "legend-overlap", subject: "legend over the drawing", detail: `the legend starts at y ${Math.round(legend.y0)}, above the drawing's bottom at ${Math.round(bottom)}` });
+    }
+    for (let i = 0; i < scene.legend.length; i++) {
+      for (let j = i + 1; j < scene.legend.length; j++) {
+        const a = scene.legend[i]!;
+        const b = scene.legend[j]!;
+        if (overlaps(a.box, b.box, 0)) {
+          out.push({ rule: "legend-overlap", subject: `"${a.text}" and "${b.text}"`, detail: `legend text "${a.text}" (${fmt(a.box)}) meets "${b.text}" (${fmt(b.box)})` });
         }
       }
     }

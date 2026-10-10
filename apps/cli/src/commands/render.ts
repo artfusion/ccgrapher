@@ -2,7 +2,7 @@
 import { extname } from "node:path";
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "../args.js";
-import { withEdges, type Graph } from "@ccgrapher/core";
+import { stepLegend, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
 import { lint, renderMarksFor, type RenderMarks } from "@ccgrapher/lint";
@@ -38,6 +38,8 @@ export function renderCommand(args: string[]): number {
       grain: { type: "boolean", default: true },
       /** Do not mark lint findings: no ring, caption, red edge or line. Counts stay. */
       plain: { type: "boolean", default: false },
+      /** Number the steps in execution order and list them under the picture. */
+      legend: { type: "boolean", default: false },
     },
     allowPositionals: true,
     // Node's parseArgs needs this for `--no-header` and friends.
@@ -64,6 +66,7 @@ export function renderCommand(args: string[]): number {
     header: values.header,
     embedFont: values["embed-font"],
     grain: values.grain,
+    legend: values.legend,
   };
 
   if (values.pair) {
@@ -118,6 +121,7 @@ interface Style {
   header: boolean;
   embedFont: boolean;
   grain: boolean;
+  legend: boolean;
 }
 
 interface Drawing {
@@ -174,15 +178,17 @@ function emit(
     embedFont: boolean;
     fenced: boolean;
     grain: boolean;
+    legend: boolean;
   },
 ): string {
   const title = options.fix ? `${original.spec.name} (repaired)` : original.spec.name;
+  const legend = options.legend;
 
   switch (format) {
     case "mermaid":
-      return renderMermaid(graph, { ...marks, fenced: options.fenced });
+      return renderMermaid(graph, { ...marks, fenced: options.fenced, steps: legend });
     case "excalidraw":
-      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), marks), null, 2)}\n`;
+      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), { ...marks, steps: legend }), null, 2)}\n`;
     case "svg":
       return renderSvg(layoutGraph(graph), {
         header: options.header,
@@ -190,8 +196,10 @@ function emit(
         grain: options.grain,
         ...marks,
         title,
+        ...(legend && { steps: "legend" as const }),
       });
     case "html":
+      // The numbers go on the picture; the list is HTML beside it, so it reads at any zoom.
       return wrapHtml(
         renderSvg(layoutGraph(graph), {
           header: options.header,
@@ -199,8 +207,9 @@ function emit(
           grain: options.grain,
           ...marks,
           title,
+          ...(legend && { steps: "numbers" as const }),
         }),
-        { title },
+        { title, ...(legend && { steps: stepLegend(graph) }) },
       );
   }
 }

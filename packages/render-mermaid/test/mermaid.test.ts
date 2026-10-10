@@ -307,3 +307,32 @@ describe("urgency", () => {
     expect(changed).toEqual(["plan", "research", "dedupe", "skeptic_source"]);
   });
 });
+
+describe("step numbers", () => {
+  it("are off by default", () => {
+    expect(renderMermaid(fixture("diamond"))).not.toContain("step by step");
+  });
+
+  it("lead each label and list in a comment block, by wave", () => {
+    const out = renderMermaid(fixture("diamond"), { steps: true });
+    expect(out).toContain('  worker_1["2a · worker 1 · cheap"]');
+    expect(out).toContain('  merge(["4 · merge into one answer · strong"])');
+    const comments = out.split("\n").filter((l) => l.startsWith("  %% ")).slice(1);
+    expect(comments).toEqual([
+      "  %% one run, step by step",
+      "  %% 1   split the job · takes question; gives angle",
+      "  %% 2a  worker 1 · takes angle; gives claim, source, date",
+      "  %% 2b  worker 2 · takes angle; gives claim, source, date",
+      "  %% 2c  worker 3 · takes angle; gives claim, source, date",
+      "  %% 2d  worker 4 · takes angle; gives claim, source, date",
+      "  %% 2e  worker 5 · takes angle; gives claim, source, date",
+      "  %% 3   checker · takes claim, source, date; gives claim, verdict, why",
+      "  %% 4   merge into one answer · takes claim, verdict; gives report",
+    ]);
+  });
+
+  it("add no link, so no node moves", () => {
+    const links = (s: string) => s.split("\n").filter((l) => /-->|-\.->/.test(l));
+    expect(links(renderMermaid(fixture("diamond"), { steps: true }))).toEqual(links(renderMermaid(fixture("diamond"))));
+  });
+});

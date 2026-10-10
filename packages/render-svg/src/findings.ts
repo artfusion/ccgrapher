@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { routeLinks, type PositionedGraph } from "@ccgrapher/layout";
+import { routeLinks, type LinkRoute, type PositionedGraph } from "@ccgrapher/layout";
 import { markWidth } from "./marks.js";
 import type { Theme } from "./theme.js";
 
@@ -152,6 +152,27 @@ export function renderSharedWrites(
   marks: readonly FindingMark[],
   theme: Theme,
 ): string[] {
+  return sharedWriteRoutes(positioned, marks).map(({ route, files, label }) => {
+    const d = route.points.map((p, k) => `${k === 0 ? "M" : "L"}${r(p.x)} ${r(p.y)}`).join(" ");
+    const ends = [route.points[0]!, route.points[route.points.length - 1]!]
+      .map((p) => `<circle cx="${r(p.x)}" cy="${r(p.y)}" r="2.6" fill="${theme.danger}"/>`)
+      .join("");
+    return [
+      `<g data-link="${escapeAttr(route.between.join("~"))}" data-finding="HIDDEN_EDGE" data-writes="${escapeAttr(files.join(", "))}">`,
+      `<path d="${d}" fill="none" stroke="${theme.danger}" stroke-width="1.5" stroke-linejoin="round"/>`,
+      ends,
+      // A paper-coloured outline keeps the label legible where an edge crosses the lane.
+      `<text x="${r(route.label.x)}" y="${r(route.label.y - 5)}" font-size="13" fill="${theme.dangerInk}" text-anchor="middle" stroke="${theme.paper}" stroke-width="3" paint-order="stroke">${escapeText(label)}</text>`,
+      `</g>`,
+    ].join("");
+  });
+}
+
+/** The line between each pair of writers of one file, every file they share, and the label it carries. */
+export function sharedWriteRoutes(
+  positioned: PositionedGraph,
+  marks: readonly FindingMark[],
+): Array<{ route: LinkRoute; files: string[]; label: string }> {
   // One line per pair, however many files they share.
   const pairs = new Map<string, { between: readonly [string, string]; files: string[] }>();
   for (const m of marks) {
@@ -169,18 +190,7 @@ export function renderSharedWrites(
   return routes.map((route) => {
     const files = pairs.get([...route.between].sort().join("~"))!.files;
     const label = `${shorten(basename(files[0]!), 16)}${files.length > 1 ? ` +${files.length - 1}` : ""}`;
-    const d = route.points.map((p, k) => `${k === 0 ? "M" : "L"}${r(p.x)} ${r(p.y)}`).join(" ");
-    const ends = [route.points[0]!, route.points[route.points.length - 1]!]
-      .map((p) => `<circle cx="${r(p.x)}" cy="${r(p.y)}" r="2.6" fill="${theme.danger}"/>`)
-      .join("");
-    return [
-      `<g data-link="${escapeAttr(route.between.join("~"))}" data-finding="HIDDEN_EDGE" data-writes="${escapeAttr(files.join(", "))}">`,
-      `<path d="${d}" fill="none" stroke="${theme.danger}" stroke-width="1.5" stroke-linejoin="round"/>`,
-      ends,
-      // A paper-coloured outline keeps the label legible where an edge crosses the lane.
-      `<text x="${r(route.label.x)}" y="${r(route.label.y - 5)}" font-size="13" fill="${theme.dangerInk}" text-anchor="middle" stroke="${theme.paper}" stroke-width="3" paint-order="stroke">${escapeText(label)}</text>`,
-      `</g>`,
-    ].join("");
+    return { route, files, label };
   });
 }
 

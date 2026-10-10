@@ -40,7 +40,8 @@ Render options:
   --pair            write out-before and out-after (needs -o; not with --fix): one spec
                     as written then repaired, or two specs as written
   --plain           do not mark lint findings (rings, captions, dead edges, shared writes)
-  --no-header       omit the name/goal caption
+  --legend          number the steps in execution order and list what each takes and gives
+  --no-header      omit the name/goal caption
   --no-embed-font   reference the handwriting font instead of inlining it
   --no-grain        omit the paper texture (much smaller when rasterised)
 

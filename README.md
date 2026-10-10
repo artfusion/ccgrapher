@@ -341,6 +341,7 @@ ccg render examples/diamond.yaml -o diagram.excalidraw   # Excalidraw scene
 ccg render examples/linear-chain.yaml --fix -o after.svg # draw the repaired graph
 ccg render examples/linear-chain.yaml --pair -o chain.svg   # chain-before.svg and chain-after.svg
 ccg render --pair draft.yaml revised.yaml -o plan.svg       # plan-before.svg and plan-after.svg
+ccg render examples/diamond.yaml --legend -o diagram.svg    # numbered steps, listed underneath
 ```
 
 The format comes from the extension, or pass `-f svg|html|mermaid|excalidraw`.
@@ -381,6 +382,20 @@ carries `agent: reviewer` as a quieter line under its label. The box grows to fi
 the layout from the declaration. Mermaid and Excalidraw add the same words to the label. The spec
 names a tier, never a model id: a target such as `claude-code` resolves it, so a spec does not go
 stale when model names change.
+
+`--legend` numbers the steps in the order they run and lists them under the picture. The number is
+the wave, so steps that share one share a number and take a letter each in spec order: `2a` to `2e`
+for the diamond's five workers, which says what can run together. A fanned-out step is listed
+once, with what it fans over and its cap. Each line gives the step's label and what it takes and
+gives, read from the field names in its `in` and `out` and shortened past three, so the legend is
+derived from the spec and cannot drift from the picture. In the SVG the number sits in a small
+pill outside its box, at the first clear place in a fixed order (over the box's left end, then up
+and to its left, then beside it), since the box's corners are spoken for. Boxes and edges do not
+move for it, and the canvas grows to hold the list. In HTML the numbers are on the picture and the
+list is an HTML list beside it, under it on a narrow screen. Mermaid puts the number at the front
+of each label and the list in a comment block; Excalidraw puts it at the front of each label, so it
+moves with the box, and the list in one text element underneath. With `--pair`, each picture has
+its own legend, so the numbering changes where the waves do. Off by default.
 
 - **SVG** — rough.js strokes, paper texture, the handwriting face embedded so the file renders
   identically anywhere. Fake edges are red and dashed with a "carries no data" label.

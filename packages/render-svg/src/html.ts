@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { Step } from "@ccgrapher/core";
 
 export interface WrapHtmlOptions {
   /** Used for the page's <title>. Falls back to a generic title. */
   readonly title?: string;
+  /**
+   * The steps, as `stepLegend` in `@ccgrapher/core` gives them, listed beside
+   * the picture (under it on a narrow screen) as an HTML list, so the legend
+   * reflows and reads at any zoom. Pair it with an SVG rendered with
+   * `steps: "numbers"`, so the numbers on the boxes match. None by default.
+   */
+  readonly steps?: readonly Step[];
 }
 
 /**
@@ -17,6 +25,7 @@ export interface WrapHtmlOptions {
  */
 export function wrapHtml(svg: string, options: WrapHtmlOptions = {}): string {
   const title = escapeHtml(options.title ?? "ccgrapher");
+  const steps = options.steps ?? [];
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -37,7 +46,7 @@ export function wrapHtml(svg: string, options: WrapHtmlOptions = {}): string {
     padding: 6px 10px; border: 1px solid #999; border-radius: 6px; background: #fff;
     cursor: pointer; color: #333;
   }
-  #controls button:hover { background: #eee; }
+  #controls button:hover { background: #eee; }${steps.length > 0 ? LEGEND_CSS : ""}
 </style>
 </head>
 <body>
@@ -49,7 +58,7 @@ export function wrapHtml(svg: string, options: WrapHtmlOptions = {}): string {
 <div id="controls">
   <button id="fit" type="button">Fit</button>
   <button id="reset" type="button">100%</button>
-</div>
+</div>${steps.length > 0 ? legendHtml(steps) : ""}
 <script>
 (function () {
   var viewport = document.getElementById("viewport");
@@ -141,6 +150,47 @@ export function wrapHtml(svg: string, options: WrapHtmlOptions = {}): string {
 </body>
 </html>
 `;
+}
+
+/**
+ * The legend takes a column on the right, the picture the rest; under 48rem
+ * the column moves below the picture. In rem, so it grows with the reader's
+ * text size, and it scrolls on its own when there are more steps than fit.
+ */
+const LEGEND_CSS = `
+  #viewport { right: 24rem; }
+  #controls { right: calc(24rem + 12px); }
+  #legend {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 24rem; box-sizing: border-box;
+    overflow-y: auto; padding: 1.25rem 1.5rem; background: #fffdf8; border-left: 1px solid #d9d2c5;
+    font: 1rem/1.4 system-ui, sans-serif; color: #2b2724;
+  }
+  #legend h2 { margin: 0 0 0.75rem; font-size: 1.05rem; font-weight: 600; }
+  #legend ol { list-style: none; margin: 0; padding: 0; }
+  #legend li { display: grid; grid-template-columns: 2.75rem 1fr; gap: 0 0.5rem; padding: 0.4rem 0; border-top: 1px solid #ece6db; }
+  #legend .number { grid-row: span 2; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #legend .label { font-weight: 500; }
+  #legend .line { color: #5f5750; font-size: 0.9rem; }
+  @media (max-width: 48rem) {
+    #viewport { right: 0; bottom: 45vh; }
+    #controls { right: 12px; bottom: calc(45vh + 12px); }
+    #legend { top: auto; left: 0; width: auto; height: 45vh; border-left: 0; border-top: 1px solid #d9d2c5; }
+  }`;
+
+function legendHtml(steps: readonly Step[]): string {
+  const items = steps
+    .map(
+      (s) =>
+        `    <li><span class="number">${escapeHtml(s.number)}</span><span class="label">${escapeHtml(s.label)}</span><span class="line">${escapeHtml(s.line)}</span></li>`,
+    )
+    .join("\n");
+  return `
+<aside id="legend" aria-labelledby="legend-heading">
+  <h2 id="legend-heading">One run, step by step</h2>
+  <ol>
+${items}
+  </ol>
+</aside>`;
 }
 
 function escapeHtml(text: string): string {

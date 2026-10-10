@@ -217,6 +217,21 @@ describe("render", () => {
   it("rejects an unknown format", () => {
     expect(ccg("render", example("diamond"), "-f", "pdf").status).toBe(2);
   });
+
+  it("--legend numbers the steps in every format, and leaves them off without it", () => {
+    const draw = (format: string, ...flags: string[]) => ccg("render", example("diamond"), "-f", format, ...flags).stdout;
+    expect(draw("svg")).not.toContain("data-step");
+    const svg = draw("svg", "--legend");
+    expect(svg).toContain('data-step="2a" data-step-of="worker_1"');
+    expect(svg).toContain('<g data-legend="steps">');
+    // In HTML the numbers go on the picture and the list is HTML beside it.
+    const html = draw("html", "--legend");
+    expect(html).toContain('data-step="2a"');
+    expect(html).not.toContain("data-legend");
+    expect(html).toContain('<span class="number">2a</span><span class="label">worker 1</span>');
+    expect(draw("mermaid", "--legend")).toContain("  %% 2a  worker 1 · takes angle; gives claim, source, date");
+    expect(draw("excalidraw", "--legend")).toContain('"text": "2a · worker 1 · cheap"');
+  });
 });
 
 describe("render guards", () => {
@@ -405,6 +420,23 @@ describe("render --pair", () => {
       expect(written(join(out, `pair-format-before.${ext}`)).length).toBeGreaterThan(0);
       expect(written(join(out, `pair-format-after.${ext}`)).length).toBeGreaterThan(0);
     }
+  });
+
+  it("with --legend, numbers each picture by its own waves", () => {
+    const base = join(out, "pair-legend.svg");
+    expect(ccg("render", example("release-session"), "--pair", "--legend", "-o", base).status).toBe(0);
+    const steps = (file: string) =>
+      [...written(file).matchAll(/data-step="([^"]+)" data-step-of="([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
+    const before = steps(join(out, "pair-legend-before.svg"));
+    const after = steps(join(out, "pair-legend-after.svg"));
+    // As written, a chain of twelve; repaired, five waves, six PRs side by side in the second.
+    expect(before).toContain("12 release");
+    expect(before).toContain("6 pr_copy");
+    expect(after).toContain("5 release");
+    expect(after).toContain("3b pr_copy");
+    expect(after.filter((s) => s.startsWith("2"))).toHaveLength(6);
+    expect(written(join(out, "pair-legend-before.svg"))).toContain('<g data-legend="steps">');
+    expect(written(join(out, "pair-legend-after.svg"))).toContain('<g data-legend="steps">');
   });
 
   it("exits 2 with --fix, without -o, or with more than two specs", () => {
