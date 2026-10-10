@@ -3,11 +3,26 @@
 
 import type { NodeSpec, WorkflowSpec } from "@ccgrapher/core";
 import type { dia } from "@joint/core";
-import { GraphProvider, Paper, usePaper, useGraph, type ValidateConnection } from "@joint/react";
+import {
+  GraphProvider,
+  Paper,
+  usePaper,
+  useGraph,
+  type CellInput,
+  type ValidateConnection,
+} from "@joint/react";
 import "@joint/react/styles.css";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CCEdge, CCNode } from "../../lib/view-model";
 import { graphToSpec, specToGraph, validateLinkConnection, type Cell } from "./bridge";
+import {
+  Motion,
+  motionDuration,
+  syncLayout,
+  type Clock,
+  type Frame,
+  type LayoutTarget,
+} from "./motion";
 import { SpecNode } from "../spec-node";
 
 /**
@@ -25,9 +40,10 @@ import { SpecNode } from "../spec-node";
  * component asks it directly, imperatively, only at the two moments that are
  * legitimate spec edits: a link connecting or disconnecting.
  *
- * Remounted (via `key`, set by the caller) whenever the laid-out picture
- * changes, so a spec edit gets a fresh layout instead of JointJS trying to
- * tween between two unrelated graphs.
+ * Mounted once per loaded spec (the caller's `key`), and framed then. An edit
+ * after that changes the drawing in place (`LayoutSync`): boxes travel to
+ * where the new declarations put them, and the pan and zoom stay where the
+ * reader left them.
  */
 export function Canvas({
   nodes,
@@ -49,6 +65,8 @@ export function Canvas({
     () => specToGraph({ nodes, edges }, specNodes),
     [nodes, edges, specNodes],
   );
+  // The seed only: later pictures reach the mounted graph through LayoutSync.
+  const [initialCells] = useState(cells);
 
   const validateConnection = useCallback<ValidateConnection>(
     ({ source, target }) => validateLinkConnection(source.id, source.port, target.id, target.port),
@@ -56,10 +74,12 @@ export function Canvas({
   );
 
   return (
-    <GraphProvider initialCells={cells}>
+    <GraphProvider initialCells={initialCells}>
       <GraphSync spec={baseSpec} onSpecChange={onSpecChange} />
+      <LayoutSync cells={cells} />
       <OverlaySync nodes={nodes} />
       <FitOnMount />
+      <FitButton />
       <PanZoom />
       {onSelect && <SelectionSync onSelect={onSelect} />}
       <Paper
@@ -83,9 +103,131 @@ export function Canvas({
 function FitOnMount() {
   const { paper } = usePaper();
   useEffect(() => {
-    paper?.transformToFitContent({ padding: 24, minScale: 0.2, maxScale: 1.5 });
+    if (paper) fit(paper);
   }, [paper]);
   return null;
+}
+
+function fit(paper: dia.Paper) {
+  paper.transformToFitContent({ padding: 24, minScale: 0.2, maxScale: 1.5 });
+}
+
+/**
+ * Framing is the reader's after the first look: an edit never reframes, so
+ * this is how to bring the whole graph back into view after panning away.
+ */
+function FitButton() {
+  const { paper } = usePaper();
+  return (
+    <button
+      type="button"
+      className="canvas-fit"
+      disabled={!paper}
+      onClick={() => paper && fit(paper)}
+      title="Fit the whole graph in view"
+    >
+      fit
+    </button>
+  );
+}
+
+/**
+ * Marks every write the canvas makes to bring its drawing up to date with the
+ * spec, so `GraphSync` can tell it apart from a person drawing a link. Without
+ * it, re-attaching a link after an edit would be read back as a new edit and
+ * written over the spec text.
+ */
+const LAYOUT_SYNC = { ccgLayout: true } as const;
+const isLayoutSync = (opt: unknown): boolean =>
+  (opt as { ccgLayout?: unknown } | undefined)?.ccgLayout === true;
+
+const frameClock: Clock = {
+  now: () => performance.now(),
+  request: (callback) => requestAnimationFrame(callback),
+  cancel: (handle) => cancelAnimationFrame(handle as number),
+};
+
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * What a sync compares: everything layout decides, nothing an overlay does.
+ * Step `data` is left out because a run's frames, a heat file and the
+ * selection all arrive through it, several times a second while a run is
+ * live, and `OverlaySync` already carries them. Were they in here, every
+ * frame of a run would restart the tween.
+ */
+function layoutSignature(cells: readonly Cell[]): string {
+  return JSON.stringify(cells.map((c) => (c.type === "element" ? { ...c, data: undefined } : c)));
+}
+
+/**
+ * Brings the mounted graph to each new picture without rebuilding it, so the
+ * change can be watched (app/canvas/motion.ts has the diff and the tween).
+ *
+ * Links follow their boxes on every frame: JointJS re-routes a link whenever
+ * one of its ends moves, and at the size these graphs are drawn that is cheap,
+ * so nothing waits for the end of the move to reconnect.
+ *
+ * Reduced motion is read at each sync rather than once, so changing the
+ * setting takes effect on the next edit without a reload.
+ */
+function LayoutSync({ cells }: { cells: readonly Cell[] }) {
+  const { graph, setCell, removeCells } = useGraph();
+  const drawn = useRef(layoutSignature(cells));
+
+  const motion = useMemo(
+    () => new Motion(frameClock, (id, frame) => drawFrame(graph, id, frame)),
+    [graph],
+  );
+  useEffect(() => () => motion.stop(), [motion]);
+
+  useEffect(() => {
+    const signature = layoutSignature(cells);
+    if (signature === drawn.current) return;
+    drawn.current = signature;
+
+    const target: LayoutTarget = {
+      elements: () =>
+        graph.getElements().map((el) => ({
+          id: String(el.id),
+          box: { ...el.position(), ...el.size() },
+          opacity: opacityOf(el),
+        })),
+      links: () =>
+        graph.getLinks().map((link) => ({
+          id: String(link.id),
+          source: link.source().id,
+          target: link.target().id,
+          opacity: opacityOf(link),
+        })),
+      // bridge.ts's cells are structurally the records @joint/react takes
+      // (they seed `initialCells` the same way); its record types are wider.
+      put: (cell) => setCell(cell as CellInput, LAYOUT_SYNC),
+      patch: (id, attributes) => setCell({ id, ...attributes } as CellInput, LAYOUT_SYNC),
+      remove: (ids) => removeCells(ids, LAYOUT_SYNC),
+      draw: (id, frame) => drawFrame(graph, id, frame),
+    };
+    syncLayout(target, cells, motion, motionDuration(prefersReducedMotion()));
+  }, [cells, graph, setCell, removeCells, motion]);
+
+  return null;
+}
+
+function opacityOf(cell: dia.Cell): number {
+  const value: unknown = cell.attr("root/opacity");
+  return typeof value === "number" ? value : 1;
+}
+
+function drawFrame(graph: dia.Graph, id: string, frame: Frame) {
+  const cell = graph.getCell(id);
+  if (!cell) return;
+  if (frame.box && cell.isElement()) {
+    const { x, y, width, height } = frame.box;
+    cell.set({ position: { x, y }, size: { width, height } }, LAYOUT_SYNC);
+  }
+  cell.attr("root/opacity", frame.opacity, LAYOUT_SYNC);
 }
 
 const MIN_SCALE = 0.2;
@@ -207,8 +349,9 @@ function SelectionSync({ onSelect }: { onSelect: (id: string | undefined) => voi
  * touches a cell's `data`, never its `position` or `size` — the exact same
  * boundary `lib/overlay.ts`'s "may only add to data" rule already draws.
  * Links need no equivalent: heat has nothing to say about an edge, and the
- * fake/lint styling `bridge.ts` computes for a link is static from the
- * moment the graph is built.
+ * fake/lint styling `bridge.ts` computes for a link changes only with the
+ * spec, which `LayoutSync` carries. Placed after `LayoutSync`, so a step an
+ * edit has just added is already on the graph when its data arrives.
  */
 function OverlaySync({ nodes }: { nodes: readonly CCNode[] }) {
   const { setCellData } = useGraph();
@@ -292,15 +435,19 @@ function GraphSync({
       });
     };
 
-    const onAddOrRemove = (cell: { isLink: () => boolean }) => {
-      if (cell.isLink()) scheduleCommit();
+    // The canvas's own writes (`LAYOUT_SYNC`) are the spec arriving, not an edit.
+    const onEndpoint = (_link: unknown, _value: unknown, opt?: unknown) => {
+      if (!isLayoutSync(opt)) scheduleCommit();
+    };
+    const onAddOrRemove = (cell: { isLink: () => boolean }, _collection: unknown, opt?: unknown) => {
+      if (cell.isLink() && !isLayoutSync(opt)) scheduleCommit();
     };
 
-    graph.on("change:source change:target", scheduleCommit);
+    graph.on("change:source change:target", onEndpoint);
     graph.on("add remove", onAddOrRemove);
     return () => {
       cancelled = true;
-      graph.off("change:source change:target", scheduleCommit);
+      graph.off("change:source change:target", onEndpoint);
       graph.off("add remove", onAddOrRemove);
     };
   }, [graph, commit]);

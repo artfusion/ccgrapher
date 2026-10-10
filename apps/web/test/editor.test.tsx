@@ -25,32 +25,44 @@ import type { CCEdge, CCNode } from "../lib/view-model";
 
 // Each node is a button that selects it, the way a click on its card does,
 // and carries the parts of its `data` the inspector tests read back.
-vi.mock("../app/canvas/canvas", () => ({
-  Canvas: ({
+// The real canvas frames the graph once, when it mounts, so counting mounts is
+// how these tests see whether an edit kept the reader's pan and zoom.
+const canvasMounts = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("../app/canvas/canvas", async () => {
+  const { useEffect } = await import("react");
+  return {
+  Canvas: function CanvasMock({
     nodes,
     onSelect,
   }: {
     nodes: readonly CCNode[];
     edges: readonly CCEdge[];
     onSelect?: (id: string | undefined) => void;
-  }) => (
-    <div data-testid="canvas-mock" data-node-count={nodes.length}>
-      {nodes.map((n) => (
-        <button
-          key={n.id}
-          type="button"
-          data-testid={`node-${n.id}`}
-          data-style={String(n.data.style)}
-          data-uses={((n.data.uses as string[] | undefined) ?? []).join(" ")}
-          data-selected={n.data.selected === true ? "true" : undefined}
-          onClick={() => onSelect?.(n.id)}
-        >
-          {n.id}
-        </button>
-      ))}
-    </div>
-  ),
-}));
+  }) {
+    useEffect(() => {
+      canvasMounts.count += 1;
+    }, []);
+    return (
+      <div data-testid="canvas-mock" data-node-count={nodes.length}>
+        {nodes.map((n) => (
+          <button
+            key={n.id}
+            type="button"
+            data-testid={`node-${n.id}`}
+            data-style={String(n.data.style)}
+            data-uses={((n.data.uses as string[] | undefined) ?? []).join(" ")}
+            data-selected={n.data.selected === true ? "true" : undefined}
+            onClick={() => onSelect?.(n.id)}
+          >
+            {n.id}
+          </button>
+        ))}
+      </div>
+    );
+  },
+  };
+});
 
 const { Editor } = await import("../app/editor");
 
@@ -86,11 +98,12 @@ describe("the default fixture", () => {
 describe("a spec that fails to parse", () => {
   beforeEach(() => mockRunsEndpoint(NO_RUNS));
 
-  it("shows the parse error instead of mounting the canvas", async () => {
+  it("shows the parse error over the last good picture, held inert", async () => {
     render(<Editor />);
     // Let the first (valid) render settle before breaking it, so the
     // assertion below is about the transition, not a race with mount.
     await screen.findByTestId("canvas-mock");
+    const mounts = canvasMounts.count;
 
     // fireEvent.change rather than user-event: the spec deliberately contains
     // `[`, which user-event's keystroke DSL reads as a key-name delimiter.
@@ -98,8 +111,60 @@ describe("a spec that fails to parse", () => {
     fireEvent.change(textarea, { target: { value: BROKEN_SPEC } });
 
     expect(await screen.findByText("spec error")).toBeTruthy();
-    expect(screen.queryByTestId("canvas-mock")).toBeNull();
     expect(document.querySelector("pre.error")?.textContent).toMatch(/not valid YAML/);
+    const host = screen.getByTestId("canvas-mock").closest(".canvas-host")!;
+    expect(host.classList.contains("held")).toBe(true);
+    expect(host.hasAttribute("inert")).toBe(true);
+
+    // Fixed again: the same canvas, live again, never remounted.
+    fireEvent.change(textarea, { target: { value: FIXTURES["diamond"] } });
+    await waitFor(() => expect(screen.queryByText("spec error")).toBeNull());
+    expect(host.classList.contains("held")).toBe(false);
+    expect(canvasMounts.count).toBe(mounts);
+  });
+
+  it("has no picture to hold for a spec that was loaded broken", async () => {
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    // jsdom's File has no `text()`; the editor reads nothing else.
+    const file = Object.assign(new File([BROKEN_SPEC], "broken.yaml"), {
+      text: async () => BROKEN_SPEC,
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByText("spec error")).toBeTruthy();
+    expect(screen.queryByTestId("canvas-mock")).toBeNull();
+  });
+});
+
+describe("pan and zoom across an edit", () => {
+  beforeEach(() => mockRunsEndpoint(NO_RUNS));
+
+  it("keeps the mounted canvas through edits and the repaired toggle, and remounts on a load", async () => {
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    const mounts = canvasMounts.count;
+
+    // A typed edit that moves boxes: the chain's fake edges dropped by hand.
+    const textarea = document.querySelector("textarea")!;
+    const edited = FIXTURES["linear-chain"]!.replace(/.*review_a,\s+to: review_b.*\n/, "");
+    expect(edited).not.toBe(FIXTURES["linear-chain"]);
+    fireEvent.change(textarea, { target: { value: edited } });
+    await waitFor(() => expect(textarea.value).toBe(edited));
+    expect(canvasMounts.count).toBe(mounts);
+
+    // The as-written / repaired toggle: the showcase, and still the same canvas.
+    fireEvent.change(textarea, { target: { value: FIXTURES["linear-chain"] } });
+    fireEvent.click(screen.getByLabelText("preview repaired"));
+    fireEvent.click(screen.getByLabelText("preview repaired"));
+    expect(canvasMounts.count).toBe(mounts);
+
+    // Loading a spec is a new drawing, framed afresh.
+    fireEvent.change(screen.getByDisplayValue("load an example…"), {
+      target: { value: "diamond" },
+    });
+    await waitFor(() => expect(canvasMounts.count).toBe(mounts + 1));
   });
 });
 
