@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
+import { buildGraph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
 import { describe, expect, it } from "vitest";
@@ -162,6 +163,73 @@ describe("styling carries the same meaning as the svg", () => {
     );
     expect(fake).toHaveLength(1);
     expect(fake[0]!["strokeColor"]).toBe("#c4442e");
+  });
+});
+
+describe("count guards", () => {
+  /** diamond with its checker's guard taken away, which is what lint flags as missing. */
+  const unguarded = () => {
+    const graph = loadGraph(`${examples}diamond.yaml`);
+    return layoutGraph(
+      buildGraph({
+        ...graph.spec,
+        nodes: graph.spec.nodes.map((n) => (n.id === "checker" ? { ...n, expects: undefined } : n)),
+      }),
+    );
+  };
+  const find = (scene: ReturnType<typeof renderExcalidraw>, id: string) =>
+    scene.elements.find((e) => e["id"] === id);
+
+  it.each(["diamond", "research-desk"] as const)("%s carries the count it declares", (name) => {
+    const positioned = fixture(name);
+    const scene = renderExcalidraw(positioned);
+    const guarded = positioned.nodes.filter((n) => n.node.expects !== undefined);
+    expect(guarded.length).toBeGreaterThan(0);
+    for (const { node } of guarded) {
+      expect(find(scene, `text-${node.id}`)!["text"]).toContain(`· expects ${node.expects}`);
+    }
+    // A count is a declaration, not a finding: nothing is warned about.
+    expect(scene.elements.filter((e) => String(e["id"]).startsWith("halo-"))).toHaveLength(0);
+    expect(scene.elements.filter((e) => e["strokeColor"] === "#c4442e")).toHaveLength(0);
+  });
+
+  it("draws a guard that disagrees with lint as 'N ≠ M', a red box and a solid halo", () => {
+    const scene = renderExcalidraw(fixture("release-session"), {
+      guardFindings: [{ id: "ci", arriving: 8 }],
+    });
+    expect(find(scene, "text-ci")!["text"]).toContain("· 9 ≠ 8");
+    expect(find(scene, "ci")!["strokeColor"]).toBe("#c4442e");
+    const halo = find(scene, "halo-ci")!;
+    expect(halo["strokeColor"]).toBe("#c4442e");
+    // Dashed already means a human gate in this scene, so a finding stays solid.
+    expect(halo["strokeStyle"]).toBe("solid");
+    // The halo is behind the box and bound to nothing, so dragging the box leaves no ghost arrows.
+    expect(scene.elements.indexOf(halo)).toBeLessThan(scene.elements.indexOf(find(scene, "ci")!));
+    expect(halo["boundElements"]).toEqual([]);
+  });
+
+  it("draws an unguarded fan-in with a red box, a halo and a note", () => {
+    const scene = renderExcalidraw(unguarded(), { guardFindings: [{ id: "checker", arriving: 5 }] });
+    expect(find(scene, "text-checker")!["text"]).toBe("checker · no count guard");
+    expect(find(scene, "checker")!["strokeColor"]).toBe("#c4442e");
+    expect(find(scene, "halo-checker")).toBeDefined();
+  });
+
+  it("draws no warn marks when nothing is passed in", () => {
+    for (const scene of [renderExcalidraw(unguarded()), renderExcalidraw(fixture("release-session"))]) {
+      expect(scene.elements.filter((e) => String(e["id"]).startsWith("halo-"))).toHaveLength(0);
+    }
+    expect(find(renderExcalidraw(fixture("release-session")), "text-ci")!["text"]).toContain(
+      "· expects 9",
+    );
+  });
+
+  it("is deterministic with findings", () => {
+    const options = { guardFindings: [{ id: "ci", arriving: 8 }] };
+    const positioned = fixture("release-session");
+    expect(JSON.stringify(renderExcalidraw(positioned, options))).toBe(
+      JSON.stringify(renderExcalidraw(positioned, options)),
+    );
   });
 });
 

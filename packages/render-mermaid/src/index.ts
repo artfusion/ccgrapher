@@ -6,6 +6,12 @@ export interface MermaidOptions {
   readonly handDrawn?: boolean;
   /** Mark these edges dotted and red. */
   readonly fakeEdges?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  /**
+   * Fan-ins the linter flagged for their count guard, with the number of results
+   * that actually arrive. Drawn with a red outline and a note in the label; the
+   * renderer does not compare `expects` with the edges itself.
+   */
+  readonly guardFindings?: ReadonlyArray<{ readonly id: string; readonly arriving: number }>;
   /** Label each edge with the fields it carries. On by default. */
   readonly showCarries?: boolean;
   /** Wrap the output in a ```mermaid fence for pasting into Markdown. */
@@ -32,6 +38,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   const handDrawn = options.handDrawn ?? true;
   const showCarries = options.showCarries ?? true;
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
+  const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
 
   const lines: string[] = [];
 
@@ -57,7 +64,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
 
   for (const node of graph.spec.nodes) {
     const [open, close] = SHAPE[node.kind];
-    lines.push(`  ${node.id}${open}"${label(node)}"${close}`);
+    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id))}"${close}`);
   }
 
   const fakeIndices: number[] = [];
@@ -86,6 +93,12 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
     if (ids.length > 0) lines.push(`  class ${ids.join(",")} ${style};`);
   }
 
+  // A style line beats the class, so the red outline lands whatever the kind.
+  // Solid on purpose: dashes already mean a human gate.
+  for (const node of graph.spec.nodes) {
+    if (arriving.has(node.id)) lines.push(`  style ${node.id} stroke:#C4442E,stroke-width:2.5px;`);
+  }
+
   for (const i of fakeIndices) {
     lines.push(`  linkStyle ${i} stroke:#C4442E,stroke-width:1.5px,stroke-dasharray:6 4;`);
   }
@@ -94,9 +107,15 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   return options.fenced ? `\`\`\`mermaid\n${body}\n\`\`\`` : body;
 }
 
-function label(node: NodeSpec): string {
+function label(node: NodeSpec, arriving: number | undefined): string {
   const badge = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
-  return `${escape(node.label)}${badge}`;
+  return `${escape(node.label)}${badge}${guardNote(node, arriving)}`;
+}
+
+/** The guard is always shown, since it is a declaration; a finding changes only its wording. */
+function guardNote(node: NodeSpec, arriving: number | undefined): string {
+  if (node.expects === undefined) return arriving === undefined ? "" : " · no count guard";
+  return arriving === undefined ? ` · expects ${node.expects}` : ` · ${node.expects} ≠ ${arriving}`;
 }
 
 /** Mermaid needs HTML entities for quotes and angle brackets inside labels. */
