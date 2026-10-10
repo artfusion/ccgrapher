@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -213,6 +213,141 @@ describe("render", () => {
 
   it("rejects an unknown format", () => {
     expect(ccg("render", example("diamond"), "-f", "pdf").status).toBe(2);
+  });
+});
+
+describe("render guards", () => {
+  let count = 0;
+  const rendered = (...args: string[]) => {
+    const file = join(out, `guards-${count++}.svg`);
+    expect(ccg("render", ...args, "-o", file).status).toBe(0);
+    return readFileSync(file, "utf8");
+  };
+
+  /** diamond with its checker's guard removed, written out as a spec. */
+  const unguardedDiamond = () => {
+    const file = join(out, "diamond-unguarded.yaml");
+    writeFileSync(
+      file,
+      readFileSync(example("diamond"), "utf8").replace(/^ +expects: 5.*\n/m, ""),
+      "utf8",
+    );
+    return file;
+  };
+
+  it("draws the count a spec declares", () => {
+    const svg = rendered(example("diamond"));
+    expect(svg).toContain('data-expects="5"');
+    expect(svg).not.toContain("data-guard");
+  });
+
+  it("draws the guard lint reports as wrong", () => {
+    const svg = rendered(example("release-session"));
+    expect(svg).toContain('data-guard="mismatch"');
+    expect(svg).toContain("9 ≠ 8");
+  });
+
+  it("draws the guard lint reports as missing", () => {
+    const svg = rendered(unguardedDiamond());
+    expect(svg).toContain('data-guard="missing"');
+    expect(svg).toContain("no count guard");
+  });
+
+  it("reads the findings from the repaired graph under --fix", () => {
+    // release-session's guard is still wrong once its edges are repaired.
+    expect(rendered(example("release-session"), "--fix")).toContain('data-guard="mismatch"');
+    expect(rendered(example("diamond"), "--fix")).not.toContain("data-guard");
+  });
+
+  it("--plain drops every finding mark and keeps the badge", () => {
+    const svg = rendered(example("release-session"), "--plain");
+    expect(svg).not.toContain("data-guard");
+    expect(svg).not.toContain("data-halo");
+    expect(svg).not.toContain("data-fake");
+    expect(svg).toContain('data-expects="9"');
+    expect(svg).toContain(">expects 9<");
+  });
+
+  it("marks the same finding in mermaid and excalidraw", () => {
+    const mmd = join(out, "release-guard.mmd");
+    const excalidraw = join(out, "release-guard.excalidraw");
+    ccg("render", example("release-session"), "-o", mmd);
+    ccg("render", example("release-session"), "-o", excalidraw);
+    expect(readFileSync(mmd, "utf8")).toContain("9 ≠ 8");
+    expect(readFileSync(excalidraw, "utf8")).toContain("halo-ci");
+  });
+
+  it("lint --json only gains `arriving`, on the guard findings", () => {
+    const [report] = JSON.parse(ccg("lint", example("release-session"), "--json").stdout);
+    const guard = report.findings.find((f: { rule: string }) => f.rule === "SILENT_FAILURE");
+    expect(Object.keys(guard).sort()).toEqual(
+      ["arriving", "message", "nodes", "phase", "rule", "severity"].sort(),
+    );
+    const others = report.findings.filter((f: { rule: string }) => f.rule !== "SILENT_FAILURE");
+    for (const f of others) expect(f).not.toHaveProperty("arriving");
+  });
+});
+
+describe("render --pair", () => {
+  const written = (file: string) => readFileSync(file, "utf8");
+
+  it("one spec: writes it as written and repaired", () => {
+    const base = join(out, "pair-one.svg");
+    const run = ccg("render", example("linear-chain"), "--pair", "-o", base);
+    expect(run.status).toBe(0);
+
+    const before = written(join(out, "pair-one-before.svg"));
+    const after = written(join(out, "pair-one-after.svg"));
+    expect(before).toContain("carries no data");
+    expect(after).not.toContain("carries no data");
+    expect(after).toContain("linear-chain (repaired)");
+    expect(run.stderr).toContain("pair-one-before.svg");
+    expect(run.stderr).toContain("pair-one-after.svg");
+    expect(run.stderr).toMatch(/6 layers/);
+    expect(run.stderr).toMatch(/4 layers/);
+  });
+
+  it("two specs: writes each as written, so an added guard shows", () => {
+    const before = join(out, "pair-before-spec.yaml");
+    const after = join(out, "pair-after-spec.yaml");
+    const diamond = readFileSync(example("diamond"), "utf8");
+    writeFileSync(before, diamond.replace(/^ +expects: 5.*\n/m, ""), "utf8");
+    writeFileSync(after, diamond, "utf8");
+
+    const base = join(out, "pair-two.svg");
+    const run = ccg("render", "--pair", before, after, "-o", base);
+    expect(run.status).toBe(0);
+    expect(written(join(out, "pair-two-before.svg"))).toContain('data-guard="missing"');
+    const drawn = written(join(out, "pair-two-after.svg"));
+    expect(drawn).not.toContain("data-guard");
+    expect(drawn).toContain('data-expects="5"');
+    // Two specs are two pictures as written; neither is renamed "(repaired)".
+    expect(drawn).not.toContain("(repaired)");
+  });
+
+  it("works for every format", () => {
+    for (const ext of ["svg", "html", "mmd", "excalidraw"]) {
+      const base = join(out, `pair-format.${ext}`);
+      expect(ccg("render", example("release-session"), "--pair", "-o", base).status).toBe(0);
+      expect(written(join(out, `pair-format-before.${ext}`)).length).toBeGreaterThan(0);
+      expect(written(join(out, `pair-format-after.${ext}`)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("exits 2 with --fix, without -o, or with more than two specs", () => {
+    const base = join(out, "pair-bad.svg");
+    const d = example("diamond");
+    expect(ccg("render", d, "--pair", "--fix", "-o", base).status).toBe(2);
+    expect(ccg("render", d, "--pair").status).toBe(2);
+    expect(ccg("render", d, d, d, "--pair", "-o", base).status).toBe(2);
+    expect(ccg("render", "--pair", "-o", base).status).toBe(2);
+  });
+
+  it("writes nothing when the second spec cannot be read", () => {
+    const base = join(out, "pair-missing.svg");
+    const run = ccg("render", "--pair", example("diamond"), join(out, "no-such.yaml"), "-o", base);
+    expect(run.status).toBe(2);
+    expect(existsSync(join(out, "pair-missing-before.svg"))).toBe(false);
   });
 });
 

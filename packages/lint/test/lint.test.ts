@@ -215,6 +215,26 @@ describe("silent failure", () => {
     const found = lint(checkerWith(4)).findings.filter((f) => f.rule === "SILENT_FAILURE");
     expect(found[0]!.message).toContain("declares expects: 4 but 5 results actually arrive");
   });
+
+  it("carries the number that actually arrives, so a renderer need not recount", () => {
+    for (const expects of [undefined, 4]) {
+      const found = lint(checkerWith(expects)).findings.filter((f) => f.rule === "SILENT_FAILURE");
+      expect(found[0]!.arriving).toBe(5);
+    }
+  });
+
+  it("adds `arriving` to SILENT_FAILURE findings only, and changes nothing else in the JSON", () => {
+    const findings = lint(fixture("release-session")).findings;
+    for (const f of findings) expect("arriving" in f).toBe(f.rule === "SILENT_FAILURE");
+    expect(findings.find((f) => f.rule === "SILENT_FAILURE")).toEqual({
+      rule: "SILENT_FAILURE",
+      severity: "warn",
+      phase: "raw",
+      message: "ci declares expects: 9 but 8 results actually arrive",
+      nodes: ["ci"],
+      arriving: 8,
+    });
+  });
 });
 
 describe("formatReport", () => {

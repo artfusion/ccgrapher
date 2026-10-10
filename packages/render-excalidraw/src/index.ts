@@ -5,6 +5,12 @@ import type { PositionedGraph, PositionedNode } from "@ccgrapher/layout";
 export interface ExcalidrawOptions {
   /** Mark these edges dashed and red. */
   readonly fakeEdges?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  /**
+   * Fan-ins the linter flagged for their count guard, with the number of results
+   * that actually arrive. Drawn as a red box inside a solid red halo; the renderer
+   * does not compare `expects` with the edges itself.
+   */
+  readonly guardFindings?: ReadonlyArray<{ readonly id: string; readonly arriving: number }>;
   readonly backgroundColor?: string;
 }
 
@@ -43,6 +49,7 @@ export function renderExcalidraw(
   options: ExcalidrawOptions = {},
 ): ExcalidrawScene {
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
+  const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
   const elements: ExcalidrawElement[] = [];
 
   // Arrows are collected per node so each box can declare what it is bound to.
@@ -63,8 +70,11 @@ export function renderExcalidraw(
   }
 
   for (const node of positioned.nodes) {
-    elements.push(box(node, bindings.get(node.id) ?? []));
-    elements.push(text(node));
+    const found = arriving.get(node.id);
+    // The halo goes in first so it sits behind the box. It is not bound to anything.
+    if (found !== undefined) elements.push(halo(node));
+    elements.push(box(node, bindings.get(node.id) ?? [], found !== undefined));
+    elements.push(text(node, found));
   }
 
   positioned.edges.forEach((edge, i) => {
@@ -104,7 +114,32 @@ function base(id: string, seedSource: string): ExcalidrawElement {
   };
 }
 
-function box(node: PositionedNode, bound: Array<{ id: string; type: string }>): ExcalidrawElement {
+/** A solid ring, not a dashed one: dashes already mean a human gate here. */
+function halo(node: PositionedNode): ExcalidrawElement {
+  const gap = 7;
+  return {
+    ...base(`halo-${node.id}`, `halo-${node.id}`),
+    type: "rectangle",
+    x: node.x - gap,
+    y: node.y - gap,
+    width: node.width + gap * 2,
+    height: node.height + gap * 2,
+    strokeColor: DANGER,
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    roughness: 0,
+    roundness: null,
+    boundElements: [],
+  };
+}
+
+function box(
+  node: PositionedNode,
+  bound: Array<{ id: string; type: string }>,
+  flagged: boolean,
+): ExcalidrawElement {
   const style = renderStyle(node.node);
   return {
     ...base(node.id, node.id),
@@ -113,7 +148,7 @@ function box(node: PositionedNode, bound: Array<{ id: string; type: string }>): 
     y: node.y,
     width: node.width,
     height: node.height,
-    strokeColor: INK,
+    strokeColor: flagged ? DANGER : INK,
     backgroundColor: KIND_FILL[style] ?? "transparent",
     fillStyle: "solid",
     strokeWidth: style === "agent" ? 2 : 1,
@@ -125,8 +160,8 @@ function box(node: PositionedNode, bound: Array<{ id: string; type: string }>): 
   };
 }
 
-function text(node: PositionedNode): ExcalidrawElement {
-  const label = labelOf(node.node);
+function text(node: PositionedNode, arriving: number | undefined): ExcalidrawElement {
+  const label = labelOf(node.node, arriving);
   const fontSize = 20;
   const lineHeight = 1.25;
   return {
@@ -202,8 +237,15 @@ function fallbackPoints(positioned: PositionedGraph, edge: PositionedGraph["edge
   ];
 }
 
-function labelOf(node: NodeSpec): string {
-  return node.fanOut ? `${node.label} ×${node.fanOut.cap ?? "n"}` : node.label;
+function labelOf(node: NodeSpec, arriving: number | undefined): string {
+  const fan = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
+  return `${node.label}${fan}${guardNote(node, arriving)}`;
+}
+
+/** The guard is always shown, since it is a declaration; a finding changes only its wording. */
+function guardNote(node: NodeSpec, arriving: number | undefined): string {
+  if (node.expects === undefined) return arriving === undefined ? "" : " · no count guard";
+  return arriving === undefined ? ` · expects ${node.expects}` : ` · ${node.expects} ≠ ${arriving}`;
 }
 
 function hash(text: string): number {

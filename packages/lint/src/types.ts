@@ -28,6 +28,11 @@ export interface Finding {
   readonly message: string;
   readonly nodes: readonly string[];
   readonly edge?: { readonly from: string; readonly to: string };
+  /**
+   * How many results actually reach the node, on SILENT_FAILURE findings only.
+   * Optional and additive: it lets a renderer draw the count without redoing the sum.
+   */
+  readonly arriving?: number;
 }
 
 /**

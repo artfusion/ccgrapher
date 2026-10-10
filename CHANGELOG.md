@@ -5,6 +5,25 @@ published npm packages, which move together; `apps/web vX.Y.Z` entries cover the
 private web canvas, which has its own train. Full notes accompany each
 [GitHub release](https://github.com/artfusion/ccgrapher/releases).
 
+## Unreleased
+
+- `ccg render` draws the count guard. Every node that declares `expects` carries the number,
+  bottom right, and the node group carries `data-expects`. A repair that adds a guard now shows
+  in the picture; before, the picture could not tell a guarded fan-in from an unguarded one.
+- Fan-ins the linter flags are marked in all four formats: a solid red ring and a small flag,
+  with "no count guard" when `expects` is missing and `9 ≠ 8` when it disagrees with the edges.
+  Mermaid and Excalidraw carry the same count and a red outline. `--plain` leaves the marks off.
+- `ccg render --pair` writes a before and an after, `<name>-before` and `<name>-after`. With one
+  spec that is as written and repaired; with two (`--pair before.yaml after.yaml`) it is each as
+  written, which is how a hand-added guard shows. It needs `-o` and refuses `--fix`.
+- Lint findings for `SILENT_FAILURE` gain an optional `arriving` field, so a renderer need not
+  count again. Additive: existing `--json` consumers see one extra key on those findings.
+- `render-svg` takes a `guardFindings` option, and `render-mermaid` and `render-excalidraw` take
+  the same. The theme gains `quiet` and `dangerInk`, the small-text variants of its muted and
+  danger colours.
+- The README images are regenerated, and `tools/rasterize.mjs` now falls back to system fonts
+  for the `≠` that Caveat does not have.
+
 ## v0.5.0 — 2026-09-09
 
 - New `html` render format: the same picture as `svg`, wrapped in a self-contained

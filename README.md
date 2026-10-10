@@ -203,9 +203,22 @@ ccg render examples/diamond.yaml -o diagram.html         # same picture, pan and
 ccg render examples/diamond.yaml -o diagram.mmd          # Mermaid
 ccg render examples/diamond.yaml -o diagram.excalidraw   # Excalidraw scene
 ccg render examples/linear-chain.yaml --fix -o after.svg # draw the repaired graph
+ccg render examples/linear-chain.yaml --pair -o chain.svg   # chain-before.svg and chain-after.svg
+ccg render --pair draft.yaml revised.yaml -o plan.svg       # plan-before.svg and plan-after.svg
 ```
 
 The format comes from the extension, or pass `-f svg|html|mermaid|excalidraw`.
+
+A change to a spec should be shown as a before and an after, so `--pair` writes both. With one spec
+it draws the graph as written and then repaired. With two it draws each as written, which is how a
+hand revision shows up: `--fix` moves edges, it never adds an `expects` guard, so adding one is a
+change you pair by hand. `--pair` needs `-o` and cannot be combined with `--fix`.
+
+Every node that declares `expects` carries the count, bottom right. When the linter finds the
+guard wanting, the node is drawn with a solid red ring and a small flag: an unguarded fan-in says
+"no count guard", and a guard that disagrees with the edges says so as `9 ≠ 8`. Dashes are kept
+for structure (a human gate, an isolated worktree, a dead edge), so a finding is never a new dash.
+`--plain` leaves the findings off, fake edges included; the counts stay, since they are declarations.
 
 - **SVG** — rough.js strokes, paper texture, the handwriting face embedded so the file renders
   identically anywhere. Fake edges are red and dashed with a "carries no data" label.

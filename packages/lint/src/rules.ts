@@ -198,23 +198,25 @@ export function silentFailure(graph: Graph, phase: Phase): Finding[] {
     if (arriving <= 1) continue;
 
     if (node.expects === undefined) {
-      out.push(
-        finding(
+      out.push({
+        ...finding(
           "SILENT_FAILURE",
           phase,
           `${node.id} fans in ${arriving} results with no 'expects' guard — a dead upstream node would go unnoticed`,
           [node.id],
         ),
-      );
+        arriving,
+      });
     } else if (node.expects !== arriving) {
-      out.push(
-        finding(
+      out.push({
+        ...finding(
           "SILENT_FAILURE",
           phase,
           `${node.id} declares expects: ${node.expects} but ${arriving} results actually arrive`,
           [node.id],
         ),
-      );
+        arriving,
+      });
     }
   }
   return out;

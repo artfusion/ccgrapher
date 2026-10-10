@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
+import { buildGraph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { describe, expect, it } from "vitest";
 import { renderMermaid } from "../src/index.js";
@@ -44,7 +45,7 @@ describe("kind vocabulary", () => {
   it("gives each kind a distinguishable mermaid shape", () => {
     const out = renderMermaid(fixture("research-desk"));
     expect(out).toContain('plan[/"plan the angles"\\]'); // split: trapezoid
-    expect(out).toContain('dedupe[["dedupe by source"]]'); // reduce: subroutine
+    expect(out).toContain('dedupe[["dedupe by source · expects 5"]]'); // reduce: subroutine
     expect(out).toContain('skeptic_correct{{"is it correct?"}}'); // verifier: hexagon
     expect(out).toContain('report(["one ranked report"])'); // synthesize: stadium
     expect(out).toContain('gate{"human approves"}'); // gate: rhombus
@@ -61,6 +62,59 @@ describe("kind vocabulary", () => {
     const out = renderMermaid(fixture("route-auth-audit"));
     expect(out).toContain('audit["audit one route file ×20"]');
     expect([...out.matchAll(/^ {2}audit\[/gm)]).toHaveLength(1);
+  });
+});
+
+describe("count guards", () => {
+  /** diamond with its checker's guard taken away, which is what lint flags as missing. */
+  const unguarded = () => {
+    const graph = fixture("diamond");
+    return buildGraph({
+      ...graph.spec,
+      nodes: graph.spec.nodes.map((n) => (n.id === "checker" ? { ...n, expects: undefined } : n)),
+    });
+  };
+
+  it.each(["diamond", "research-desk"] as const)("%s carries the count it declares", (name) => {
+    const graph = fixture(name);
+    const out = renderMermaid(graph);
+    const guarded = graph.spec.nodes.filter((n) => n.expects !== undefined);
+    expect(guarded.length).toBeGreaterThan(0);
+    for (const node of guarded) expect(out).toContain(`· expects ${node.expects}"`);
+    // A count is a declaration, not a finding: nothing is warned about.
+    expect(out).not.toMatch(/^ {2}style /m);
+  });
+
+  it("draws a guard that disagrees with lint as 'N ≠ M' with a solid red outline", () => {
+    const out = renderMermaid(fixture("release-session"), {
+      guardFindings: [{ id: "ci", arriving: 8 }],
+    });
+    expect(out).toContain("· 9 ≠ 8\"");
+    expect(out).toMatch(/^ {2}style ci stroke:#C4442E,stroke-width:2\.5px;$/m);
+    // The style line comes after the class lines, so it wins, and it is not dashed.
+    expect(out.indexOf("  style ci")).toBeGreaterThan(out.indexOf("  class "));
+    expect(out.split("\n").find((l) => l.startsWith("  style ci"))).not.toContain("dasharray");
+  });
+
+  it("draws an unguarded fan-in with a red outline and a note", () => {
+    const out = renderMermaid(unguarded(), { guardFindings: [{ id: "checker", arriving: 5 }] });
+    expect(out).toContain('checker{{"checker · no count guard"}}');
+    expect(out).toMatch(/^ {2}style checker stroke:#C4442E/m);
+  });
+
+  it("draws no warn marks when nothing is passed in", () => {
+    for (const out of [renderMermaid(unguarded()), renderMermaid(fixture("release-session"))]) {
+      expect(out).not.toMatch(/^ {2}style /m);
+      expect(out).not.toContain("no count guard");
+    }
+    expect(renderMermaid(fixture("release-session"))).toContain("· expects 9");
+  });
+
+  it("is deterministic with findings", () => {
+    const options = { guardFindings: [{ id: "ci", arriving: 8 }] };
+    expect(renderMermaid(fixture("release-session"), options)).toBe(
+      renderMermaid(fixture("release-session"), options),
+    );
   });
 });
 
