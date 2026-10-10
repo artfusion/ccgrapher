@@ -349,3 +349,29 @@ describe("urgency", () => {
     expect(text("skeptic_correct")).toBe("is it correct? · strong");
   });
 });
+
+describe("step numbers", () => {
+  const texts = (scene: ReturnType<typeof renderExcalidraw>) =>
+    scene.elements.filter((e) => e["type"] === "text").map((e) => e["text"] as string);
+
+  it("are off by default", () => {
+    expect(texts(renderExcalidraw(fixture("diamond"))).join("\n")).not.toContain("step by step");
+  });
+
+  it("lead each label inside its box, and the legend sits under the drawing", () => {
+    const positioned = fixture("wide-fanin");
+    const scene = renderExcalidraw(positioned, { steps: true });
+    expect(texts(scene)).toContain("2 · read one page ×200 · cheap");
+    const legend = scene.elements.find((e) => e["id"] === "legend-steps")!;
+    expect(legend["y"]).toBe(positioned.height);
+    expect(legend["text"]).toBe(
+      [
+        "one run, step by step",
+        "1  list every page · takes root; gives page",
+        "2  read one page · one per page, up to 200; takes page; gives text",
+        "3  one big summary · takes text; gives summary",
+      ].join("\n"),
+    );
+    for (const key of REQUIRED) expect(legend).toHaveProperty(key);
+  });
+});

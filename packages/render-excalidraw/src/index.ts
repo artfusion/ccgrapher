@@ -4,8 +4,10 @@ import {
   effectivePriorities,
   priorityCaption,
   renderStyle,
+  stepLegend,
   type EffectivePriority,
   type NodeSpec,
+  type Step,
 } from "@ccgrapher/core";
 import { routeLinks, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 
@@ -27,6 +29,13 @@ export interface ExcalidrawOptions {
    */
   readonly findingMarks?: ReadonlyArray<FindingMark>;
   readonly backgroundColor?: string;
+  /**
+   * Number the steps in execution order, as `stepLegend` in `@ccgrapher/core`
+   * numbers them. The number leads each label, inside its box, so it travels
+   * with the box when the box is dragged; a loose badge would be left behind.
+   * The legend is one text element under the drawing. Off by default.
+   */
+  readonly steps?: boolean;
 }
 
 /** The same shape `render-svg` and `render-mermaid` take; declared here so this package needs neither. */
@@ -83,6 +92,8 @@ export function renderExcalidraw(
   const findingMarks = options.findingMarks ?? [];
   const writers = new Set(findingMarks.flatMap((m) => (m.rule === "HIDDEN_EDGE" ? m.between : [])));
   const priorities = effectivePriorities(positioned.graph);
+  const steps = options.steps ? stepLegend(positioned.graph) : [];
+  const numberOf = new Map(steps.map((s) => [s.id, s.number]));
   const elements: ExcalidrawElement[] = [];
 
   // Arrows are collected per node so each box can declare what it is bound to.
@@ -122,7 +133,7 @@ export function renderExcalidraw(
     // The halo goes in first so it sits behind the box. It is not bound to anything.
     if (flagged) elements.push({ ...halo(node), groupIds });
     elements.push({ ...box(node, bindings.get(node.id) ?? [], flagged), groupIds });
-    elements.push({ ...text(node, found, notes, priorities.get(node.id)), groupIds });
+    elements.push({ ...text(node, found, notes, priorities.get(node.id), numberOf.get(node.id)), groupIds });
   }
 
   positioned.edges.forEach((edge, i) => {
@@ -131,6 +142,7 @@ export function renderExcalidraw(
   });
 
   elements.push(...sharedWrites(positioned, findingMarks));
+  if (steps.length > 0) elements.push(legend(steps, positioned));
 
   return {
     type: "excalidraw",
@@ -271,8 +283,10 @@ function text(
   arriving: number | undefined,
   notes: readonly string[],
   priority: EffectivePriority | undefined,
+  number: string | undefined,
 ): ExcalidrawElement {
-  const label = labelOf(node.node, arriving, notes, priority);
+  const plain = labelOf(node.node, arriving, notes, priority);
+  const label = number ? `${number} · ${plain}` : plain;
   const fontSize = 20;
   const lineHeight = 1.25;
   return {
@@ -298,6 +312,39 @@ function text(
     textAlign: "center",
     verticalAlign: "middle",
     containerId: node.id,
+    lineHeight,
+    autoResize: true,
+  };
+}
+
+/** The steps as one left-aligned text element under the drawing: number, label, and what each takes and gives. */
+function legend(steps: readonly Step[], positioned: PositionedGraph): ExcalidrawElement {
+  const fontSize = 16;
+  const lineHeight = 1.25;
+  const lines = ["one run, step by step", ...steps.map((s) => `${s.number}  ${s.label} · ${s.line}`)];
+  const body = lines.join("\n");
+  return {
+    ...base("legend-steps", "legend-steps"),
+    type: "text",
+    x: 40,
+    y: positioned.height,
+    width: Math.ceil(Math.max(...lines.map((l) => l.length)) * fontSize * 0.5),
+    height: Math.ceil(lines.length * fontSize * lineHeight),
+    strokeColor: INK,
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 1,
+    strokeStyle: "solid",
+    roughness: 1,
+    roundness: null,
+    boundElements: [],
+    text: body,
+    originalText: body,
+    fontSize,
+    fontFamily: 1,
+    textAlign: "left",
+    verticalAlign: "top",
+    containerId: null,
     lineHeight,
     autoResize: true,
   };

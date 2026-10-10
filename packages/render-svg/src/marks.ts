@@ -138,7 +138,23 @@ const CHEVRON_THICK = 2.8;
  * it reads as a highlighter behind the box and never as a second outline.
  */
 export function renderPriorityWash(extent: MarkBox, wash: string): string {
-  return `<rect data-wash="priority" x="${r(extent.x - WASH_GAP)}" y="${r(extent.y - WASH_GAP)}" width="${r(extent.width + WASH_GAP * 2)}" height="${r(extent.height + WASH_GAP * 2)}" rx="8" fill="${wash}" opacity="0.9"/>`;
+  const box = priorityWashBox(extent);
+  return `<rect data-wash="priority" x="${r(box.x)}" y="${r(box.y)}" width="${r(box.width)}" height="${r(box.height)}" rx="8" fill="${wash}" opacity="0.9"/>`;
+}
+
+/** Where the wash lies, so a mark placed outside the box can keep clear of it. */
+export function priorityWashBox(extent: MarkBox): MarkBox {
+  return {
+    x: extent.x - WASH_GAP,
+    y: extent.y - WASH_GAP,
+    width: extent.width + WASH_GAP * 2,
+    height: extent.height + WASH_GAP * 2,
+  };
+}
+
+/** Where the urgency disc sits, so a mark placed outside the box can keep clear of it. */
+export function priorityDisc(extent: MarkBox): { cx: number; cy: number; r: number } {
+  return { cx: extent.x + extent.width + PRIORITY_OFFSET, cy: extent.y - PRIORITY_OFFSET, r: PRIORITY_RADIUS };
 }
 
 /** An upward chevron with its apex at (cx, top). */
@@ -167,8 +183,7 @@ export function renderPriorityMark(
   colour: string,
   ground: string,
 ): string {
-  const cx = extent.x + extent.width + PRIORITY_OFFSET;
-  const cy = extent.y - PRIORITY_OFFSET;
+  const { cx, cy } = priorityDisc(extent);
   const height = CHEVRON_HALF + CHEVRON_THICK;
   const chevrons =
     priority === "urgent"

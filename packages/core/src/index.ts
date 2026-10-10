@@ -42,4 +42,6 @@ export {
   type RaisedPriority,
 } from "./priority.js";
 
+export { stepLegend, type Step } from "./steps.js";
+
 export { parseSpec, formatSpec } from "./load.js";

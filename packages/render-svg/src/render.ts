@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-import { agentTag, agentTypes, effectivePriorities, priorityCaption, renderStyle, type EffectivePriority } from "@ccgrapher/core";
+import {
+  agentTag,
+  agentTypes,
+  effectivePriorities,
+  priorityCaption,
+  renderStyle,
+  stepLegend,
+  type EffectivePriority,
+} from "@ccgrapher/core";
 import { DEFAULT_METRICS, type Point, type PositionedEdge, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 // The `bin/` ESM build uses extensionless relative imports, which Node's
 // resolver rejects outside a bundler. The bundled build is a single file with
@@ -9,15 +17,19 @@ import type { RoughGenerator } from "roughjs/bin/generator.js";
 import type { Drawable, OpSet } from "roughjs/bin/core.js";
 import { CAVEAT_NOTICE, caveatFontFace } from "./font.js";
 import { iconPath, iconTransform } from "./icons.js";
-import { findingsOn, fitCaption, renderSharedWrites, type FindingMark } from "./findings.js";
+import { findingsOn, fitCaption, renderSharedWrites, sharedWriteRoutes, type FindingMark } from "./findings.js";
 import {
   bottomLeftRoom,
   renderFindingHalo,
   renderMarks,
+  priorityDisc,
+  priorityWashBox,
   renderPriorityMark,
   renderPriorityWash,
   type Mark,
+  type MarkBox,
 } from "./marks.js";
+import { legendSize, placeStepBadges, renderLegend, renderStepBadges, type Obstacles } from "./steps.js";
 import { DEFAULT_THEME, type Theme } from "./theme.js";
 
 export interface RenderOptions {
@@ -48,6 +60,13 @@ export interface RenderOptions {
   readonly grain?: boolean;
   /** Overrides the spec name in the header. */
   readonly title?: string;
+  /**
+   * Number the steps in execution order, as `stepLegend` in `@ccgrapher/core`
+   * numbers them. `"numbers"` puts each number beside its box; `"legend"` also
+   * writes the list under the picture, and the canvas grows to hold it. Off by
+   * default.
+   */
+  readonly steps?: "numbers" | "legend";
 }
 
 const HEADER_HEIGHT = 92;
@@ -74,14 +93,26 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   const graphWidth = showHeader
     ? Math.max(positioned.width, headerWidth(title, positioned.graph.spec.goal, theme))
     : positioned.width;
-  const width = Math.max(graphWidth, regionsWidth(positioned.regions));
-  const height = positioned.height + offsetY;
+  const steps = options.steps ? stepLegend(positioned.graph) : [];
+  const legend = options.steps === "legend" ? legendSize(steps) : { width: 0, height: 0 };
+  const width = Math.max(graphWidth, regionsWidth(positioned.regions), legend.width);
+  const height = positioned.height + offsetY + legend.height;
 
   const body = [
     ...renderRegions(positioned.regions, theme),
     ...positioned.edges.map((edge) => renderEdge(gen, edge, theme, fake.has(`${edge.from}->${edge.to}`))),
     ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id), findingMarks, priorities.get(node.node.id))),
     ...renderSharedWrites(positioned, findingMarks, theme),
+    // Last, so a number is never painted over.
+    ...(steps.length > 0
+      ? renderStepBadges(
+          placeStepBadges(positioned.nodes, steps, obstaclesFor(positioned, fake, findingMarks, priorities), {
+            width,
+            height: positioned.height,
+          }),
+          theme,
+        )
+      : []),
   ].join("\n    ");
 
   const fontFace = (options.embedFont ?? true) ? caveatFontFace() : null;
@@ -109,10 +140,59 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
     `  <g transform="translate(0 ${offsetY})">`,
     `    ${body}`,
     `  </g>`,
+    options.steps === "legend" ? renderLegend(steps, positioned.height + offsetY, theme) : "",
     `</svg>`,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Everything a step number keeps clear of, besides the boxes: what this file draws between them. */
+function obstaclesFor(
+  positioned: PositionedGraph,
+  fake: ReadonlySet<string>,
+  findingMarks: readonly FindingMark[],
+  priorities: ReadonlyMap<string, EffectivePriority>,
+): Obstacles {
+  const ratio = DEFAULT_METRICS.charRatio;
+  const text = (x: number, y: number, size: number, length: number, anchor: "start" | "middle") => {
+    const w = length * size * ratio;
+    const x0 = anchor === "middle" ? x - w / 2 : x;
+    return { x0, y0: y - size * 0.8, x1: x0 + w, y1: y + size * 0.25 };
+  };
+  const shared = sharedWriteRoutes(positioned, findingMarks);
+  const raised = positioned.nodes.filter((n) => priorities.has(n.id));
+  // The urgency disc sits on the urgent step itself; a step that inherits has only the wash.
+  const marked = raised.filter((n) => priorities.get(n.id)!.inheritedFrom === undefined);
+  const corners = (b: MarkBox) => ({ x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height });
+  return {
+    lines: [...positioned.edges.map((e) => e.points), ...shared.map((s) => s.route.points)],
+    rects: [
+      ...positioned.edges
+        .filter((e) => fake.has(`${e.from}->${e.to}`) && e.points.length >= 2)
+        .map((e) => {
+          const mid = e.points[Math.floor(e.points.length / 2)]!;
+          return text(mid.x + 8, mid.y, 14, "carries no data".length, "start");
+        }),
+      ...shared.map((s) => text(s.route.label.x, s.route.label.y - 5, 13, s.label.length, "middle")),
+      ...raised.map((n) => corners(priorityWashBox(extentOf(n)))),
+      ...marked.map((n) => {
+        const disc = priorityDisc(extentOf(n));
+        return { x0: disc.cx - disc.r, y0: disc.cy - disc.r, x1: disc.cx + disc.r, y1: disc.cy + disc.r };
+      }),
+      ...positioned.regions.map((region) => {
+        const x = region.x + REGION_CAPTION_INSET - REGION_CAPTION_GAP;
+        const w = regionCaption(region).length * REGION_CAPTION_SIZE * ratio + REGION_CAPTION_GAP * 2;
+        return { x0: x, y0: region.y - REGION_CAPTION_SIZE / 2, x1: x + w, y1: region.y + REGION_CAPTION_SIZE / 2 };
+      }),
+    ],
+    regions: positioned.regions.map((g) => ({ x0: g.x, y0: g.y, x1: g.x + g.width, y1: g.y + g.height })),
+  };
+}
+
+/** Everything a node draws: the box, and the fan-out stack up and to its right. */
+function extentOf({ node, x, y, width, height }: PositionedNode): MarkBox {
+  return node.fanOut ? { x, y: y - 10, width, height } : { x, y, width, height };
 }
 
 function headerWidth(title: string, goal: string | undefined, theme: Theme): number {
@@ -226,8 +306,7 @@ function renderNode(
   const seed = seedOf(node.id);
   const parts: string[] = [];
 
-  // Everything the node draws: the box, and the fan-out stack up and to its right.
-  const extent = node.fanOut ? { x, y: y - 10, width, height } : { x, y, width, height };
+  const extent = extentOf(positioned);
 
   // First, so it sits behind the stack, the halos and the box. Who set it, or
   // which step needs it, is the node's title: it shows on hover.

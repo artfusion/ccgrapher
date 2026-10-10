@@ -4,10 +4,12 @@ import {
   effectivePriorities,
   priorityCaption,
   renderStyle,
+  stepLegend,
   type EffectivePriority,
   type Graph,
   type NodeKind,
   type NodeSpec,
+  type Step,
 } from "@ccgrapher/core";
 
 export interface MermaidOptions {
@@ -32,6 +34,12 @@ export interface MermaidOptions {
   readonly showCarries?: boolean;
   /** Wrap the output in a ```mermaid fence for pasting into Markdown. */
   readonly fenced?: boolean;
+  /**
+   * Number the steps in execution order, as `stepLegend` in `@ccgrapher/core`
+   * numbers them: the number leads each label, and the legend is a comment
+   * block under the header, one line a step. Off by default.
+   */
+  readonly steps?: boolean;
 }
 
 /** The same shape `render-svg` and `render-excalidraw` take; declared here so this package needs neither. */
@@ -94,9 +102,15 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
 
   if (graph.spec.goal) lines.push(`  %% ${graph.spec.goal}`);
 
+  const steps = options.steps ? stepLegend(graph) : [];
+  lines.push(...legend(steps));
+  const numberOf = new Map(steps.map((s) => [s.id, s.number]));
+
   for (const node of graph.spec.nodes) {
     const [open, close] = SHAPE[node.kind];
-    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id), findingNotes(node.id, findingMarks), priorities.get(node.id))}"${close}`);
+    const number = numberOf.get(node.id);
+    const text = label(node, arriving.get(node.id), findingNotes(node.id, findingMarks), priorities.get(node.id));
+    lines.push(`  ${node.id}${open}"${number ? `${number} · ${text}` : text}"${close}`);
   }
 
   lines.push(...boundaries(graph));
@@ -166,6 +180,16 @@ function boundaries(graph: Graph): string[] {
       `  class ${id} boundary;`,
     ];
   });
+}
+
+/** The steps as a comment block: number, label, and what each takes and gives. */
+function legend(steps: readonly Step[]): string[] {
+  if (steps.length === 0) return [];
+  const width = Math.max(...steps.map((s) => s.number.length));
+  return [
+    "  %% one run, step by step",
+    ...steps.map((s) => `  %% ${s.number.padEnd(width)}  ${s.label} · ${s.line}`),
+  ];
 }
 
 /** A class rather than a `style` line: in this output `style` is kept for findings. */

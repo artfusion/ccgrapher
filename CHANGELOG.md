@@ -16,6 +16,16 @@ private web canvas, which has its own train. Full notes accompany each
   enough to check, but tried against every spec in the repository it fires on all 51 such steps,
   `vote` both before and after the fix among them, because renaming is what a step does. The
   README's guidance on edges now describes the mistake instead.
+- `ccg render --legend` numbers the steps in the order they run and lists them under the picture:
+  number, label, and what each step takes and gives, read from its `in` and `out`. Steps in one
+  wave share a number and a letter each (`2a`, `2b`), so the list says what can run together; a
+  fan-out is listed once, with its cap. In SVG the numbers sit outside the boxes, which do not
+  move, and the canvas grows for the list; HTML lists the steps beside the picture as an HTML list;
+  Mermaid and Excalidraw put the number in each label and the list in a comment or a text element.
+  `--pair --legend` numbers each picture by its own waves. Off by default, and deterministic.
+- `@ccgrapher/core` exports `stepLegend`, which the renderers share. `renderSvg` takes
+  `steps: "numbers" | "legend"`, `wrapHtml` takes `steps`, and the Mermaid and Excalidraw renderers
+  take `steps: true`.
 
 - A node can say it is urgent: `priority: urgent | high | normal`, and `prioritySetBy:` for who
   asked, one line of free text. Both optional, and `version` stays 1. It is a scheduling hint and
