@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { join, resolve, sep } from "node:path";
 import { isTraceEvent, type TraceLine } from "@ccgrapher/trace";
 import { followTrace } from "@ccgrapher/trace/node";
+import { DraftingError, MAX_DRAFT_BODY_BYTES, type Drafter } from "./drafting.js";
 
 /**
  * A read-only HTTP window onto a directory of trace files.
@@ -79,7 +80,18 @@ export interface ServeOptions {
   /** How often `followTrace` looks for appended bytes. */
   readonly pollMs?: number;
   readonly resolveGate?: GateResolver;
+  /**
+   * Turns a brain dump into checked candidate steps (see drafting.ts). Absent
+   * unless `ccg serve --drafting` found a key; while it is absent, `POST /draft`
+   * is a 404 that says how to turn it on.
+   */
+  readonly draft?: Drafter;
 }
+
+/** What a canvas is told when it asks a server that was not started to draft. */
+export const DRAFTING_OFF =
+  "drafting is off on this server. Start it with `ccg serve <dir> --drafting` and ANTHROPIC_API_KEY " +
+  "in its environment; the key stays with the server and never reaches the browser.";
 
 /** What `/runs` knows without opening a single file. */
 export interface RunSummary {
@@ -211,6 +223,7 @@ export async function startTraceServer(options: ServeOptions): Promise<TraceServ
     host = "127.0.0.1",
     origin = DEFAULT_ORIGIN,
     pollMs,
+    draft,
   } = options;
   let resolveGate = options.resolveGate;
 
@@ -235,13 +248,13 @@ export async function startTraceServer(options: ServeOptions): Promise<TraceServ
     res.end(payload);
   }
 
-  async function readBody(req: IncomingMessage): Promise<string | undefined> {
+  async function readBody(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<string | undefined> {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of req) {
       const buffer = chunk as Buffer;
       size += buffer.length;
-      if (size > MAX_BODY_BYTES) return undefined;
+      if (size > limit) return undefined;
       chunks.push(buffer);
     }
     return Buffer.concat(chunks).toString("utf8");
@@ -361,6 +374,33 @@ export async function startTraceServer(options: ServeOptions): Promise<TraceServ
     sendJson(res, 202, { run: id, node, decision: decision.decision });
   }
 
+  async function draftCandidates(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!draft) {
+      sendJson(res, 404, { error: DRAFTING_OFF });
+      return;
+    }
+    const body = await readBody(req, MAX_DRAFT_BODY_BYTES);
+    if (body === undefined) {
+      sendJson(res, 413, { error: `a drafting request must be under ${MAX_DRAFT_BODY_BYTES} bytes` });
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      sendJson(res, 400, { error: "body is not valid JSON" });
+      return;
+    }
+    try {
+      sendJson(res, 200, await draft(parsed));
+    } catch (cause) {
+      // The drafter redacts its own errors; anything else is reported by status
+      // alone, so no message this server did not write can carry a secret out.
+      if (cause instanceof DraftingError) sendJson(res, cause.status, { error: cause.message });
+      else sendJson(res, 500, { error: "drafting failed unexpectedly" });
+    }
+  }
+
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -387,6 +427,11 @@ export async function startTraceServer(options: ServeOptions): Promise<TraceServ
 
     if (req.method === "POST" && parts.length === 4 && parts[0] === "runs" && parts[2] === "gates") {
       await decideGate(req, res, parts[1]!, parts[3]!);
+      return;
+    }
+
+    if (req.method === "POST" && parts.length === 1 && parts[0] === "draft") {
+      await draftCandidates(req, res);
       return;
     }
 

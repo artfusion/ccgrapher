@@ -40,6 +40,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@ccgrapher/codegen": "workspace:*",
     "@ccgrapher/core": "workspace:*",
     "@ccgrapher/ingest": "workspace:*",

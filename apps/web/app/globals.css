@@ -1637,3 +1637,292 @@ footer {
     border-top: 1px solid var(--rule);
   }
 }
+
+/* ---- hopper --------------------------------------------------------------- */
+
+/*
+ * A drafted step, shown from the hopper and not yet in the spec: pencil rather
+ * than pen. Faded and hatched, with a dashed border in the muted ink, so it
+ * cannot be mistaken for a gate (dashed in full ink) or a step that exists.
+ */
+.spec-node.ghost {
+  opacity: 0.62;
+  border-style: dashed !important;
+  border-color: var(--muted) !important;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 7px,
+    rgba(138, 129, 122, 0.12) 7px 8px
+  ) !important;
+}
+
+/*
+ * The panel sits over the top left of the canvas, folded to one line until it
+ * is opened, so the drawing keeps its room. The fit button keeps the top right.
+ */
+.hopper {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  width: min(560px, calc(100% - 96px));
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fffdf9;
+  box-shadow: 0 2px 10px rgba(43, 39, 36, 0.08);
+}
+
+.hopper-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+}
+
+.hopper-head h2 {
+  margin: 0;
+  font: 600 20px/1.1 var(--hand);
+}
+
+.hopper button {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hopper button.ghost,
+.hopper .hopper-toggle {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--rule);
+  font-weight: 400;
+}
+
+.hopper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hopper button:focus-visible,
+.hopper textarea:focus-visible,
+.hopper input:focus-visible,
+.hopper h3:focus-visible,
+.hopper h4:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hopper h3:focus,
+.hopper h4:focus {
+  outline: none;
+}
+
+.hopper-narration {
+  margin: 0;
+  padding: 0 10px;
+  color: var(--done);
+  font-size: 13px;
+}
+
+.hopper-narration:not(:empty) {
+  padding-bottom: 6px;
+}
+
+.hopper-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 10px 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.hopper-body[hidden] {
+  display: none;
+}
+
+.hopper form label {
+  display: block;
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hopper textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+  font: 13px/1.5 ui-sans-serif, system-ui, sans-serif;
+  resize: vertical;
+}
+
+.hopper-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.hopper-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hopper-state {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.hopper-state.bad {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.hopper-parse h3 {
+  margin: 12px 0 2px;
+  font: 600 20px/1.1 var(--hand);
+}
+
+.hopper-parse h4 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
+.hopper-summary {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hopper-ghosts {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.hopper-cards,
+.hopper-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hopper-card {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1.5px dashed var(--muted);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.hopper-card.status-accepted {
+  border-style: solid;
+  border-color: var(--done);
+}
+
+.hopper-card.status-rejected {
+  border-color: var(--danger);
+  background: #fdf6f4;
+}
+
+.hopper-card h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 2px;
+  color: var(--ink);
+  font: 600 18px/1.15 var(--hand);
+  text-transform: none;
+}
+
+.hopper-status {
+  margin-left: auto;
+  font: 11px/1 var(--mono);
+  color: var(--muted);
+}
+
+.status-accepted .hopper-status {
+  color: var(--done);
+}
+
+.status-rejected .hopper-status {
+  color: var(--danger);
+}
+
+.hopper-card p {
+  margin: 3px 0;
+}
+
+.hopper-shape {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.hopper-why q,
+.hopper-list q {
+  color: var(--muted);
+}
+
+.hopper .tag {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font: 10px/1.6 var(--mono);
+  color: var(--muted);
+}
+
+.hopper-placed {
+  color: var(--done);
+}
+
+.hopper-reason {
+  color: var(--danger);
+}
+
+.hopper-findings {
+  margin: 4px 0;
+  padding-left: 16px;
+}
+
+.hopper-findings .rule {
+  font: 10px var(--mono);
+  color: var(--waiting);
+}
+
+.hopper-findings li.error .rule {
+  color: var(--danger);
+}
+
+.hopper-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hopper-list li {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+
+.hopper-list .why {
+  color: var(--muted);
+}
