@@ -402,8 +402,7 @@ offline runs and tests.
 
 ## Running a spec
 
-The spec is not only a picture. `ccg run` executes it, one rank at a time, and writes a trace of
-what actually happened:
+The spec is not only a picture. `ccg run` executes it and writes a trace of what actually happened:
 
 ```bash
 ccg run examples/live-demo.yaml --impl examples/live-demo.impl.mjs
@@ -433,7 +432,24 @@ and a trace is a record rather than something to write over.
 ```bash
 ccg run spec.yaml --impl impl.mjs --serve         # a canvas can watch, and answer gates over HTTP
 ccg run spec.yaml --impl impl.mjs --timeout 300   # give up on any one node after five minutes
+ccg run spec.yaml --impl impl.mjs --concurrency 3 # at most three node calls at once
 ```
+
+**When a step starts.** A step starts as soon as every step it has an edge from has finished and
+delivered, and its `expects` guard is met. It does not wait for the rest of its wave. The waves
+`ccg plan` prints say what *may* run together; they are not a barrier, so one slow step holds up
+only the steps that need its output. Without `--concurrency` there is no limit, and everything
+ready starts at once. With it, each node call takes a slot (a fanned node takes one per instance;
+a gate waiting on a human and a skipped node take none), and when more is ready than there are
+slots, the lower rank goes first, then the order of the spec. That order is also how steps that
+become ready together are started, so a run's trace comes out the same each time. A node's
+timeout runs from the moment it gets its slot, not from when it became ready.
+
+**When a step fails.** Its descendants are skipped, each with a `node_failed` that names the input
+that never arrived, and they are skipped the moment the failure is known. Branches that do not
+depend on it carry on to the end. An unmet `expects` guard, or a gate nobody can answer, stops the
+run: nothing new starts, what is already running is allowed to finish and is recorded, and then
+the run ends.
 
 **Gates.** With `--serve` the run embeds the trace server in its own process and a gate waits for a
 `POST /runs/<id>/gates/<node>`. Without it, the run asks on the terminal. If neither is possible,

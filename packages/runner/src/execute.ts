@@ -17,6 +17,7 @@ import type {
   NodeReport,
   RunResult,
 } from "./types.js";
+import { readyOrder, type ReadyStep } from "./schedule.js";
 
 /** An event minus the envelope, which is the engine's to fill in. */
 type WithoutEnvelope<T> = T extends unknown ? Omit<T, "v" | "runId" | "seq" | "ts"> : never;
@@ -25,15 +26,27 @@ type EventInput = WithoutEnvelope<TraceEvent>;
 /** What one attempt at a node came back with. Never a rejection: `runOnce` catches its own. */
 type Attempt = { ok: true; output: unknown } | { ok: false; error: string };
 
+/** A ready step, together with what it will be handed when it gets a slot. */
+interface Queued extends ReadyStep {
+  readonly inputs: readonly Arrival[];
+  readonly of?: number;
+}
+
 /**
  * Walk a graph and run it.
  *
- * The shape of the walk is not a choice this package makes. `rankGraph` already
- * decided which nodes can run together, and the whole premise of the repo is
- * that the picture and the execution are the same fact stated twice — so the
- * engine takes the ranks and runs each one as a wave. It does not consult
- * `@ccgrapher/codegen`, which computes its own stages from the same ranks; two
- * readers of one source cannot drift, but two implementations of one walk can.
+ * A step starts the moment every node it has an edge from has settled and
+ * delivered, not when the rest of its rank has finished. The ranks `rankGraph`
+ * computes are still the truth about what *may* run together, and they order
+ * the ready queue, but they are not a barrier: a step whose inputs arrived early
+ * does not wait for a slow step it has no edge from. A barrier per rank would
+ * spend exactly the time the linter exists to recover.
+ *
+ * `concurrency` bounds how many executor calls are in flight at once, and is
+ * unbounded unless the caller says otherwise. When more is ready than there are
+ * slots, `readyOrder` decides who goes next; it also fixes the order in which
+ * steps that became ready together are started, so a run's trace is
+ * reproducible.
  *
  * Everything that touches the world is injected: the executor, the gate
  * resolver, the clock, the event sink. There is no fs, no network, no process
@@ -42,7 +55,8 @@ type Attempt = { ok: true; output: unknown } | { ok: false; error: string };
  *
  * Resolves with a `RunResult` for every ordinary outcome, including a run where
  * nodes failed. It rejects only when the run could not honestly continue: an
- * unmet `expects` guard, or a gate nobody can answer. In both cases
+ * unmet `expects` guard, or a gate nobody can answer. From that point nothing
+ * new starts, steps already running are allowed to finish and are reported, and
  * `run_finished` is emitted before the rejection, so a trace is never left
  * without an ending.
  */
@@ -51,6 +65,16 @@ export async function execute(
   executor: NodeExecutor,
   options: ExecuteOptions,
 ): Promise<RunResult> {
+  const { concurrency } = options;
+  if (
+    concurrency !== undefined &&
+    concurrency !== Number.POSITIVE_INFINITY &&
+    !(Number.isInteger(concurrency) && concurrency >= 1)
+  ) {
+    // Refused before `run_started`: a limit of zero would start nothing and
+    // wait for ever, and that is not a run worth writing a trace for.
+    throw new RangeError(`concurrency must be a whole number of at least 1, not ${concurrency}`);
+  }
   const now = options.now ?? Date.now;
   const args = options.args ?? {};
   const startedAt = now();
@@ -196,7 +220,56 @@ export async function execute(
     };
   };
 
-  const runNode = async (node: NodeSpec): Promise<void> => {
+  const { rank } = rankGraph(graph);
+  const order = new Map([...graph.nodes.keys()].map((id, index) => [id, index]));
+  const limit = options.concurrency ?? Number.POSITIVE_INFINITY;
+
+  /** For each node, how many of the distinct nodes it has an edge from have not settled yet. */
+  const unsettled = new Map<string, number>();
+  for (const id of graph.nodes.keys()) {
+    unsettled.set(id, new Set((graph.inbound.get(id) ?? []).map((edge) => edge.from)).size);
+  }
+
+  const stepOf = (id: string, instance?: number): ReadyStep => ({
+    node: graph.nodes.get(id)!,
+    rank: rank.get(id) ?? 0,
+    order: order.get(id) ?? 0,
+    instance,
+  });
+
+  /** Ready and waiting for a slot. Reordered by `readyOrder` every time slots are handed out. */
+  const queue: Queued[] = [];
+  /** A fanned node's attempts by instance, until the last of them comes back. */
+  const fanned = new Map<string, { attempts: Attempt[]; left: number }>();
+  /** Executor calls in flight. This is what `concurrency` bounds. */
+  let running = 0;
+  /** Executor calls plus gates awaiting a decision. The run is over when this is zero and nothing is queued. */
+  let open = 0;
+  let fatal: Error | undefined;
+
+  let drained!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    drained = resolve;
+  });
+
+  /**
+   * The run cannot honestly continue. Nothing new starts from here, and what is
+   * queued is dropped, so it is absent from the result rather than invented.
+   * What is already running is left to finish: abandoning it would leave a
+   * `node_started` in the trace that nothing ever closes.
+   */
+  const stop = (error: unknown): void => {
+    fatal ??= error instanceof Error ? error : new Error(messageOf(error));
+    queue.length = 0;
+  };
+
+  /**
+   * Every node this one has an edge from has settled, so decide what becomes
+   * of it: stop the run on a short guard, skip it for want of an input, wait on
+   * a gate, or queue it for a slot. Only the last of those takes a slot.
+   */
+  const admit = (node: NodeSpec): void => {
+    if (fatal) return;
     const inputs: Arrival[] = [];
     const absent: string[] = [];
 
@@ -232,78 +305,133 @@ export async function execute(
      * `@ccgrapher/core` is the statement all three answer to.
      */
     if (node.expects !== undefined && inputs.length < node.expects) {
-      throw new ExpectsError(node.id, node.expects, inputs.length);
+      stop(new ExpectsError(node.id, node.expects, inputs.length));
+      return;
     }
 
     if (absent.length > 0) {
       // Not run with a hole in its input. An executor handed three of five
       // inputs and no way to tell would report on partial data as though it
-      // were whole, which is the failure this project is about.
+      // were whole, which is the failure this project is about. Reported the
+      // moment it is known, not when unrelated work around it has finished.
       const error = `skipped: no result from ${absent.join(", ")}`;
       emit({ type: "node_failed", node: node.id, error });
       reports.set(node.id, { id: node.id, outcome: "skipped", results: [], error });
+      settle(node.id);
       return;
     }
 
     if (node.kind === "gate") {
-      reports.set(node.id, await runGate(node, inputs));
+      // No slot: a human deciding is not work in progress. And only this gate's
+      // own descendants wait on the answer, since nothing else has an edge from it.
+      open += 1;
+      void runGate(node, inputs)
+        .then((report) => {
+          reports.set(node.id, report);
+          settle(node.id);
+        })
+        .catch(stop)
+        .finally(() => {
+          open -= 1;
+          pump();
+        });
       return;
     }
 
-    if (node.fanOut) {
-      // `cap` is the only count the spec commits to. The item list lives inside
-      // an upstream output whose shape this package deliberately knows nothing
-      // about, so an uncapped fanOut runs once rather than having a count
-      // guessed for it.
-      const of = node.fanOut.cap ?? 1;
-      const attempts = await Promise.all(
-        Array.from({ length: of }, (_, instance) => runOnce(node, inputs, instance, of)),
-      );
-
-      const results: Delivery[] = [];
-      const failures: string[] = [];
-      attempts.forEach((attempt, instance) => {
-        if (attempt.ok) results.push({ instance, output: attempt.output });
-        else failures.push(attempt.error);
-      });
-
-      // Matches the fold's `partial`: some landed, some did not, and what landed
-      // still goes downstream. Whether that is enough is `expects`'s question.
-      const outcome = failures.length === 0 ? "done" : results.length === 0 ? "failed" : "partial";
-      reports.set(node.id, {
-        id: node.id,
-        outcome,
-        results,
-        error: failures.length === 0 ? undefined : failures.join("; "),
-      });
+    if (!node.fanOut) {
+      queue.push({ ...stepOf(node.id), inputs });
       return;
     }
-
-    const attempt = await runOnce(node, inputs);
-    reports.set(
-      node.id,
-      attempt.ok
-        ? { id: node.id, outcome: "done", results: [{ output: attempt.output }] }
-        : { id: node.id, outcome: "failed", results: [], error: attempt.error },
-    );
+    // `cap` is the only count the spec commits to. The item list lives inside
+    // an upstream output whose shape this package deliberately knows nothing
+    // about, so an uncapped fanOut runs once rather than having a count
+    // guessed for it. Each instance is a step of its own and takes its own slot.
+    const of = node.fanOut.cap ?? 1;
+    fanned.set(node.id, { attempts: [], left: of });
+    for (let instance = 0; instance < of; instance++) {
+      queue.push({ ...stepOf(node.id, instance), inputs, of });
+    }
   };
 
-  let fatal: Error | undefined;
-
-  for (const layer of rankGraph(graph).layers) {
-    // `allSettled`, so one node blowing up does not cancel the siblings it has
-    // no relationship with. They are on the same rank precisely because nothing
-    // connects them, and killing them would invent a dependency the graph denies.
-    const settled = await Promise.allSettled(
-      layer.map((id) => runNode(graph.nodes.get(id)!)),
-    );
-    for (const outcome of settled) {
-      if (outcome.status === "rejected" && fatal === undefined) {
-        fatal = outcome.reason instanceof Error ? outcome.reason : new Error(messageOf(outcome.reason));
-      }
+  /** A node has its report. Whatever was waiting only on it is admitted, in ready order. */
+  const settle = (id: string): void => {
+    const ready: ReadyStep[] = [];
+    for (const to of new Set((graph.outbound.get(id) ?? []).map((edge) => edge.to))) {
+      const left = unsettled.get(to)! - 1;
+      unsettled.set(to, left);
+      if (left === 0) ready.push(stepOf(to));
     }
-    if (fatal) break;
-  }
+    for (const step of ready.sort(readyOrder)) admit(step.node);
+  };
+
+  /** One executor call came back. A fanned node settles only when its last instance has. */
+  const land = (step: Queued, attempt: Attempt): void => {
+    const id = step.node.id;
+    if (step.of === undefined) {
+      reports.set(
+        id,
+        attempt.ok
+          ? { id, outcome: "done", results: [{ output: attempt.output }] }
+          : { id, outcome: "failed", results: [], error: attempt.error },
+      );
+      settle(id);
+      return;
+    }
+
+    const fan = fanned.get(id)!;
+    fan.attempts[step.instance ?? 0] = attempt;
+    fan.left -= 1;
+    if (fan.left > 0) return;
+
+    const results: Delivery[] = [];
+    const failures: string[] = [];
+    fan.attempts.forEach((each, instance) => {
+      if (each.ok) results.push({ instance, output: each.output });
+      else failures.push(each.error);
+    });
+
+    // Matches the fold's `partial`: some landed, some did not, and what landed
+    // still goes downstream. Whether that is enough is `expects`'s question.
+    const outcome = failures.length === 0 ? "done" : results.length === 0 ? "failed" : "partial";
+    reports.set(id, {
+      id,
+      outcome,
+      results,
+      error: failures.length === 0 ? undefined : failures.join("; "),
+    });
+    settle(id);
+  };
+
+  /**
+   * Hand free slots to ready steps, best first. The only place work starts.
+   *
+   * `node_started` is emitted synchronously inside `runOnce`, so the order this
+   * loop starts steps in is the order the trace records them.
+   */
+  const pump = (): void => {
+    queue.sort(readyOrder);
+    while (!fatal && running < limit && queue.length > 0) {
+      const step = queue.shift()!;
+      running += 1;
+      open += 1;
+      void runOnce(step.node, step.inputs, step.instance, step.of)
+        .then((attempt) => land(step, attempt))
+        // `runOnce` keeps the executor's failures to itself. What reaches here
+        // is the engine refusing to record something, which is not survivable.
+        .catch(stop)
+        .finally(() => {
+          running -= 1;
+          open -= 1;
+          pump();
+        });
+    }
+    if (open === 0) drained();
+  };
+
+  const roots = [...graph.nodes.keys()].filter((id) => unsettled.get(id) === 0);
+  for (const step of roots.map((id) => stepOf(id)).sort(readyOrder)) admit(step.node);
+  pump();
+  await finished;
 
   const problems = [...reports.values()].filter((report) => report.outcome !== "done");
   const ok = fatal === undefined && problems.length === 0;

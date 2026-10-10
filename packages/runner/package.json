@@ -2,7 +2,7 @@
   "name": "@ccgrapher/runner",
   "version": "0.5.0",
   "type": "module",
-  "description": "The pure execution engine: walks a workflow graph rank by rank, enforces the fan-in guards, and emits the trace contract.",
+  "description": "The pure execution engine: starts each step of a workflow graph the moment its inputs exist, enforces the fan-in guards, and emits the trace contract.",
   "keywords": [
     "agent",
     "workflow",
@@ -47,5 +47,8 @@
   "dependencies": {
     "@ccgrapher/core": "workspace:*",
     "@ccgrapher/trace": "workspace:*"
+  },
+  "devDependencies": {
+    "@ccgrapher/lint": "workspace:*"
   }
 }

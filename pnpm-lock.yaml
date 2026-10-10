@@ -224,6 +224,10 @@ importers:
       '@ccgrapher/trace':
         specifier: workspace:*
         version: link:../trace
+    devDependencies:
+      '@ccgrapher/lint':
+        specifier: workspace:*
+        version: link:../lint
 
   packages/trace:
     dependencies:

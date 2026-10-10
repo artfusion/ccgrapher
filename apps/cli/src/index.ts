@@ -74,6 +74,7 @@ Run options:
   --serve           embed the trace server: watch live, answer gates over HTTP
   --port <n>        port for --serve (default 3211; 0 asks the OS)
   --timeout <s>     give up on any one node after this many seconds
+  --concurrency <n> run at most n node calls at once (default: no limit)
 
 Serve options:
   --port <n>        0 asks the OS for a free port (default 3211)

@@ -87,7 +87,7 @@ describe("a run that goes to plan", () => {
     ],
   );
 
-  it("emits one wave per rank, in rank order", async () => {
+  it("starts each step once its inputs exist, siblings in spec order", async () => {
     const { events, emit } = collect();
     const result = await execute(graph, executorOf(), {
       runId: "r1",
