@@ -41,3 +41,19 @@ export {
   type Repair,
   type LintResult,
 } from "./types.js";
+export {
+  changeLedger,
+  ledgerSections,
+  formatLedger,
+  LEDGER_FIELDS,
+  type Ledger,
+  type LedgerTotals,
+  type LedgerStep,
+  type LedgerField,
+  type LedgerFinding,
+  type LedgerSection,
+  type EdgeChange,
+  type GuardChange,
+  type FieldChange,
+  type WaveMove,
+} from "./ledger.js";

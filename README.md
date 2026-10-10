@@ -351,6 +351,46 @@ it draws the graph as written and then repaired. With two it draws each as writt
 hand revision shows up: `--fix` moves edges, it never adds an `expects` guard, so adding one is a
 change you pair by hand. `--pair` needs `-o` and cannot be combined with `--fix`.
 
+The pair shows the shape; it does not say what moved. `ccg diff` does, in words, from the same one
+or two specs:
+
+```bash
+ccg diff examples/release-session.yaml          # as written against its repair
+ccg diff draft.yaml revised.yaml                # two specs, before then after
+ccg diff draft.yaml revised.yaml --json         # the same change list, as data
+ccg render --pair draft.yaml revised.yaml --ledger -o plan.html   # plus plan-ledger.html
+```
+
+```text
+release-session
+  12 to 5 waves, widest wave 1 to 6 steps
+  12 steps, 18 edges
+6 edges repointed
+  pr_hotfix -> pr_landing becomes scope -> pr_landing, carrying brief
+  ...
+10 steps moved
+  ...
+  ci from wave 11 to wave 4 (7 waves earlier)
+  release from wave 12 to wave 5 (7 waves earlier)
+12 findings resolved
+  FAKE_EDGE pr_hotfix -> pr_landing
+  ...
+```
+
+The ledger lists steps added and removed, edges added, removed, repointed (an edge into the same
+step that now comes from elsewhere, which is what `--fix` does) or carrying something else, count
+guards added, removed or changed, any other declaration of a step that changed (its kind, tier,
+`in`, `out`, `writes`, `uses`, priority, boundary and the rest), the wave each step moved from and
+to, and the lint findings each spec has as written that the other does not. Steps are matched by
+id, so a renamed step reads as one removed and one added. Two specs that say the same thing give
+"no changes". It is worked out from the specs, never written by hand, and the same pair always
+gives the same ledger.
+
+`--ledger` with `--pair` writes it beside the pictures, never into them: for HTML a third page,
+`-ledger.html`, with the before, the changes and the after side by side (stacked on a narrow
+screen); for every other format a text file, `-ledger.txt`. `ccg diff` exits 0 whatever it finds;
+`ccg lint` says whether either spec is sound.
+
 Every node that declares `expects` carries the count, bottom right. Every lint rule has a mark,
 so the picture is the lint report:
 

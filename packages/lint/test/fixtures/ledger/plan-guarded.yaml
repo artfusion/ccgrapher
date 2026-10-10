@@ -1,0 +1,79 @@
+# plan-unguarded.yaml revised by hand: a count guard on each of its three fan-ins.
+version: 1
+name: release-plan
+goal: "two changes, their docs, one release"
+
+nodes:
+  - id: scope
+    label: pick the scope
+    kind: split
+    model: null
+    in:  { backlog: string }
+    out: { brief: string }
+
+  - id: api_auth
+    label: auth endpoint
+    kind: worker
+    in:  { brief: string }
+    out: { auth: patch }
+
+  - id: api_rate
+    label: rate limits
+    kind: worker
+    in:  { brief: string }
+    out: { rate: patch }
+
+  - id: merge_api
+    label: merge the API work
+    kind: reduce
+    model: null
+    expects: 2
+    in:  { auth: patch, rate: patch }
+    out: { api: patch }
+
+  - id: ui_login
+    label: login screen
+    kind: worker
+    in:  { brief: string }
+    out: { login: patch }
+
+  - id: ui_usage
+    label: usage page
+    kind: worker
+    in:  { brief: string }
+    out: { usage: patch }
+
+  - id: merge_ui
+    label: merge the UI work
+    kind: reduce
+    model: null
+    expects: 2
+    in:  { login: patch, usage: patch }
+    out: { ui: patch }
+
+  - id: docs
+    label: write the docs
+    kind: worker
+    in:  { brief: string }
+    out: { docs: page }
+
+  - id: release
+    label: cut the release
+    kind: synthesize
+    expects: 3
+    in:  { api: patch, ui: patch, docs: page }
+    out: { tag: string }
+
+edges:
+  - { from: scope,    to: api_auth,  carries: [brief] }
+  - { from: scope,    to: api_rate,  carries: [brief] }
+  - { from: scope,    to: ui_login,  carries: [brief] }
+  - { from: scope,    to: ui_usage,  carries: [brief] }
+  - { from: scope,    to: docs,      carries: [brief] }
+  - { from: api_auth, to: merge_api, carries: [auth] }
+  - { from: api_rate, to: merge_api, carries: [rate] }
+  - { from: ui_login, to: merge_ui,  carries: [login] }
+  - { from: ui_usage, to: merge_ui,  carries: [usage] }
+  - { from: merge_api, to: release,  carries: [api] }
+  - { from: merge_ui,  to: release,  carries: [ui] }
+  - { from: docs,      to: release,  carries: [docs] }
