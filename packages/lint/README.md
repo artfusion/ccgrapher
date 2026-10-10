@@ -10,11 +10,13 @@ console.log(formatReport(graph, result));
 console.log(result.layersBefore, "->", result.layersAfter);
 ```
 
-Nine rules: `FAKE_EDGE`, `MISSING_INPUT`, `AUTHORITY_BREACH`, `HIDDEN_EDGE`,
-`SELF_GRADING`, `CONTEXT_COLLAPSE`, `SILENT_FAILURE`, `DUPLICATE_EFFECT`,
-`EARLY_COMMIT`. The last two, and the store form of `AUTHORITY_BREACH`, read
-what a spec says one run hands the next: its schedule, its stores and the
-effects its steps perform. They detect and do not repair.
+Eleven rules: `FAKE_EDGE`, `MISSING_INPUT`, `AUTHORITY_BREACH`, `HIDDEN_EDGE`,
+`SELF_GRADING`, `MONOCULTURE`, `CONTEXT_COLLAPSE`, `SILENT_FAILURE`,
+`DUPLICATE_EFFECT`, `EARLY_COMMIT`, `TIER_MISMATCH`. `DUPLICATE_EFFECT`,
+`EARLY_COMMIT` and the store form of `AUTHORITY_BREACH` read what a spec says
+one run hands the next: its schedule, its stores and the effects its steps
+perform. `MONOCULTURE` and `TIER_MISMATCH` read who does the work: the model
+tier, and the `agent:` a step declares in `uses`. None of these repairs.
 
 Lint runs twice. Some problems only become visible after repair — two nodes that
 collide on a file may be a rank apart until the fake edge between them is gone —

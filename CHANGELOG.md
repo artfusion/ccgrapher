@@ -7,6 +7,20 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- Who does the work is now checked as well as drawn. `MONOCULTURE` (warn) fires on a verifier
+  that checks work done on its own tier, or by the same declared `agent:`: a shared model shares
+  blind spots, and a fresh context does not change that. The work it checks is what reaches it
+  along edges that carry something, seen through plain code. An unspecified tier never matches.
+  `TIER_MISMATCH` (warn) fires on a fanned-out worker on the strong tier, or a cheap tier on the
+  first synthesize step below a fan-out. It is advice, and on by default, since no example as
+  written trips it.
+- Each has a mark: the verifier ringed with `cheap checks cheap` or `same agent: reviewer`, the
+  step ringed with `strong per item` or `cheap synthesis`. Mermaid and Excalidraw note the same.
+- `examples/self-grading.yaml` now reports `MONOCULTURE` as well: its cheap verifier grades two
+  cheap drafters. No other example changes.
+- Findings gain optional `tier` and `agent` fields, so `lint --json` output changes where these
+  rules fire. `@ccgrapher/lint` exports `monocultures`, `tierMismatches` and `producers`.
+
 - `ccg run --managed-agents <dir>` runs each model node as a Claude Managed Agents session, using
   the agent and environment ids in `<dir>/claude-lock.json`. Plain-code steps still come from
   `--impl`, an export for a model node wins over its session, and the runner keeps the order, the

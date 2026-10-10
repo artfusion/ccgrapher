@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  agentTypes,
   ancestors,
   effectiveInboundCount,
   hasPath,
+  renderStyle,
   roots,
   type EdgeSpec,
   type Graph,
@@ -163,6 +165,142 @@ export function selfGrading(graph: Graph, phase: Phase): Finding[] {
       ),
     );
 }
+
+/**
+ * Walk back from `id` along every inbound edge that carries something real,
+ * stopping at the first node on each path that `stopsAt` accepts and returning
+ * those, in spec order. A fake edge carries nothing, so nothing arrives along it.
+ */
+function firstUpstream(graph: Graph, id: string, stopsAt: (node: NodeSpec) => boolean): NodeSpec[] {
+  const seen = new Set<string>([id]);
+  const found = new Set<string>();
+  const visit = (target: string) => {
+    for (const edge of graph.inbound.get(target) ?? []) {
+      if (seen.has(edge.from) || effectiveCarries(graph, edge).length === 0) continue;
+      seen.add(edge.from);
+      const source = graph.nodes.get(edge.from)!;
+      if (stopsAt(source)) found.add(source.id);
+      else visit(source.id);
+    }
+  };
+  visit(id);
+  return graph.spec.nodes.filter((n) => found.has(n.id));
+}
+
+/**
+ * The steps whose work a node is handed, seen through plain code. A code step
+ * (`model: null`) that dedupes or concatenates changes nothing about whose
+ * judgement arrives, so the walk goes on past it to the steps behind. It stops
+ * at anything else: a model step of any tier or none, or a gate, since a
+ * person is not code.
+ */
+export function producers(graph: Graph, id: string): NodeSpec[] {
+  return firstUpstream(graph, id, (n) => renderStyle(n) !== "code");
+}
+
+/**
+ * A verifier on the same model as the work it checks. A shared model shares
+ * blind spots, so the check agrees with the mistake it was there to catch.
+ * SELF_GRADING asks whether the two share a context; this asks whether they
+ * share a model, and a fresh context does not answer it.
+ *
+ * The spec names a tier and never a model id, and a target resolves each tier
+ * to one model, so two steps on one tier run on one model. Same tier counts;
+ * an unspecified tier never does, since unknown is not equal to anything, and
+ * plain code has no model to share. The same declared `agent:<type>` counts
+ * whatever the tiers, since one agent definition is one model and one prompt.
+ */
+export function monocultures(graph: Graph, phase: Phase): Finding[] {
+  const out: Finding[] = [];
+  for (const verifier of graph.spec.nodes) {
+    if (verifier.kind !== "verifier") continue;
+    const tier = verifier.model ?? undefined;
+    const agents = agentTypes(verifier);
+
+    const sameTier: string[] = [];
+    const sameAgent: string[] = [];
+    let agent: string | undefined;
+    for (const step of producers(graph, verifier.id)) {
+      if (tier !== undefined && step.model === tier) sameTier.push(step.id);
+      const shared = agentTypes(step).find((a) => agents.includes(a));
+      if (shared !== undefined) {
+        sameAgent.push(step.id);
+        agent ??= shared;
+      }
+    }
+    if (sameTier.length === 0 && sameAgent.length === 0) continue;
+
+    // The agent is the narrower claim, so it leads when both hold.
+    const steps = [...new Set([...sameAgent, ...sameTier])];
+    const what = [
+      ...(agent !== undefined ? [`${listed(sameAgent)} as the same agent, '${agent}'`] : []),
+      ...(sameTier.length > 0 ? [`${listed(sameTier)} on the same tier, ${tier}`] : []),
+    ].join(", and ");
+    out.push({
+      ...finding(
+        "MONOCULTURE",
+        phase,
+        `verifier ${verifier.id} checks ${what}; a shared model shares blind spots, so give the check a different tier or agent`,
+        [verifier.id, ...steps],
+      ),
+      ...(sameTier.length > 0 && { tier: tier! }),
+      ...(agent !== undefined && { agent }),
+    });
+  }
+  return out;
+}
+
+/**
+ * The tiers the wrong way round for a fan-out. The usual shape is many cheap
+ * readers and one strong step to put their results together: a strong tier on
+ * a fanned worker pays the strong price once per item for reading, and a cheap
+ * tier on the synthesize step that puts fanned results together leaves the
+ * hardest step to the weakest model.
+ *
+ * Fanned means `fanOut`. The step that puts the results together is the first
+ * synthesize step below the fan-out: plain code, verifiers and other steps in
+ * between filter or check rather than combine. A synthesize step further down
+ * is handed what that one already combined, and is not judged here.
+ *
+ * Advice rather than a defect, since a strong reader over a handful of hard
+ * documents can be a fair choice. So it is a warning, which leaves the exit
+ * code alone. On by default: no example as written trips it.
+ */
+export function tierMismatches(graph: Graph, phase: Phase): Finding[] {
+  const out: Finding[] = [];
+  for (const node of graph.spec.nodes) {
+    if (node.kind === "worker" && node.fanOut && node.model === "strong") {
+      out.push({
+        ...finding(
+          "TIER_MISMATCH",
+          phase,
+          `${node.id} runs once per ${node.fanOut.over} on the strong tier; reading fanned out is usually cheap work, and the strong tier pays where the results are combined`,
+          [node.id],
+        ),
+        tier: "strong",
+      });
+    }
+    if (node.kind === "synthesize" && node.model === "cheap") {
+      const fanned = firstUpstream(graph, node.id, (n) => n.fanOut !== undefined || n.kind === "synthesize").filter(
+        (n) => n.fanOut !== undefined,
+      );
+      if (fanned.length === 0) continue;
+      out.push({
+        ...finding(
+          "TIER_MISMATCH",
+          phase,
+          `${node.id} combines what ${listed(fanned.map((n) => n.id))} fanned out, on the cheap tier; putting many results together is where the strong tier pays`,
+          [node.id],
+        ),
+        tier: "cheap",
+      });
+    }
+  }
+  return out;
+}
+
+const listed = (ids: readonly string[]) =>
+  ids.length <= 1 ? (ids[0] ?? "") : `${ids.slice(0, -1).join(", ")} and ${ids[ids.length - 1]}`;
 
 export const CONTEXT_COLLAPSE_THRESHOLD = 30;
 
@@ -374,9 +512,11 @@ export function runAllRules(graph: Graph, phase: Phase): Finding[] {
     ...authorityBreaches(graph, phase),
     ...hiddenEdges(graph, phase),
     ...selfGrading(graph, phase),
+    ...monocultures(graph, phase),
     ...contextCollapse(graph, phase),
     ...silentFailure(graph, phase),
     ...duplicateEffects(graph, phase),
     ...earlyCommits(graph, phase),
+    ...tierMismatches(graph, phase),
   ];
 }

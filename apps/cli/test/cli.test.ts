@@ -11,6 +11,7 @@ const cli = join(root, "apps/cli/dist/index.js");
 const example = (name: string) => join(root, "examples", `${name}.yaml`);
 /** daily-brief broken one way at a time: the fixtures for the rules about what one run hands the next. */
 const variant = (name: string) => join(root, "packages/lint/test/fixtures/daily-brief", `${name}.yaml`);
+const desk = (name: string) => join(root, "packages/lint/test/fixtures/research-desk", `${name}.yaml`);
 const trace = (name: string) => join(root, "examples/traces", `${name}.jsonl`);
 const traceDir = () => join(root, "examples/traces");
 const out = mkdtempSync(join(tmpdir(), "ccg-cli-"));
@@ -292,11 +293,15 @@ describe("render guards", () => {
       EARLY_COMMIT: ["effect", "resource"],
       // Against a person's store; the read-only form carries `boundary` instead.
       AUTHORITY_BREACH: ["resource"],
+      // On a shared tier; a shared agent carries `agent`, and both carry both.
+      MONOCULTURE: ["tier"],
+      TIER_MISMATCH: ["tier"],
     };
     const seen = new Set<string>();
     const specs = [
       ...["release-session", "linear-chain", "self-grading", "wide-fanin"].map(example),
       ...["unguarded-post", "early-commit", "agent-writes-preferences"].map(variant),
+      desk("cheap-report"),
     ];
     for (const spec of specs) {
       for (const report of JSON.parse(ccg("lint", spec, "--json").stdout)) {
@@ -316,11 +321,13 @@ describe("render: every lint rule has a mark", () => {
     FAKE_EDGE: { spec: "linear-chain", svg: 'data-finding="FAKE_EDGE"', mermaid: "-.->", excalidraw: '"strokeStyle": "dashed"' },
     MISSING_INPUT: { spec: "linear-chain", svg: ">no repo<", mermaid: "· no repo", excalidraw: "· no repo" },
     HIDDEN_EDGE: { spec: "linear-chain", fix: true, svg: 'data-link="review_a~review_b"', mermaid: "shares notes/findings.md", excalidraw: '"link-review_a~review_b"' },
-    SELF_GRADING: { spec: "self-grading", svg: ">grades own work<", mermaid: "· grades own work", excalidraw: "· grades own work" },
+    SELF_GRADING: { spec: "self-grading", svg: ">grades own work +1<", mermaid: "· grades own work", excalidraw: "· grades own work" },
     CONTEXT_COLLAPSE: { spec: "wide-fanin", svg: ">200 raw in<", mermaid: "· 200 in, no reduce", excalidraw: "· 200 in, no reduce" },
     SILENT_FAILURE: { spec: "release-session", svg: ">9 ≠ 8<", mermaid: "9 ≠ 8", excalidraw: "9 ≠ 8" },
     AUTHORITY_BREACH: { spec: variant("agent-writes-preferences"), svg: ">writes pref…<", mermaid: "· writes preferences, a person's", excalidraw: "· writes preferences, a person's" },
     DUPLICATE_EFFECT: { spec: variant("unguarded-post"), svg: ">unguarded post:brief-ch…<", mermaid: "· unguarded post:brief-channel", excalidraw: "· unguarded post:brief-channel" },
+    MONOCULTURE: { spec: desk("same-agent"), svg: ">same agent: analyst<", mermaid: "· same agent as its work: analyst", excalidraw: "· same agent as its work: analyst" },
+    TIER_MISMATCH: { spec: desk("cheap-report"), svg: ">cheap synthesis<", mermaid: "· cheap synthesis of a fan-out", excalidraw: "· cheap synthesis of a fan-out" },
     EARLY_COMMIT: { spec: variant("ordering-edge"), fix: true, svg: ">2 stores too early<", mermaid: "· writes bookmarks, ledger too early", excalidraw: "· writes bookmarks, ledger too early" },
   };
   let count = 0;

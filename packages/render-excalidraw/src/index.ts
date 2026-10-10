@@ -31,7 +31,10 @@ export type FindingMark =
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
   | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
   | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
-  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly agent: string }
+  | { readonly rule: "MONOCULTURE"; readonly id: string; readonly tier: string }
+  | { readonly rule: "TIER_MISMATCH"; readonly id: string; readonly tier: string };
 
 export interface ExcalidrawScene {
   readonly type: "excalidraw";
@@ -348,9 +351,11 @@ const NOTE_ORDER = [
   "MISSING_INPUT",
   "AUTHORITY_BREACH",
   "SELF_GRADING",
+  "MONOCULTURE",
   "CONTEXT_COLLAPSE",
   "DUPLICATE_EFFECT",
   "EARLY_COMMIT",
+  "TIER_MISMATCH",
 ] as const;
 
 /** Node findings as label notes. Two writers of one file get a line instead (`sharedWrites`). */
@@ -364,6 +369,12 @@ function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
       notes.push({ rule: m.rule, text: "boundary" in m ? `writes in read-only ${m.boundary}` : `writes ${m.store}, a person's` });
     }
     if (m.rule === "DUPLICATE_EFFECT" && m.id === id) notes.push({ rule: m.rule, text: `unguarded ${m.effect}` });
+    if (m.rule === "MONOCULTURE" && m.id === id) {
+      notes.push({ rule: m.rule, text: "agent" in m ? `same agent as its work: ${m.agent}` : `${m.tier} checks ${m.tier}` });
+    }
+    if (m.rule === "TIER_MISMATCH" && m.id === id) {
+      notes.push({ rule: m.rule, text: m.tier === "strong" ? "strong per item" : "cheap synthesis of a fan-out" });
+    }
   }
   const early = marks.flatMap((m) => (m.rule === "EARLY_COMMIT" && m.id === id ? [m.store] : []));
   if (early.length > 0) notes.push({ rule: "EARLY_COMMIT", text: `writes ${early.join(", ")} too early` });

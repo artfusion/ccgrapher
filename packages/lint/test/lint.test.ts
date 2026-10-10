@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildGraph, parseSpec, rankGraph, type Graph, type WorkflowSpec } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
@@ -9,6 +10,8 @@ import {
   earlyCommits,
   formatReport,
   lint,
+  monocultures,
+  tierMismatches,
   writeDenial,
 } from "../src/index.js";
 
@@ -121,6 +124,11 @@ describe("self-grading fixture", () => {
     const found = result.findings.filter((f) => f.rule === "SELF_GRADING");
     expect(found).toHaveLength(1);
     expect(found[0]!.nodes).toEqual(["check_own"]);
+  });
+
+  it("flags a cheap verifier checking cheap drafters: a shared model, whatever the context", () => {
+    const found = result.findings.filter((f) => f.rule === "MONOCULTURE");
+    expect(found.map((f) => [f.nodes, f.tier])).toEqual([[["check_own", "draft_a", "draft_b"], "cheap"]]);
   });
 
   it("flags two concurrent drafters writing the same file", () => {
@@ -407,5 +415,185 @@ describe("AUTHORITY_BREACH", () => {
       "boundaries:\n  - { id: rw, members: [a] }\nnodes:\n  - { id: a, label: A, kind: worker, writes: [notes.md] }\n",
     );
     expect(authorityBreaches(graph, "raw")).toEqual([]);
+  });
+});
+
+describe("MONOCULTURE", () => {
+  const graph = (nodes: string, edges: string) =>
+    buildGraph(parseSpec(`version: 1\nname: t\nnodes:\n${nodes}edges:\n${edges}`));
+  const node = (id: string, kind: string, extra = "") =>
+    `  - { id: ${id}, label: ${id}, kind: ${kind}, in: { a: string }, out: { a: string }${extra} }\n`;
+  const edge = (from: string, to: string, carries = "[a]") => `  - { from: ${from}, to: ${to}, carries: ${carries} }\n`;
+  const checked = (workerExtra: string, verifierExtra: string) =>
+    monocultures(graph(node("w", "worker", workerExtra) + node("v", "verifier", verifierExtra), edge("w", "v")), "raw");
+
+  it("fires on a verifier on the same tier as the work it checks, fresh context or not", () => {
+    const found = checked(", model: cheap", ", model: cheap, freshContext: true");
+    expect(found.map((f) => [f.nodes, f.tier, f.agent, f.severity])).toEqual([[["v", "w"], "cheap", undefined, "warn"]]);
+    expect(found[0]!.message).toBe(
+      "verifier v checks w on the same tier, cheap; a shared model shares blind spots, so give the check a different tier or agent",
+    );
+    expect(checked(", model: strong", ", model: strong")).toHaveLength(1);
+  });
+
+  it("says nothing across tiers, of an unspecified tier, or of plain code", () => {
+    expect(checked(", model: cheap", ", model: strong")).toEqual([]);
+    // Unknown is not equal to anything, itself included.
+    expect(checked("", "")).toEqual([]);
+    expect(checked(", model: cheap", "")).toEqual([]);
+    // A plain-code check, such as a test run, has no model to share.
+    expect(checked(", model: null", ", model: null")).toEqual([]);
+  });
+
+  it("fires on the same declared agent whatever the tiers, and names it", () => {
+    const found = checked(', model: cheap, uses: ["agent:analyst"]', ', model: strong, uses: ["mcp:x/y", "agent:analyst"]');
+    expect(found.map((f) => [f.agent, f.tier])).toEqual([["analyst", undefined]]);
+    expect(found[0]!.message).toContain("checks w as the same agent, 'analyst'");
+    expect(checked(', uses: ["agent:analyst"]', ', uses: ["agent:critic"]')).toEqual([]);
+  });
+
+  it("carries both when both hold, and leads with the agent", () => {
+    const found = checked(', model: cheap, uses: ["agent:analyst"]', ', model: cheap, uses: ["agent:analyst"]');
+    expect(found.map((f) => [f.agent, f.tier])).toEqual([["analyst", "cheap"]]);
+    expect(found[0]!.message).toContain("checks w as the same agent, 'analyst', and w on the same tier, cheap");
+  });
+
+  it("looks through plain code to the work behind it, and stops at the first model step", () => {
+    const through = graph(
+      node("w", "worker", ", model: cheap") + node("dedupe", "reduce", ", model: null") + node("v", "verifier", ", model: cheap"),
+      edge("w", "dedupe") + edge("dedupe", "v"),
+    );
+    expect(monocultures(through, "raw").map((f) => f.nodes)).toEqual([["v", "w"]]);
+
+    // The strong summary is what the verifier is handed; the cheap reader behind it is not.
+    const summarised = graph(
+      node("w", "worker", ", model: cheap") + node("sum", "reduce", ", model: strong") + node("v", "verifier", ", model: cheap"),
+      edge("w", "sum") + edge("sum", "v"),
+    );
+    expect(monocultures(summarised, "raw")).toEqual([]);
+  });
+
+  it("checks nothing along a fake edge, which carries nothing", () => {
+    const fake = graph(node("w", "worker", ", model: cheap") + node("v", "verifier", ", model: cheap"), edge("w", "v", "[]"));
+    expect(monocultures(fake, "raw")).toEqual([]);
+  });
+
+  it("names each step on the shared tier once, in one finding per verifier", () => {
+    const three = graph(
+      node("a", "worker", ", model: cheap") +
+        node("b", "worker", ", model: strong") +
+        node("c", "worker", ", model: cheap") +
+        node("v", "verifier", ", model: cheap"),
+      edge("a", "v") + edge("b", "v") + edge("c", "v"),
+    );
+    expect(monocultures(three, "raw").map((f) => f.nodes)).toEqual([["v", "a", "c"]]);
+  });
+});
+
+describe("TIER_MISMATCH", () => {
+  const graph = (nodes: string, edges = "") =>
+    buildGraph(parseSpec(`version: 1\nname: t\nnodes:\n${nodes}${edges ? `edges:\n${edges}` : ""}`));
+  const node = (id: string, kind: string, extra = "") =>
+    `  - { id: ${id}, label: ${id}, kind: ${kind}, in: { a: string }, out: { a: string }${extra} }\n`;
+  const edge = (from: string, to: string) => `  - { from: ${from}, to: ${to}, carries: [a] }\n`;
+  const FAN = ", fanOut: { over: doc, cap: 8 }";
+
+  it("fires on a fanned worker on the strong tier, and on nothing else that fans", () => {
+    const found = tierMismatches(graph(node("read", "worker", `, model: strong${FAN}`)), "raw");
+    expect(found.map((f) => [f.nodes, f.tier, f.severity])).toEqual([[["read"], "strong", "warn"]]);
+    expect(tierMismatches(graph(node("read", "worker", `, model: cheap${FAN}`)), "raw")).toEqual([]);
+    expect(tierMismatches(graph(node("read", "worker", ", model: strong")), "raw")).toEqual([]);
+    // A fanned check is checking, not reading.
+    expect(tierMismatches(graph(node("check", "verifier", `, model: strong${FAN}`)), "raw")).toEqual([]);
+  });
+
+  it("fires on a cheap synthesis of fanned results, through code and checks in between", () => {
+    const direct = graph(node("read", "worker", `, model: cheap${FAN}`) + node("sum", "synthesize", ", model: cheap"), edge("read", "sum"));
+    expect(tierMismatches(direct, "raw").map((f) => [f.nodes, f.tier])).toEqual([[["sum"], "cheap"]]);
+
+    const between = graph(
+      node("read", "worker", `, model: cheap${FAN}`) +
+        node("dedupe", "reduce", ", model: null") +
+        node("check", "verifier", ", model: strong") +
+        node("sum", "synthesize", ", model: cheap"),
+      edge("read", "dedupe") + edge("dedupe", "check") + edge("check", "sum"),
+    );
+    expect(tierMismatches(between, "raw").map((f) => f.message)).toEqual([
+      "sum combines what read fanned out, on the cheap tier; putting many results together is where the strong tier pays",
+    ]);
+  });
+
+  it("says nothing of a strong synthesis, of one with no fan-out, or of one after the fan-out is already combined", () => {
+    const strong = graph(node("read", "worker", `, model: cheap${FAN}`) + node("sum", "synthesize", ", model: strong"), edge("read", "sum"));
+    expect(tierMismatches(strong, "raw")).toEqual([]);
+    expect(tierMismatches(graph(node("sum", "synthesize", ", model: cheap")), "raw")).toEqual([]);
+
+    // A cheap step that formats a strong report is not the step that combined the fan-out.
+    const after = graph(
+      node("read", "worker", `, model: cheap${FAN}`) +
+        node("report", "synthesize", ", model: strong") +
+        node("email", "synthesize", ", model: cheap"),
+      edge("read", "report") + edge("report", "email"),
+    );
+    expect(tierMismatches(after, "raw")).toEqual([]);
+  });
+});
+
+/**
+ * Who does the work, over every example. Only self-grading changes: its cheap
+ * verifier checks two cheap drafters. Every other example already puts the
+ * strong tier on the steps that combine and check and the cheap one on the
+ * steps that read, so neither rule has anything to say about them.
+ */
+describe("who does the work, across the examples and their variants", () => {
+  const ALL = [
+    "capability-audit",
+    "daily-brief",
+    "diamond",
+    "linear-chain",
+    "live-demo",
+    "release-session",
+    "research-desk",
+    "route-auth-audit",
+    "self-grading",
+    "wide-fanin",
+  ] as const;
+  const who = (graph: Graph) =>
+    lint(graph)
+      .findings.filter((f) => f.rule === "MONOCULTURE" || f.rule === "TIER_MISMATCH")
+      .map((f) => `${f.rule} ${f.nodes[0]}`);
+
+  it("covers every example", () => {
+    const yaml = readdirSync(examples)
+      .filter((f) => f.endsWith(".yaml"))
+      .map((f) => f.replace(/\.yaml$/, ""));
+    expect([...ALL].sort()).toEqual(yaml.sort());
+  });
+
+  it.each(ALL)("%s", (name) => {
+    expect(who(fixture(name))).toEqual(name === "self-grading" ? ["MONOCULTURE check_own"] : []);
+  });
+
+  const desk = fileURLToPath(new URL("./fixtures/research-desk/", import.meta.url));
+  const variant = (name: string) => loadGraph(`${desk}${name}.yaml`);
+  const all = (graph: Graph) => lint(graph).findings.map((f) => `${f.rule} ${f.nodes[0]}`);
+
+  it("research-desk with strong readers: the tier is wrong, and the strong skeptics now share it", () => {
+    expect(all(variant("strong-readers"))).toEqual([
+      "MONOCULTURE skeptic_correct",
+      "MONOCULTURE skeptic_current",
+      "MONOCULTURE skeptic_source",
+      "TIER_MISMATCH research",
+    ]);
+  });
+
+  it("research-desk with a cheap report: the first step to put the research together", () => {
+    expect(all(variant("cheap-report"))).toEqual(["TIER_MISMATCH report"]);
+  });
+
+  it("research-desk with one skeptic run as the readers' own agent", () => {
+    expect(lint(variant("same-agent")).findings.map((f) => [f.rule, f.nodes, f.agent, f.tier])).toEqual([
+      ["MONOCULTURE", ["skeptic_source", "research"], "analyst", undefined],
+    ]);
   });
 });

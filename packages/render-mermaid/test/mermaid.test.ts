@@ -258,6 +258,20 @@ describe("finding marks", () => {
     }
   });
 
+  it("notes who does the work: a shared model on the verifier, a tier the wrong way round", () => {
+    const out = renderMermaid(fixture("self-grading"), {
+      findingMarks: [
+        { rule: "SELF_GRADING", id: "check_own" },
+        { rule: "MONOCULTURE", id: "check_own", tier: "cheap" },
+        { rule: "TIER_MISMATCH", id: "publish", tier: "cheap" },
+      ],
+    });
+    expect(out).toContain("grade the drafts · cheap · grades own work · cheap checks cheap · expects 2");
+    expect(out).toContain("publish · strong · cheap synthesis of a fan-out");
+    const agent = renderMermaid(fixture("self-grading"), { findingMarks: [{ rule: "MONOCULTURE", id: "check_own", agent: "drafter" }] });
+    expect(agent).toContain("· same agent as its work: drafter");
+  });
+
   it("joins no two writers with a link, since a link would move a node down a row", () => {
     const plain = renderMermaid(fixture("self-grading"));
     const marked = renderMermaid(fixture("self-grading"), { findingMarks: [HIDDEN] });
