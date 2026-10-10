@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { renderStyle, type Graph, type NodeKind, type NodeSpec } from "@ccgrapher/core";
+import { agentTag, renderStyle, type Graph, type NodeKind, type NodeSpec } from "@ccgrapher/core";
 
 export interface MermaidOptions {
   /** Mermaid v11's sketch renderer. On by default — it is the cheap way to the look. */
@@ -142,7 +142,13 @@ const BOUNDARY_CLASS =
 
 function label(node: NodeSpec, arriving: number | undefined): string {
   const badge = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
-  return `${escape(node.label)}${badge}${guardNote(node, arriving)}`;
+  return `${escape(node.label)}${badge}${escape(whoNote(node))}${guardNote(node, arriving)}`;
+}
+
+/** The tier and the agent, as the SVG draws them: plain code and an unspecified tier say nothing. */
+function whoNote(node: NodeSpec): string {
+  const tag = agentTag(node);
+  return `${node.model ? ` · ${node.model}` : ""}${tag ? ` · ${tag}` : ""}`;
 }
 
 /** The guard is always shown, since it is a declaration; a finding changes only its wording. */

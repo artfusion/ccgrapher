@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { renderStyle, type NodeSpec } from "@ccgrapher/core";
+import { agentTag, renderStyle, type NodeSpec } from "@ccgrapher/core";
 import type { PositionedGraph, PositionedNode, PositionedRegion } from "@ccgrapher/layout";
 
 export interface ExcalidrawOptions {
@@ -309,7 +309,13 @@ function fallbackPoints(positioned: PositionedGraph, edge: PositionedGraph["edge
 
 function labelOf(node: NodeSpec, arriving: number | undefined): string {
   const fan = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
-  return `${node.label}${fan}${guardNote(node, arriving)}`;
+  return `${node.label}${fan}${whoNote(node)}${guardNote(node, arriving)}`;
+}
+
+/** The tier and the agent, as the SVG draws them: plain code and an unspecified tier say nothing. */
+function whoNote(node: NodeSpec): string {
+  const tag = agentTag(node);
+  return `${node.model ? ` · ${node.model}` : ""}${tag ? ` · ${tag}` : ""}`;
 }
 
 /** The guard is always shown, since it is a declaration; a finding changes only its wording. */

@@ -44,10 +44,10 @@ describe("structure", () => {
 describe("kind vocabulary", () => {
   it("gives each kind a distinguishable mermaid shape", () => {
     const out = renderMermaid(fixture("research-desk"));
-    expect(out).toContain('plan[/"plan the angles"\\]'); // split: trapezoid
+    expect(out).toContain('plan[/"plan the angles · strong"\\]'); // split: trapezoid
     expect(out).toContain('dedupe[["dedupe by source · expects 5"]]'); // reduce: subroutine
-    expect(out).toContain('skeptic_correct{{"is it correct?"}}'); // verifier: hexagon
-    expect(out).toContain('report(["one ranked report"])'); // synthesize: stadium
+    expect(out).toContain('skeptic_correct{{"is it correct? · strong"}}'); // verifier: hexagon
+    expect(out).toContain('report(["one ranked report · strong"])'); // synthesize: stadium
     expect(out).toContain('gate{"human approves"}'); // gate: rhombus
   });
 
@@ -60,7 +60,7 @@ describe("kind vocabulary", () => {
 
   it("badges a fanOut node rather than expanding it", () => {
     const out = renderMermaid(fixture("route-auth-audit"));
-    expect(out).toContain('audit["audit one route file ×20"]');
+    expect(out).toContain('audit["audit one route file ×20 · cheap"]');
     expect([...out.matchAll(/^ {2}audit\[/gm)]).toHaveLength(1);
   });
 });
@@ -98,7 +98,7 @@ describe("count guards", () => {
 
   it("draws an unguarded fan-in with a red outline and a note", () => {
     const out = renderMermaid(unguarded(), { guardFindings: [{ id: "checker", arriving: 5 }] });
-    expect(out).toContain('checker{{"checker · no count guard"}}');
+    expect(out).toContain('checker{{"checker · strong · no count guard"}}');
     expect(out).toMatch(/^ {2}style checker stroke:#C4442E/m);
   });
 
@@ -188,6 +188,40 @@ describe("options", () => {
     const out = renderMermaid(fixture("diamond"), { fenced: true });
     expect(out.startsWith("```mermaid\n")).toBe(true);
     expect(out.endsWith("\n```")).toBe(true);
+  });
+});
+
+describe("who runs each step", () => {
+  const review = () =>
+    buildGraph({
+      version: 1,
+      name: "review",
+      nodes: [
+        { id: "write", label: "write", kind: "worker", model: "cheap", in: {}, out: { diff: "string" } },
+        {
+          id: "review",
+          label: "review",
+          kind: "verifier",
+          model: "strong",
+          uses: ["skill:x", "agent:reviewer"],
+          in: { diff: "string" },
+          out: {},
+        },
+      ],
+      edges: [{ from: "write", to: "review", carries: ["diff"] }],
+    });
+
+  it("suffixes the tier, as the svg marks it, and leaves plain code alone", () => {
+    const out = renderMermaid(fixture("research-desk"));
+    expect(out).toContain('research["researcher ×5 · cheap"]');
+    expect(out).toContain('dedupe[["dedupe by source · expects 5"]]');
+    expect(out).toContain('gate{"human approves"}');
+  });
+
+  it("suffixes the agent a node declares, after its tier", () => {
+    const out = renderMermaid(review());
+    expect(out).toContain('review{{"review · strong · agent: reviewer"}}');
+    expect(out).toContain('write["write · cheap"]');
   });
 });
 
