@@ -2,6 +2,7 @@
 import type { Graph, NodeSpec } from "@ccgrapher/core";
 import { objectSchema } from "../fields.js";
 import { inputsOf, stages } from "../stages.js";
+import { familyOf } from "../tiers.js";
 import { banner, boundaryWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
 
 /**
@@ -227,7 +228,7 @@ function opts(node: NodeSpec, label: string): string {
   // to a graph node. A test holds it.
   const parts = [`label: ${label}`];
   if (Object.keys(node.out).length > 0) parts.push(`schema: ${schemaName(node)}`);
-  if (node.model) parts.push(`model: ${quote(node.model === "cheap" ? "haiku" : "opus")}`);
+  if (node.model) parts.push(`model: ${quote(familyOf(node.model))}`);
   // An isolated worktree is what stops two "independent" workers colliding on disk.
   if (node.worktree) parts.push(`isolation: ${quote("worktree")}`);
   return `{ ${parts.join(", ")} }`;

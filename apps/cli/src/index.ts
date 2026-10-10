@@ -45,10 +45,11 @@ Render options:
   --no-grain        omit the paper texture (much smaller when rasterised)
 
 Codegen options:
-  -o, --out <file>  write here instead of stdout
-  -t, --target <t>  claude-code | plain-ts | langgraph (default: claude-code)
+  -o, --out <file>  write here instead of stdout (a directory for managed-agents, required)
+  -t, --target <t>  claude-code | plain-ts | langgraph | managed-agents (default: claude-code)
   --fix             generate from the repaired graph
   --no-banner       omit the generated-from header comment
+  --force           managed-agents: write into a directory that is not empty
 
 Plan options:
   --fix             plan the repaired graph rather than the graph as written

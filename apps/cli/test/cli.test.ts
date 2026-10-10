@@ -390,6 +390,58 @@ describe("codegen warns about what the target cannot do", () => {
   });
 });
 
+describe("codegen -t managed-agents writes a directory", () => {
+  it("writes the agents, the environment and the README", () => {
+    const dir = join(out, "managed-agents");
+    const run = ccg("codegen", example("research-desk"), "-t", "managed-agents", "-o", dir);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toContain("managed-agents, 8 files");
+    expect(readFileSync(join(dir, "agents/skeptic-correct/agent.md"), "utf8")).toContain('name: "skeptic_correct"');
+    expect(existsSync(join(dir, "agents/research-desk/environment.yaml"))).toBe(true);
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+  });
+
+  it("is bad usage without -o, since a directory cannot go to stdout", () => {
+    const run = ccg("codegen", example("research-desk"), "-t", "managed-agents");
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("writes a directory; pass -o <dir>");
+    expect(run.stdout).toBe("");
+  });
+
+  it("refuses a directory that is not empty, unless --force", () => {
+    const dir = mkdtempSync(join(out, "busy-"));
+    writeFileSync(join(dir, "keep.txt"), "mine", "utf8");
+
+    const refused = ccg("codegen", example("research-desk"), "-t", "managed-agents", "-o", dir);
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain("is not empty; pass --force");
+    expect(existsSync(join(dir, "agents"))).toBe(false);
+
+    const forced = ccg("codegen", example("research-desk"), "-t", "managed-agents", "-o", dir, "--force");
+    expect(forced.status).toBe(0);
+    expect(existsSync(join(dir, "agents/plan/agent.md"))).toBe(true);
+    // --force replaces the generated paths and nothing else.
+    expect(readFileSync(join(dir, "keep.txt"), "utf8")).toBe("mine");
+  });
+
+  it("refuses a path that is a file, even with --force", () => {
+    const file = join(out, "not-a-dir.txt");
+    writeFileSync(file, "x", "utf8");
+    const run = ccg("codegen", example("research-desk"), "-t", "managed-agents", "-o", file, "--force");
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("is a file");
+  });
+
+  it("names the placeholders it had to write", () => {
+    const run = ccg("codegen", example("capability-audit"), "-t", "managed-agents", "-o", join(out, "capability-audit"));
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain("YOUR_MCP_URL_DOCS");
+    expect(run.stderr).toContain("YOUR_SKILL_ID_SUMMARISE");
+  });
+});
+
 describe("plan", () => {
   it("collapses waves when the fake edges are repaired", () => {
     const asWritten = ccg("plan", example("release-session"));
