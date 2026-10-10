@@ -35,6 +35,9 @@
       "path": "./packages/ingest"
     },
     {
+      "path": "./packages/runner-managed-agents"
+    },
+    {
       "path": "./apps/cli"
     }
   ]

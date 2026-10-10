@@ -86,4 +86,5 @@ export {
 export { stages, inputsOf } from "./stages.js";
 export { jsonSchemaFor, objectSchema, tsType, type JsonSchema } from "./fields.js";
 export { MODEL_ID, TIER_FAMILY, familyOf, modelIdOf, type ModelFamily, type Tier } from "./tiers.js";
+export { managedAgentsLayout } from "./targets/managed-agents.js";
 export { claudeCodeEmitter, plainTsEmitter, langgraphEmitter, managedAgentsEmitter };

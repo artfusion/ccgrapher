@@ -7,6 +7,24 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- `ccg run --managed-agents <dir>` runs each model node as a Claude Managed Agents session, using
+  the agent and environment ids in `<dir>/claude-lock.json`. Plain-code steps still come from
+  `--impl`, an export for a model node wins over its session, and the runner keeps the order, the
+  guards, the gates and the trace, so `ccg trace audit` reads the run like any other. It needs
+  `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` and exits 2 without one, or when the lock does not
+  cover every model node; a saved `ant` profile alone is not used. Before the first session it says
+  how many it may open and which account pays: research-desk opens ten.
+- A new package, `@ccgrapher/runner-managed-agents`, does the work, so the core runner takes no
+  dependency on the Anthropic SDK. A node's inputs go in as a JSON envelope, `ccg-node-input/1`; its
+  output is read from the last reply as a JSON object, and a reply without one, or missing a
+  declared field, fails the node and says which. A timeout interrupts the session. Sessions are
+  archived when done and never deleted, and carry the run id, spec and node in their metadata.
+  `--session-budget <usd>` caps each session's spend.
+- The managed-agents codegen target describes that envelope in each agent's system prompt, its
+  generated README says how to run the directory, and `managedAgentsLayout` exposes where each
+  agent file goes, which is how the runner finds the lock file's keys.
+- Tests cannot reach an Anthropic account: under vitest, `@anthropic-ai/sdk` resolves to a module
+  that refuses to load, and every test of the new path drives a mocked client.
 - A spec can now say what one run hands the next. `schedule:` is one opaque line; `stores:` names
   state that outlives a run, each with an `owner` (`human` or `agent`) and, for progress state,
   the effect it `records`; on a node, `effects:` names what cannot be taken back and `guards:` the

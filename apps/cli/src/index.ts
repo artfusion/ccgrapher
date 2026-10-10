@@ -69,12 +69,17 @@ Retro options:
   --metric <m>      pr-duration-hours | pr-size-lines (default: pr-duration-hours)
 
 Run options:
-  --impl <module>   JS module exporting one function per node id (required)
+  --impl <module>   JS module exporting one function per node id (required, unless
+                    --managed-agents covers every node that is not a gate)
   --trace <file>    write the trace here (default: runs/<run-id>.jsonl)
   --serve           embed the trace server: watch live, answer gates over HTTP
   --port <n>        port for --serve (default 3211; 0 asks the OS)
   --timeout <s>     give up on any one node after this many seconds
   --concurrency <n> run at most n node calls at once (default: no limit)
+  --managed-agents <dir>  run each model node as a Claude Managed Agents session, using
+                    the ids in <dir>/claude-lock.json; needs ANTHROPIC_API_KEY or
+                    ANTHROPIC_AUTH_TOKEN, and spends on that account
+  --session-budget <usd>  a hard spend cap on each session (with --managed-agents)
 
 Serve options:
   --port <n>        0 asks the OS for a free port (default 3211)
