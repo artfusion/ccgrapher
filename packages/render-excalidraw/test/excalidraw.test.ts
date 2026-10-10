@@ -286,3 +286,32 @@ describe("determinism", () => {
     );
   });
 });
+
+describe("finding marks", () => {
+  const HIDDEN = { rule: "HIDDEN_EDGE", between: ["draft_a", "draft_b"], file: "out/draft.md" } as const;
+  const scene = () =>
+    renderExcalidraw(fixture("self-grading"), {
+      findingMarks: [HIDDEN, { rule: "SELF_GRADING", id: "check_own" }],
+    });
+  const byId = (id: string) => scene().elements.find((e) => e["id"] === id)!;
+
+  it("joins two writers of one file with a thin solid red line, bound to nothing, and names the file", () => {
+    const line = byId("link-draft_a~draft_b");
+    expect(line["type"]).toBe("line");
+    expect(line["strokeColor"]).toBe("#c4442e");
+    expect(line["strokeStyle"]).toBe("solid");
+    expect(line["startBinding"]).toBeNull();
+    expect(byId("link-label-draft_a~draft_b")["text"]).toBe("draft.md");
+    expect(byId("halo-draft_a")).toBeDefined();
+    expect(byId("halo-draft_b")).toBeDefined();
+  });
+
+  it("rings a node finding and notes it in the label", () => {
+    expect(byId("halo-check_own")).toBeDefined();
+    expect(byId("text-check_own")["text"]).toBe("grade the drafts · cheap · grades own work · expects 2");
+  });
+
+  it("is byte-identical across renders", () => {
+    expect(JSON.stringify(scene())).toBe(JSON.stringify(scene()));
+  });
+});

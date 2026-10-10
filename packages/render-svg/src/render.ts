@@ -9,7 +9,8 @@ import type { RoughGenerator } from "roughjs/bin/generator.js";
 import type { Drawable, OpSet } from "roughjs/bin/core.js";
 import { CAVEAT_NOTICE, caveatFontFace } from "./font.js";
 import { iconPath, iconTransform } from "./icons.js";
-import { renderFindingHalo, renderMarks, type Mark } from "./marks.js";
+import { findingsOn, fitCaption, renderSharedWrites, type FindingMark } from "./findings.js";
+import { bottomLeftRoom, renderFindingHalo, renderMarks, type Mark } from "./marks.js";
 import { DEFAULT_THEME, type Theme } from "./theme.js";
 
 export interface RenderOptions {
@@ -23,6 +24,11 @@ export interface RenderOptions {
    * compare the two itself: it draws what lint found.
    */
   readonly guardFindings?: ReadonlyArray<{ readonly id: string; readonly arriving: number }>;
+  /**
+   * Every other rule's findings, as `renderMarksFor` in `@ccgrapher/lint` builds
+   * them: a ring and a caption on the node, or a line between two writers.
+   */
+  readonly findingMarks?: ReadonlyArray<FindingMark>;
   /** Name + goal caption above the diagram. On by default. */
   readonly header?: boolean;
   /** Inline the bundled Caveat face so the file is self-contained. On by default. */
@@ -51,6 +57,7 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
 
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
   const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
+  const findingMarks = options.findingMarks ?? [];
   const offsetY = showHeader ? HEADER_HEIGHT : 0;
 
   // A long goal line can be wider than the graph it captions, so the canvas
@@ -65,7 +72,8 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   const body = [
     ...renderRegions(positioned.regions, theme),
     ...positioned.edges.map((edge) => renderEdge(gen, edge, theme, fake.has(`${edge.from}->${edge.to}`))),
-    ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id))),
+    ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id), findingMarks)),
+    ...renderSharedWrites(positioned, findingMarks, theme),
   ].join("\n    ");
 
   const fontFace = (options.embedFont ?? true) ? caveatFontFace() : null;
@@ -201,6 +209,7 @@ function renderNode(
   positioned: PositionedNode,
   theme: Theme,
   arriving: number | undefined,
+  findingMarks: readonly FindingMark[],
 ): string {
   const { node, x, y, width, height, lines } = positioned;
   const style = renderStyle(node);
@@ -225,6 +234,7 @@ function renderNode(
   // wrong is a finding, so that is drawn only when lint said so.
   const guard =
     arriving === undefined ? undefined : node.expects === undefined ? "missing" : "mismatch";
+  const found = findingsOn(node.id, findingMarks, guard);
 
   // An isolated worktree gets a dashed halo — its writes cannot collide.
   if (node.worktree) {
@@ -234,7 +244,7 @@ function renderNode(
   }
 
   // After the worktree halo and before the box, so the ring sits behind it.
-  if (guard) parts.push(renderFindingHalo(box, theme.danger, theme.paper));
+  if (found.rules.length > 0) parts.push(renderFindingHalo(box, theme.danger, theme.paper));
 
   if (style === "agent") {
     // Sketchy: this one costs tokens.
@@ -305,16 +315,16 @@ function renderNode(
         : { slot: "bottom-right", text: `expects ${node.expects}`, fill: theme.quiet },
     );
   }
-  if (guard === "missing") {
-    marks.push({ slot: "bottom-left", text: "no count guard", fill: theme.dangerInk });
-  }
+  const caption = fitCaption(found.captions, bottomLeftRoom(box, marks));
+  if (caption) marks.push({ slot: "bottom-left", text: caption, fill: theme.dangerInk });
   parts.push(renderMarks(marks, box));
 
   const declared = node.expects !== undefined ? ` data-expects="${node.expects}"` : "";
   const flagged = guard ? ` data-guard="${guard}"` : "";
   const tier = node.model ? ` data-tier="${node.model}"` : "";
   const agent = tag ? ` data-agent="${escapeAttr(agentTypes(node).join(" "))}"` : "";
-  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}${tier}${agent}>${parts.join("")}</g>`;
+  const rules = found.rules.length > 0 ? ` data-findings="${found.rules.join(" ")}"` : "";
+  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}${tier}${agent}${rules}>${parts.join("")}</g>`;
 }
 
 function renderEdge(
@@ -352,7 +362,7 @@ function renderEdge(
   }
 
   const carries = positioned.edge.carries.join(", ");
-  return `<g data-edge="${escapeAttr(`${positioned.from}->${positioned.to}`)}"${carries ? ` data-carries="${escapeAttr(carries)}"` : ""}${isFake ? ` data-fake="true"` : ""}>${parts.join("")}</g>`;
+  return `<g data-edge="${escapeAttr(`${positioned.from}->${positioned.to}`)}"${carries ? ` data-carries="${escapeAttr(carries)}"` : ""}${isFake ? ` data-fake="true" data-finding="FAKE_EDGE"` : ""}>${parts.join("")}</g>`;
 }
 
 /** Solid triangle at the head, aimed along the last segment. Crisp on purpose. */

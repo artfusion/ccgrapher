@@ -17,7 +17,9 @@
  *   bottom-right  what the node declares  (the guard, `expects 5`)
  *
  * One mark per slot; a second claim on the same slot throws, because two marks
- * drawn on top of each other is a bug nobody should have to find by eye.
+ * drawn on top of each other is a bug nobody should have to find by eye. Several
+ * findings on one node therefore share one bottom-left caption, fitted to
+ * `bottomLeftRoom`; `findings.ts` decides what it says.
  *
  * Room: a box is at least 132 wide and 52 tall, its label is centred and its
  * icon keeps to the left gutter, so the four corners stay clear of both. Top
@@ -110,4 +112,22 @@ export function renderFindingHalo(box: MarkBox, colour: string, ground: string):
     `<ellipse cx="${r(cx)}" cy="${r(cy - 1.6)}" rx="1.1" ry="2.6" fill="${ground}"/>`,
     `<circle cx="${r(cx)}" cy="${r(cy + 3.1)}" r="1.15" fill="${ground}"/>`,
   ].join("");
+}
+
+/** Advance width per character, as a fraction of font size: what the layout plans labels with. */
+const CHAR_RATIO = 0.52;
+/** Clear space kept between the two bottom marks. */
+const MARK_GAP = 10;
+
+/** Estimated width of a mark's text in its slot. */
+export const markWidth = (slot: MarkSlot, text: string): number =>
+  text.length * SLOTS[slot].size * CHAR_RATIO;
+
+/**
+ * How wide the bottom-left mark may be: the box less its insets and whatever
+ * already sits bottom right. A caption is fitted to this before it is placed.
+ */
+export function bottomLeftRoom(box: MarkBox, marks: readonly Mark[]): number {
+  const right = marks.find((m) => m.slot === "bottom-right");
+  return box.width - INSET * 2 - (right ? markWidth("bottom-right", right.text) + MARK_GAP : 0);
 }

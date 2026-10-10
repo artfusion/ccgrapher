@@ -39,7 +39,7 @@ Render options:
   --fix             render the repaired graph rather than the graph as written
   --pair            write out-before and out-after (needs -o; not with --fix): one spec
                     as written then repaired, or two specs as written
-  --plain           do not mark lint findings (fake edges, missing or wrong count guards)
+  --plain           do not mark lint findings (rings, captions, dead edges, shared writes)
   --no-header       omit the name/goal caption
   --no-embed-font   reference the handwriting font instead of inlining it
   --no-grain        omit the paper texture (much smaller when rasterised)

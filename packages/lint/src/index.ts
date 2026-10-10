@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 export { lint } from "./lint.js";
+export { renderMarksFor, type FindingMark, type RenderMarks } from "./marks.js";
 export { formatReport, type ReportOptions } from "./report.js";
 export { proposeRepairs, applyRepairs, type IndexedRepair } from "./repair.js";
 export {

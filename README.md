@@ -54,10 +54,11 @@ no data were repointed to the node that actually supplies what the reviewers rea
 
 | Written as a chain — 6 layers | What it actually is — 4 layers |
 | --- | --- |
-| <img src="docs/linear-chain-before.png" alt="A tall six-layer staircase with two red dashed edges labelled 'carries no data'" width="100%"> | <img src="docs/linear-chain-after.png" alt="A four-layer graph with the three reviewers side by side on one row" width="100%"> |
+| <img src="docs/linear-chain-before.png" alt="A tall six-layer staircase with two red dashed edges labelled 'carries no data', and the two reviewers they starve ringed in red with 'no repo'" width="100%"> | <img src="docs/linear-chain-after.png" alt="A four-layer graph with the three reviewers side by side on one row, two of them ringed and joined by a red line labelled 'findings.md'" width="100%"> |
 
 The three review steps never needed each other. The linter finds that mechanically, and the picture
-is just how you see it.
+is just how you see it. The after picture also shows what the chain was hiding: two of the reviewers
+now run side by side and both write `notes/findings.md`.
 
 ## Quickstart
 
@@ -249,11 +250,24 @@ it draws the graph as written and then repaired. With two it draws each as writt
 hand revision shows up: `--fix` moves edges, it never adds an `expects` guard, so adding one is a
 change you pair by hand. `--pair` needs `-o` and cannot be combined with `--fix`.
 
-Every node that declares `expects` carries the count, bottom right. When the linter finds the
-guard wanting, the node is drawn with a solid red ring and a small flag: an unguarded fan-in says
-"no count guard", and a guard that disagrees with the edges says so as `9 ≠ 8`. Dashes are kept
-for structure (a human gate, an isolated worktree, a dead edge), so a finding is never a new dash.
-`--plain` leaves the findings off, fake edges included; the counts stay, since they are declarations.
+Every node that declares `expects` carries the count, bottom right. Every lint rule has a mark,
+so the picture is the lint report:
+
+| Rule | Mark |
+|---|---|
+| `FAKE_EDGE` | the edge drawn red and dashed, "carries no data" |
+| `MISSING_INPUT` | a solid red ring and flag on the node, captioned with the field: `no repo` |
+| `HIDDEN_EDGE` | both writers ringed and joined by a thin solid red line, labelled with the file |
+| `SELF_GRADING` | the verifier ringed, "grades own work" |
+| `CONTEXT_COLLAPSE` | the overloaded node ringed, with the count: `200 in, no reduce` |
+| `SILENT_FAILURE` | the fan-in ringed, "no count guard", or `9 ≠ 8` when the guard disagrees |
+
+A node has room for one caption, so a node with several findings names the first in rule order
+and counts the rest: `no rubric +2`. Dashes are kept for structure (a human gate, an isolated
+worktree, a dead edge), so a finding is never a new dash. Mermaid and Excalidraw carry the same
+findings as a red outline and a note in the label; Excalidraw draws the shared-write line too,
+while Mermaid notes it on both nodes, since any link there would move a node down a row.
+`--plain` leaves every finding off; the counts stay, since they are declarations.
 
 Each node also says who does the work. The model tier sits top left, `strong` in ink and `cheap`
 a shade lighter; plain code (`model: null`) carries none, since its sharp corners already say it
@@ -555,7 +569,7 @@ ccg lint examples/release-session.yaml
 
 | As it ran — 12 layers | What it actually was — 5 layers |
 | --- | --- |
-| <img src="docs/release-session-before.png" alt="Twelve-layer staircase of nine pull requests merged one after another" width="100%"> | <img src="docs/release-session-after.png" alt="Five-layer graph with six of the pull requests side by side on one row" width="100%"> |
+| <img src="docs/release-session-before.png" alt="Twelve-layer staircase of nine pull requests merged one after another, six of them ringed in red for an input nothing supplies" width="100%"> | <img src="docs/release-session-after.png" alt="Five-layer graph with six of the pull requests side by side on one row" width="100%"> |
 
 ## Provenance
 

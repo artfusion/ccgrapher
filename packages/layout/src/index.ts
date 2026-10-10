@@ -18,3 +18,5 @@ export {
   type Metrics,
   type Measured,
 } from "./measure.js";
+
+export { routeLinks, type LinkRoute } from "./links.js";

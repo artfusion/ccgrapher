@@ -31,6 +31,26 @@ private web canvas, which has its own train. Full notes accompany each
   the box when it is longer than the label. `Metrics` gains `tierBand`, `tagSize` and
   `tagLineHeight`, so a caller building its own metrics must now supply them. Core exports
   `agentTypes` and `agentTag`. The spec still names a tier, never a model id.
+- Every lint rule now has a mark, so the picture is the lint report and any repair shows as a
+  before and an after. A starved node reads `no repo`, a verifier without a fresh context reads
+  "grades own work", an overloaded fan-in reads `200 in, no reduce`, each inside the same red
+  ring. Two concurrent writers of one file are joined by a thin solid red line, labelled with the
+  file and routed above their row or round the margin, never through a box.
+- A node with several findings carries one caption: the first in rule order, then a count of
+  the rest (`no rubric +2`), shortened where the box is tight. Node groups list their rules in
+  `data-findings`; a dead edge carries `data-finding="FAKE_EDGE"`.
+- Mermaid notes each finding in the node label with a red outline. A shared write is noted on
+  both nodes rather than drawn, since any Mermaid link would move a node down a row. Excalidraw
+  draws the line, bound to nothing, with the file beside it.
+- `@ccgrapher/lint` exports `renderMarksFor`, which turns findings into render options and has
+  an entry for every rule, so a rule added without a mark does not compile. A test over
+  `RULE_ORDER` checks each one is drawn in all three formats and that `--plain` leaves it off.
+- Findings gain more optional fields, all additive: `field` on `MISSING_INPUT`, `resource` on
+  `HIDDEN_EDGE`, and `arriving` now also on `CONTEXT_COLLAPSE`. `@ccgrapher/layout` exports
+  `routeLinks`, and the renderers take a `findingMarks` option.
+- The structural check now renders every example with its findings marked, plain, and repaired,
+  plus four small specs built to crowd a node, and holds the shared-write line to the same
+  rules as an edge. It passes with no new allowances.
 
 ## v0.5.0 — 2026-09-09
 

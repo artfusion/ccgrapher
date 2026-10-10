@@ -5,7 +5,7 @@ import { parseArgs } from "../args.js";
 import { withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
-import { lint } from "@ccgrapher/lint";
+import { lint, renderMarksFor, type RenderMarks } from "@ccgrapher/lint";
 import { renderExcalidraw } from "@ccgrapher/render-excalidraw";
 import { renderMermaid } from "@ccgrapher/render-mermaid";
 import { renderSvg, wrapHtml } from "@ccgrapher/render-svg";
@@ -36,7 +36,7 @@ export function renderCommand(args: string[]): number {
       header: { type: "boolean", default: true },
       "embed-font": { type: "boolean", default: true },
       grain: { type: "boolean", default: true },
-      /** Do not mark lint findings: fake edges, missing or wrong count guards. */
+      /** Do not mark lint findings: no ring, caption, red edge or line. Counts stay. */
       plain: { type: "boolean", default: false },
     },
     allowPositionals: true,
@@ -137,25 +137,19 @@ function draw(path: string, format: Format, style: Style, fenced = false): Drawi
   const shown = style.fix ? lint(graph) : result;
   const raw = shown.findings.filter((f) => f.phase === "raw");
 
-  const fakeEdges =
-    style.plain || style.fix
-      ? []
-      : raw.filter((f) => f.rule === "FAKE_EDGE" && f.edge).map((f) => f.edge!);
-
-  const guardFindings = style.plain
-    ? []
-    : raw.flatMap((f) =>
-        f.rule === "SILENT_FAILURE" && f.arriving !== undefined && f.nodes[0] !== undefined
-          ? [{ id: f.nodes[0], arriving: f.arriving }]
-          : [],
-      );
+  // Every rule has a mark (lint's `renderMarksFor` will not compile otherwise),
+  // and --plain leaves all of them off.
+  const found = style.plain ? NO_MARKS : renderMarksFor(raw);
+  const marks: RenderMarks = { ...found, fakeEdges: style.fix ? [] : found.fakeEdges };
 
   return {
-    text: emit(format, graph, original, fakeEdges, guardFindings, { ...style, fenced }),
+    text: emit(format, graph, original, marks, { ...style, fenced }),
     layers: style.fix ? result.layersAfter : result.layersBefore,
     nodes: graph.nodes.size,
   };
 }
+
+const NO_MARKS: RenderMarks = { fakeEdges: [], guardFindings: [], findingMarks: [] };
 
 function report(file: string, format: Format, drawing: Drawing): void {
   process.stderr.write(
@@ -173,8 +167,7 @@ function emit(
   format: Format,
   graph: Graph,
   original: Graph,
-  fakeEdges: Array<{ from: string; to: string }>,
-  guardFindings: Array<{ id: string; arriving: number }>,
+  marks: RenderMarks,
   options: {
     fix: boolean;
     header: boolean;
@@ -187,16 +180,15 @@ function emit(
 
   switch (format) {
     case "mermaid":
-      return renderMermaid(graph, { fakeEdges, guardFindings, fenced: options.fenced });
+      return renderMermaid(graph, { ...marks, fenced: options.fenced });
     case "excalidraw":
-      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), { fakeEdges, guardFindings }), null, 2)}\n`;
+      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), marks), null, 2)}\n`;
     case "svg":
       return renderSvg(layoutGraph(graph), {
         header: options.header,
         embedFont: options.embedFont,
         grain: options.grain,
-        fakeEdges,
-        guardFindings,
+        ...marks,
         title,
       });
     case "html":
@@ -205,8 +197,7 @@ function emit(
           header: options.header,
           embedFont: options.embedFont,
           grain: options.grain,
-          fakeEdges,
-          guardFindings,
+          ...marks,
           title,
         }),
         { title },

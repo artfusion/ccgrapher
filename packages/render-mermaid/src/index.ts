@@ -12,11 +12,25 @@ export interface MermaidOptions {
    * renderer does not compare `expects` with the edges itself.
    */
   readonly guardFindings?: ReadonlyArray<{ readonly id: string; readonly arriving: number }>;
+  /**
+   * Every other rule's findings, as `renderMarksFor` in `@ccgrapher/lint` builds
+   * them. Each is a red outline and a note in the label. Two writers of one file
+   * are noted on both nodes rather than joined: any link in Mermaid is an edge,
+   * and an edge between them would move one of them down a row.
+   */
+  readonly findingMarks?: ReadonlyArray<FindingMark>;
   /** Label each edge with the fields it carries. On by default. */
   readonly showCarries?: boolean;
   /** Wrap the output in a ```mermaid fence for pasting into Markdown. */
   readonly fenced?: boolean;
 }
+
+/** The same shape `render-svg` and `render-excalidraw` take; declared here so this package needs neither. */
+export type FindingMark =
+  | { readonly rule: "MISSING_INPUT"; readonly id: string; readonly field: string }
+  | { readonly rule: "SELF_GRADING"; readonly id: string }
+  | { readonly rule: "CONTEXT_COLLAPSE"; readonly id: string; readonly arriving: number }
+  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string };
 
 /** Mermaid's shape vocabulary, mapped so a kind is legible without a legend. */
 const SHAPE: Record<NodeKind, readonly [string, string]> = {
@@ -39,6 +53,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   const showCarries = options.showCarries ?? true;
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
   const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
+  const findingMarks = options.findingMarks ?? [];
 
   const lines: string[] = [];
 
@@ -64,7 +79,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
 
   for (const node of graph.spec.nodes) {
     const [open, close] = SHAPE[node.kind];
-    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id))}"${close}`);
+    lines.push(`  ${node.id}${open}"${label(node, arriving.get(node.id), findingNotes(node.id, findingMarks))}"${close}`);
   }
 
   lines.push(...boundaries(graph));
@@ -99,7 +114,7 @@ export function renderMermaid(graph: Graph, options: MermaidOptions = {}): strin
   // A style line beats the class, so the red outline lands whatever the kind.
   // Solid on purpose: dashes already mean a human gate.
   for (const node of graph.spec.nodes) {
-    if (arriving.has(node.id)) lines.push(`  style ${node.id} stroke:#C4442E,stroke-width:2.5px;`);
+    if (arriving.has(node.id) || findingNotes(node.id, findingMarks).length > 0) lines.push(`  style ${node.id} stroke:#C4442E,stroke-width:2.5px;`);
   }
 
   for (const i of fakeIndices) {
@@ -140,9 +155,29 @@ function boundaries(graph: Graph): string[] {
 const BOUNDARY_CLASS =
   "  classDef boundary fill:none,stroke:#736A63,stroke-width:1.4px,stroke-dasharray:12 6,color:#736A63;";
 
-function label(node: NodeSpec, arriving: number | undefined): string {
+function label(node: NodeSpec, arriving: number | undefined, notes: readonly string[]): string {
   const badge = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
-  return `${escape(node.label)}${badge}${escape(whoNote(node))}${guardNote(node, arriving)}`;
+  const found = notes.map((n) => ` · ${escape(n)}`).join("");
+  return `${escape(node.label)}${badge}${escape(whoNote(node))}${found}${guardNote(node, arriving)}`;
+}
+
+/** Rule order, as the linter reports it; the count guard's note always comes last. */
+const NOTE_ORDER = ["MISSING_INPUT", "HIDDEN_EDGE", "SELF_GRADING", "CONTEXT_COLLAPSE"] as const;
+
+function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
+  const notes: Array<{ rule: FindingMark["rule"]; text: string }> = [];
+  for (const m of marks) {
+    if (m.rule === "MISSING_INPUT" && m.id === id) notes.push({ rule: m.rule, text: `no ${m.field}` });
+    if (m.rule === "SELF_GRADING" && m.id === id) notes.push({ rule: m.rule, text: "grades own work" });
+    if (m.rule === "CONTEXT_COLLAPSE" && m.id === id) notes.push({ rule: m.rule, text: `${m.arriving} in, no reduce` });
+    if (m.rule === "HIDDEN_EDGE" && m.between.includes(id)) {
+      const other = m.between[0] === id ? m.between[1] : m.between[0];
+      notes.push({ rule: m.rule, text: `shares ${m.file} with ${other}` });
+    }
+  }
+  return notes
+    .sort((a, b) => NOTE_ORDER.indexOf(a.rule) - NOTE_ORDER.indexOf(b.rule))
+    .map((n) => n.text);
 }
 
 /** The tier and the agent, as the SVG draws them: plain code and an unspecified tier say nothing. */

@@ -101,14 +101,15 @@ export function missingInputs(graph: Graph, phase: Phase): Finding[] {
   for (const node of graph.spec.nodes) {
     if (rootIds.has(node.id)) continue;
     for (const field of unsatisfiedInputs(graph, node.id)) {
-      out.push(
-        finding(
+      out.push({
+        ...finding(
           "MISSING_INPUT",
           phase,
           `${node.id} requires '${field}' but no inbound edge carries it`,
           [node.id],
         ),
-      );
+        field,
+      });
     }
   }
   return out;
@@ -127,14 +128,15 @@ export function hiddenEdges(graph: Graph, phase: Phase): Finding[] {
 
     const shared = (nodeA.writes ?? []).filter((w) => (nodeB.writes ?? []).includes(w));
     for (const resource of shared) {
-      out.push(
-        finding(
+      out.push({
+        ...finding(
           "HIDDEN_EDGE",
           phase,
           `${a} and ${b} run concurrently and both write '${resource}' — set worktree: true or serialise them`,
           [a, b],
         ),
-      );
+        resource,
+      });
     }
   }
   return out;
@@ -168,14 +170,15 @@ export function contextCollapse(graph: Graph, phase: Phase): Finding[] {
     );
     if (summarised) continue;
 
-    out.push(
-      finding(
+    out.push({
+      ...finding(
         "CONTEXT_COLLAPSE",
         phase,
         `${node.id} takes ${arriving} inbound results with no intermediate reduce layer — summarise in batches first`,
         [node.id],
       ),
-    );
+      arriving,
+    });
   }
   return out;
 }
