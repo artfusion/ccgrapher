@@ -193,6 +193,93 @@ ${items}
 </aside>`;
 }
 
+/** One heading and its lines, as `ledgerSections` in `@ccgrapher/lint` gives them. */
+export interface LedgerBlockSection {
+  readonly heading: string;
+  readonly lines: readonly string[];
+}
+
+export interface WrapLedgerHtmlOptions {
+  /** The page's heading and <title>. */
+  readonly title: string;
+  /** The picture before the change, as `renderSvg` returns it. */
+  readonly before: string;
+  /** The picture after it. */
+  readonly after: string;
+  /** What changed, in words. The first section holds the totals and goes under the heading. */
+  readonly sections: readonly LedgerBlockSection[];
+}
+
+/**
+ * A before, the changes, and an after, side by side on one static page: the
+ * pair and its ledger read together. The ledger is HTML between the two
+ * pictures, never drawn into either, so it reflows and reads at any zoom.
+ * Under 60rem the three stack in reading order. No script and no external
+ * requests, like `wrapHtml`.
+ *
+ * Both pictures are inlined. The only id a picture defines is its paper
+ * filter, which is the same in both, so the second definition is harmless.
+ */
+export function wrapLedgerHtml(options: WrapLedgerHtmlOptions): string {
+  const title = escapeHtml(options.title);
+  const [totals, ...changes] = options.sections;
+  const summary = totals ? `\n  <p>${totals.lines.map(escapeHtml).join("; ")}</p>` : "";
+  const block = (section: LedgerBlockSection) => {
+    const items = section.lines.map((line) => `        <li>${escapeHtml(line)}</li>`).join("\n");
+    const list = section.lines.length > 0 ? `\n      <ul>\n${items}\n      </ul>` : "";
+    return `      <h3>${escapeHtml(section.heading)}</h3>${list}`;
+  };
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}: before and after</title>
+<style>
+  body { margin: 0; background: #f5f2ea; color: #2b2724; font: 1rem/1.45 system-ui, sans-serif; }
+  header { padding: 1.25rem 1.5rem 0; }
+  header h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
+  header p { margin: 0.25rem 0 0; color: #5f5750; }
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem) minmax(0, 1fr);
+    gap: 1.5rem; padding: 1.25rem 1.5rem 2rem; align-items: start;
+  }
+  figure { margin: 0; }
+  figure h2, #ledger h2 { margin: 0 0 0.5rem; font-size: 1rem; font-weight: 600; }
+  figure svg { display: block; width: 100%; height: auto; }
+  #ledger { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 6px; padding: 1rem 1.25rem; }
+  #ledger h3 { margin: 0.9rem 0 0.25rem; font-size: 0.95rem; font-weight: 600; }
+  #ledger h2 + h3 { margin-top: 0; }
+  #ledger ul { margin: 0; padding: 0; list-style: none; }
+  #ledger li { padding: 0.2rem 0; border-top: 1px solid #ece6db; font-size: 0.9rem; color: #5f5750; overflow-wrap: anywhere; }
+  @media (max-width: 60rem) {
+    main { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>${title}</h1>${summary}
+</header>
+<main>
+  <figure aria-labelledby="before-heading">
+    <h2 id="before-heading">Before</h2>
+    ${options.before}
+  </figure>
+  <section id="ledger" aria-labelledby="ledger-heading">
+    <h2 id="ledger-heading">Changes</h2>
+${changes.map(block).join("\n")}
+  </section>
+  <figure aria-labelledby="after-heading">
+    <h2 id="after-heading">After</h2>
+    ${options.after}
+  </figure>
+</main>
+</body>
+</html>
+`;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")

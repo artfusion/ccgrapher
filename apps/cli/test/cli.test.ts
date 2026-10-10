@@ -456,6 +456,76 @@ describe("render --pair", () => {
   });
 });
 
+describe("the ledger", () => {
+  const written = (file: string) => readFileSync(file, "utf8");
+  const ledgerFixture = (name: string) => join(root, "packages/lint/test/fixtures/ledger", `${name}.yaml`);
+
+  it("diff with one spec compares it with its repair", () => {
+    const run = ccg("diff", example("release-session"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("12 to 5 waves, widest wave 1 to 6 steps");
+    expect(run.stdout).toContain("ci from wave 11 to wave 4 (7 waves earlier)");
+    expect(run.stdout).toContain("12 findings resolved");
+  });
+
+  it("diff with two specs finds a guard the repair never adds", () => {
+    const run = ccg("diff", ledgerFixture("plan-unguarded"), ledgerFixture("plan-guarded"));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("3 count guards added on the fan-ins");
+  });
+
+  it("diff --json is the change list as data, the same every time", () => {
+    const args = ["diff", ledgerFixture("plan-unguarded"), ledgerFixture("plan-guarded"), "--json"];
+    const run = ccg(...args);
+    expect(run.status).toBe(0);
+    const ledger = JSON.parse(run.stdout);
+    expect(ledger.guards.map((g: { id: string }) => g.id)).toEqual(["merge_api", "merge_ui", "release"]);
+    expect(ledger.changes).toBe(6);
+    expect(ccg(...args).stdout).toBe(run.stdout);
+  });
+
+  it("diff of a spec with itself says there are no changes", () => {
+    const d = example("diamond");
+    expect(ccg("diff", d, d).stdout).toContain("no changes");
+    expect(ccg("diff", d).stdout).toContain("no changes");
+  });
+
+  it("diff exits 2 with no spec or three", () => {
+    const d = example("diamond");
+    expect(ccg("diff").status).toBe(2);
+    expect(ccg("diff", d, d, d).status).toBe(2);
+  });
+
+  it("render --pair --ledger writes a caption file beside two svgs, outside both", () => {
+    const base = join(out, "ledger-pair.svg");
+    const run = ccg("render", example("release-session"), "--pair", "--ledger", "-o", base);
+    expect(run.status).toBe(0);
+    const caption = written(join(out, "ledger-pair-ledger.txt"));
+    expect(caption).toBe(ccg("diff", example("release-session")).stdout);
+    expect(run.stderr).toContain("ledger-pair-ledger.txt");
+    expect(written(join(out, "ledger-pair-after.svg"))).not.toContain("waves earlier");
+  });
+
+  it("render --pair --ledger in html puts the pair and the changes on one page", () => {
+    const base = join(out, "ledger-pair.html");
+    const run = ccg(
+      "render", "--pair", ledgerFixture("plan-unguarded"), ledgerFixture("plan-guarded"), "--ledger", "-o", base,
+    );
+    expect(run.status).toBe(0);
+    const page = written(join(out, "ledger-pair-ledger.html"));
+    expect(page.match(/<svg /g)).toHaveLength(2);
+    expect(page).toContain('<h2 id="ledger-heading">Changes</h2>');
+    expect(page).toContain("<h3>3 count guards added on the fan-ins</h3>");
+    expect(page).toContain("<li>merge_api expects 2 (2 arrive)</li>");
+    // The two pages of the pair are written as they always were.
+    expect(written(join(out, "ledger-pair-before.html"))).not.toContain("Changes");
+  });
+
+  it("--ledger needs --pair", () => {
+    expect(ccg("render", example("diamond"), "--ledger", "-o", join(out, "x.svg")).status).toBe(2);
+  });
+});
+
 describe("the round trip survives the CLI", () => {
   it("codegen then ingest reproduces the spec", () => {
     const ts = join(out, "diamond.ts");

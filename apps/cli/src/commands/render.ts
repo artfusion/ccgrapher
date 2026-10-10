@@ -5,10 +5,11 @@ import { parseArgs } from "../args.js";
 import { stepLegend, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
-import { lint, renderMarksFor, type RenderMarks } from "@ccgrapher/lint";
+import { formatLedger, ledgerSections, lint, renderMarksFor, type RenderMarks } from "@ccgrapher/lint";
 import { renderExcalidraw } from "@ccgrapher/render-excalidraw";
 import { renderMermaid } from "@ccgrapher/render-mermaid";
-import { renderSvg, wrapHtml } from "@ccgrapher/render-svg";
+import { renderSvg, wrapHtml, wrapLedgerHtml } from "@ccgrapher/render-svg";
+import { ledgerFor } from "./diff.js";
 
 const FORMATS = ["svg", "mermaid", "excalidraw", "html"] as const;
 type Format = (typeof FORMATS)[number];
@@ -40,6 +41,8 @@ export function renderCommand(args: string[]): number {
       plain: { type: "boolean", default: false },
       /** Number the steps in execution order and list them under the picture. */
       legend: { type: "boolean", default: false },
+      /** With --pair, write what changed beside the two pictures. */
+      ledger: { type: "boolean", default: false },
     },
     allowPositionals: true,
     // Node's parseArgs needs this for `--no-header` and friends.
@@ -68,6 +71,11 @@ export function renderCommand(args: string[]): number {
     grain: values.grain,
     legend: values.legend,
   };
+
+  if (values.ledger && !values.pair) {
+    process.stderr.write("ccg render: --ledger describes a pair, so it needs --pair (or see ccg diff)\n");
+    return 2;
+  }
 
   if (values.pair) {
     if (values.fix) {
@@ -102,6 +110,7 @@ export function renderCommand(args: string[]): number {
       writeFileSync(file, drawing.text, "utf8");
       report(file, format, drawing);
     }
+    if (values.ledger) writeLedger(out, format, spec, revised, style);
     return 0;
   }
 
@@ -161,10 +170,43 @@ function report(file: string, format: Format, drawing: Drawing): void {
   );
 }
 
-/** `out.svg` becomes `out-before.svg`. */
-function pairPath(out: string, which: "before" | "after"): string {
-  const ext = extname(out);
-  return `${out.slice(0, out.length - ext.length)}-${which}${ext}`;
+/** `out.svg` becomes `out-before.svg`, or with a new extension, `out-ledger.txt`. */
+function pairPath(out: string, which: "before" | "after" | "ledger", ext = extname(out)): string {
+  return `${out.slice(0, out.length - extname(out).length)}-${which}${ext}`;
+}
+
+/**
+ * The ledger goes beside the pair, never into either picture: for html, one
+ * page with the before, the changes and the after; for every other format, a
+ * text caption file.
+ */
+function writeLedger(
+  out: string,
+  format: Format,
+  spec: string,
+  revised: string | undefined,
+  style: Omit<Style, "fix">,
+): void {
+  const ledger = ledgerFor(spec, revised);
+  if (format === "html") {
+    const sections = ledgerSections(ledger);
+    const file = pairPath(out, "ledger");
+    writeFileSync(
+      file,
+      wrapLedgerHtml({
+        title: sections[0]!.heading,
+        before: draw(spec, "svg", { ...style, fix: false }).text,
+        after: draw(revised ?? spec, "svg", { ...style, fix: revised === undefined }).text,
+        sections,
+      }),
+      "utf8",
+    );
+    process.stderr.write(`wrote ${file} — the pair and what changed, ${ledger.changes} changes\n`);
+  } else {
+    const file = pairPath(out, "ledger", ".txt");
+    writeFileSync(file, `${formatLedger(ledger)}\n`, "utf8");
+    process.stderr.write(`wrote ${file} — what changed, ${ledger.changes} changes\n`);
+  }
 }
 
 function emit(

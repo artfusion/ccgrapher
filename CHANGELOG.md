@@ -7,6 +7,22 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- `ccg diff before.yaml after.yaml` says what changed between two specs: steps added and removed,
+  edges added, removed, repointed or carrying something else, count guards added, removed or
+  changed, the other declarations of a step that changed, the wave each step moved from and to,
+  and the lint findings resolved and introduced. One line per change, under a heading for each
+  kind, after the totals: waves, the widest wave, steps and edges. With one spec it compares the
+  spec with its repair, as `render --pair` draws it. `--json` gives the same list as data. Steps
+  are matched by id, so a rename is a removal and an addition, and two specs that say the same
+  thing give "no changes". It exits 0 whatever it finds.
+- `ccg render --pair --ledger` writes the ledger beside the pair, never into either picture: for
+  HTML a third page with the before, the changes and the after side by side, for every other format
+  a `-ledger.txt` caption. It is what makes a hand revision legible: a guard added to a fan-in is
+  something `--fix` cannot do, and the ledger says "3 count guards added on the fan-ins".
+- `@ccgrapher/lint` exports `changeLedger`, `ledgerSections` and `formatLedger`. It lives in lint
+  rather than core because the findings are part of it. `@ccgrapher/render-svg` exports
+  `wrapLedgerHtml`, which takes the sections as plain data, so it does not depend on lint.
+
 - `examples/research-desk.yaml` is honest about `vote`. It passed on the finding that survived,
   but was handed only the three votes, with nothing to say what they were votes on. It now takes
   `finding` from `dedupe` as well, on an edge of its own, and `expects: 4`. The three variants of

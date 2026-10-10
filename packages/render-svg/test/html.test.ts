@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
 import { describe, expect, it } from "vitest";
-import { renderSvg, wrapHtml } from "../src/index.js";
+import { renderSvg, wrapHtml, wrapLedgerHtml } from "../src/index.js";
 
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
 const fixture = (name: string) => layoutGraph(loadGraph(`${examples}${name}.yaml`));
@@ -56,5 +56,34 @@ describe("wrapHtml", () => {
     expect(wrapHtml(svg, { title: "research desk" })).toBe(
       wrapHtml(svg, { title: "research desk" }),
     );
+  });
+});
+
+describe("wrapLedgerHtml", () => {
+  const before = renderSvg(fixture("linear-chain"));
+  const after = renderSvg(fixture("diamond"));
+  const page = wrapLedgerHtml({
+    title: "a <pair>",
+    before,
+    after,
+    sections: [
+      { heading: "a <pair>", lines: ["6 to 4 waves", "6 steps"] },
+      { heading: "1 edge added", lines: ["a -> b, carrying <x>"] },
+      { heading: "1 step moved", lines: [] },
+    ],
+  });
+
+  it("puts the before, the changes and the after in that order", () => {
+    const at = (text: string) => page.indexOf(text);
+    expect(at(before)).toBeGreaterThan(0);
+    expect(at(before)).toBeLessThan(at('id="ledger-heading"'));
+    expect(at('id="ledger-heading"')).toBeLessThan(at(after));
+  });
+
+  it("writes the changes as HTML, escaped, with the totals under the heading", () => {
+    expect(page).toContain("<h1>a &lt;pair&gt;</h1>\n  <p>6 to 4 waves; 6 steps</p>");
+    expect(page).toContain("<h3>1 edge added</h3>\n      <ul>\n        <li>a -&gt; b, carrying &lt;x&gt;</li>");
+    expect(page).toContain("<h3>1 step moved</h3>\n");
+    expect(page).not.toMatch(/<script/);
   });
 });

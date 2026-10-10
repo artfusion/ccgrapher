@@ -4,6 +4,7 @@ import { SpecError } from "@ccgrapher/core";
 import { UsageError } from "./args.js";
 import { lintCommand } from "./commands/lint.js";
 import { codegenCommand } from "./commands/codegen.js";
+import { diffCommand } from "./commands/diff.js";
 import { ingestCommand } from "./commands/ingest.js";
 import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
@@ -19,6 +20,7 @@ Usage:
   ccg render <spec.yaml> -o out.svg  draw the layered graph (svg, html, mermaid, excalidraw)
   ccg render <spec.yaml> --pair -o out.svg                  as written, then repaired
   ccg render --pair <before.yaml> <after.yaml> -o out.svg   two specs, before then after
+  ccg diff <before.yaml> [after.yaml]  what changed, in words: one spec against its repair, or two
   ccg codegen <spec.yaml> -t <target>  emit the matching orchestration code
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
   ccg plan <spec.yaml>                 what can run at once, wave by wave
@@ -41,9 +43,14 @@ Render options:
                     as written then repaired, or two specs as written
   --plain           do not mark lint findings (rings, captions, dead edges, shared writes)
   --legend          number the steps in execution order and list what each takes and gives
+  --ledger          with --pair, also write what changed: out-ledger.html (the pair and the
+                    changes on one page) for html, out-ledger.txt for every other format
   --no-header      omit the name/goal caption
   --no-embed-font   reference the handwriting font instead of inlining it
   --no-grain        omit the paper texture (much smaller when rasterised)
+
+Diff options:
+  --json            the change list as data: steps, edges, guards, fields, waves, findings
 
 Codegen options:
   -o, --out <file>  write here instead of stdout (a directory for managed-agents, required)
@@ -126,6 +133,8 @@ function main(argv: string[]): number {
         return renderCommand(rest);
       case "codegen":
         return codegenCommand(rest);
+      case "diff":
+        return diffCommand(rest);
       case "ingest":
         return ingestCommand(rest);
       case "plan":
