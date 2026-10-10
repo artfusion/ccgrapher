@@ -334,6 +334,33 @@ is the stricter of the two, and polices the exact count at spec time, where it c
 Pass `--fix` to generate from the repaired graph. Generating from a spec with known fake edges bakes
 the wasted waits into your runtime, so the CLI warns when you do.
 
+### Claude Managed Agents
+
+```bash
+ccg codegen examples/research-desk.yaml -t managed-agents -o out/
+```
+
+This target writes a directory rather than a file: the layout `ant apply` reads. Each model node
+becomes one agent in `agents/<node>/agent.md` (the folder in kebab-case), named by its node id, with its tier resolved to a full
+model id (`strong` to `claude-opus-5-5`, `cheap` to `claude-haiku-5-5`) and a system prompt built from
+its label, kind, fields and writes. A node with no tier gets the strong model, and a warning. Plain-code
+nodes and gates get no agent, since the runner runs those itself, and the generated `README.md` lists
+them. One `environment.yaml` covers the workflow, a `cloud` container with limited networking.
+
+There is no coordinator agent. The files are meant for a runner that opens one session per node in
+the order the spec declares, so the order is kept by code rather than by a prompt.
+
+`uses:` maps where the platform has an equivalent. A skill becomes a skill reference and an agent a
+roster entry, though a custom skill, or an agent from outside the spec, needs an id the spec does not
+have. An MCP server needs a URL it does not have either. Each of those is written as a `YOUR_`
+placeholder with a warning, and MCP tools are left at `always_ask`. A plugin has no equivalent and is
+only warned about. Search for `YOUR_` before applying anything.
+
+`-o` is required, and the directory must be empty unless you pass `--force`, which replaces the
+generated files and leaves everything else alone. Apply by naming the generated files, as the
+generated README shows. `ant apply .` walks the whole tree, and in a repository that holds other
+skills it would upload those as well.
+
 ## Reading existing code
 
 The other direction — what does my workflow *actually* do, rather than what did I intend?

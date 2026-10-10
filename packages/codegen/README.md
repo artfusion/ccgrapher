@@ -40,6 +40,22 @@ Today that is gate nodes: a Workflow script cannot block on a human, so the step
 runs straight through. It is generated anyway, with the warning on stderr and a
 comment in the file, rather than quietly pretending to be a gate.
 
+One target writes a directory rather than a file. `codegenFiles` returns it as
+relative paths to contents, sorted:
+
+```ts
+import { codegenFiles } from "@ccgrapher/codegen";
+
+codegenFiles(graph, "managed-agents");  // agents/<node>/agent.md, environment.yaml, README.md
+```
+
+That is the layout `ant apply` reads for Claude Managed Agents: one agent per
+model node, named by node id, with plain-code nodes and gates left to the runner.
+`TARGETS` still lists only the single-file targets, so code that loops over it
+and calls `codegen` keeps working; `ALL_TARGETS` includes both kinds. Tiers
+resolve through one table, `TIER_FAMILY`, which the claude-code target renders
+as `haiku` and `opus` and the managed-agents target as full model ids.
+
 ---
 
 Part of [ccgrapher](https://github.com/artfusion/ccgrapher). Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -49,6 +49,7 @@
   },
   "devDependencies": {
     "@ccgrapher/lint": "workspace:*",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "yaml": "^2.9.0"
   }
 }

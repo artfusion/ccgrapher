@@ -7,6 +7,16 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- `ccg codegen -t managed-agents -o <dir>` writes the directory `ant apply` reads for Claude
+  Managed Agents: one agent per model node, named by node id, plus one environment. Plain-code
+  nodes and gates get no agent and are listed in a generated README. Without `-o` it exits 2, and
+  it will not write into a directory that has files in it unless given `--force`.
+- `uses:` carries over where there is an equivalent. MCP servers arrive as `YOUR_` placeholders,
+  since a spec names no server URL, and plugins are warned about rather than dropped quietly.
+- `@ccgrapher/codegen` gains `codegenFiles` and a `DirectoryEmitter` for targets that write a
+  directory. `TARGETS` is unchanged; `ALL_TARGETS` and `isAnyTarget` include the new kind.
+- Model tiers now resolve through one table, `TIER_FAMILY`. The claude-code output is
+  byte-identical to before.
 - `ccg render` draws the count guard. Every node that declares `expects` carries the number,
   bottom right, and the node group carries `data-expects`. A repair that adds a guard now shows
   in the picture; before, the picture could not tell a guarded fan-in from an unguarded one.
