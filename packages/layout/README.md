@@ -8,10 +8,12 @@ import { layoutGraph } from "@ccgrapher/layout";
 const { nodes, edges, width, height } = layoutGraph(graph);
 ```
 
-Wraps dagre with `ranker: "longest-path"` so the rows it produces match the ranks
-`@ccgrapher/core` computes — the drawing can never contradict the layer count the
-linter prints. Node sizes come from measuring the wrapped label, so no coordinate
-is ever authored by hand.
+Wraps dagre, but hands it the ranks `@ccgrapher/core` computes instead of letting it
+rank the graph, so every step is drawn on the row of its wave and the drawing can
+never contradict the layer count the linter prints. (dagre's own `longest-path`
+ranker counts from the bottom, so it would sink a step towards whatever reads it.)
+Node sizes come from measuring the wrapped label, so no coordinate is ever
+authored by hand.
 
 ---
 

@@ -2,7 +2,8 @@
 //
 // A structural lint over the SVG that `renderSvg` produces. It reads the markup
 // back and asks whether the picture is well formed: boxes apart, routes clear of
-// boxes, labels and text inside what holds them, colours readable. Core computes
+// boxes, labels and text inside what holds them, every step on the row of its
+// wave, colours readable. Core computes
 // ranks and layout computes pixels, so most of these faults should be impossible;
 // this exists to prove it, and to say so loudly the day a change breaks it.
 //
@@ -17,6 +18,7 @@ export type Rule =
   | "text-overflow"
   | "step-collision"
   | "legend-overlap"
+  | "off-row"
   | "contrast";
 
 export interface Violation {
@@ -31,6 +33,8 @@ export const keyOf = (v: Violation): string => `${v.rule}|${v.subject}`;
 
 /** Pixels of give for stroke width and the few px rough.js wobbles outside a nominal box. */
 const TOLERANCE = 3;
+/** Box centres closer than this share a row: rough.js wobble, not a separate row, which is a rank gap away. */
+const ROW_SLACK = 12;
 /** Advance width per character, as a fraction of font size: what `measureNode` plans with. */
 const BODY_CHAR_RATIO = DEFAULT_METRICS.charRatio;
 /** The header's own heuristic in render.ts (`HEADER_CHAR_RATIO`), which is not exported. */
@@ -166,6 +170,8 @@ interface SceneNode {
   /** Offset of the group that holds it, to bring layout coordinates into svg space. */
   readonly dx: number;
   readonly dy: number;
+  /** The wave core ranks it in (`data-rank`), when the markup says. */
+  readonly rank: number | undefined;
   /** The painted outline, as drawn. */
   readonly frame: Box;
   /** The fan-out copies and worktree halo drawn around the box. */
@@ -249,6 +255,7 @@ function readNode(g: El, dx: number, dy: number): SceneNode {
     id: g.attrs["data-node"]!,
     dx,
     dy,
+    rank: g.attrs["data-rank"] === undefined ? undefined : Number(g.attrs["data-rank"]),
     frame,
     extras,
     footprint: union([frame, ...extras]),
@@ -455,7 +462,31 @@ function checkGeometry(scene: Scene): Violation[] {
       }
     }
   }
+  out.push(...checkRows(scene));
   out.push(...checkSteps(scene));
+  return out;
+}
+
+/**
+ * Rows are read off the picture, not the layout: boxes whose centres sit within a
+ * few pixels of each other share a row (dagre centres a row, so boxes of different
+ * heights still line up), and rows count down from the top. Every step must be
+ * drawn on the row of its wave, the rank core gave it, or the picture and the
+ * legend's numbers disagree.
+ */
+function checkRows(scene: Scene): Violation[] {
+  const centre = (n: SceneNode) => (n.frame.y0 + n.frame.y1) / 2;
+  const ranked = scene.nodes.filter((n) => n.rank !== undefined).sort((a, b) => centre(a) - centre(b));
+  const out: Violation[] = [];
+  let row = -1;
+  let previous = Number.NEGATIVE_INFINITY;
+  for (const n of ranked) {
+    if (centre(n) - previous > ROW_SLACK) row++;
+    previous = centre(n);
+    if (row !== n.rank) {
+      out.push({ rule: "off-row", subject: n.id, detail: `${n.id} is in wave ${n.rank! + 1} but drawn on row ${row + 1}` });
+    }
+  }
   return out;
 }
 

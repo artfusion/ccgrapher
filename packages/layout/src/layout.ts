@@ -56,9 +56,13 @@ export const DEFAULT_LAYOUT = {
 } as const;
 
 /**
- * dagre with `ranker: "longest-path"` — the same layering core computes, so the
- * picture can never disagree with the number the linter prints. A test asserts
- * the two agree on every fixture rather than trusting that they do.
+ * dagre places the boxes, but it does not choose their rows: core's ranking is
+ * handed to it, so a step is drawn on the row of the wave it runs in and the
+ * picture can never disagree with the number the linter prints. dagre's own
+ * `longest-path` ranker measures from the sinks, so it pushes a step that
+ * nothing waits on long down to sit just above its consumer, a row or more below
+ * its wave. A test asserts the rows and the ranks agree on every spec in the
+ * repository rather than trusting that they do.
  *
  * No coordinate in this file is authored; they all come out of dagre or out of
  * the measured text.
@@ -72,7 +76,7 @@ export function layoutGraph(graph: Graph, options: LayoutOptions = {}): Position
   const ranking = rankGraph(graph);
 
   const d = new dagre.graphlib.Graph({ multigraph: true });
-  d.setGraph({ rankdir: "TB", ranksep: rankSep, nodesep: nodeSep, ranker: "longest-path" });
+  d.setGraph({ rankdir: "TB", ranksep: rankSep, nodesep: nodeSep, ranker: coreRanker(ranking) });
   d.setDefaultEdgeLabel(() => ({}));
 
   const measured = new Map<string, ReturnType<typeof measureNode>>();
@@ -117,6 +121,32 @@ export function layoutGraph(graph: Graph, options: LayoutOptions = {}): Position
 
   const oriented = orientToSpecOrder(nodes, edges, ranking);
   return normalise({ ...oriented, margin, ranking, graph });
+}
+
+/**
+ * A ranker for dagre that assigns core's ranks instead of computing its own.
+ * dagre leaves a spare rank between every pair of rows for edge labels, by
+ * stretching each edge's `minlen` before it ranks; the stride is read off those
+ * edges rather than assumed, and core's layer `r` becomes dagre rank `r * stride`.
+ * Anything that is not a step (dagre's own scaffolding node) goes above row 0.
+ *
+ * dagre accepts a function here at runtime; its typings only list the names of
+ * the built-in rankers, hence the cast.
+ */
+function coreRanker(ranking: Ranking): string {
+  const ranker = (g: dagre.graphlib.Graph): void => {
+    let stride = 1;
+    for (const e of g.edges()) {
+      if (ranking.rank.has(e.v) && ranking.rank.has(e.w)) {
+        stride = Math.max(stride, (g.edge(e) as { minlen?: number }).minlen ?? 1);
+      }
+    }
+    for (const id of g.nodes()) {
+      const r = ranking.rank.get(id);
+      (g.node(id) as { rank?: number }).rank = r === undefined ? -1 : r * stride;
+    }
+  };
+  return ranker as unknown as string;
 }
 
 /**

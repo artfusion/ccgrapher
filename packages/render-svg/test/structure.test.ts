@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildGraph, parseSpec, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
@@ -28,6 +28,25 @@ const desks = fileURLToPath(new URL("../../lint/test/fixtures/research-desk/", i
 const deskSpecs = readdirSync(desks)
   .filter((f) => f.endsWith(".yaml"))
   .map((f) => f.replace(/\.yaml$/, ""))
+  .sort();
+
+const root = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** Every other spec in the repository: test fixtures anywhere, and the plugin's template. */
+const fixtureDirs = (["packages", "apps"] as const).flatMap((top) =>
+  readdirSync(`${root}${top}`)
+    .map((pkg) => `${root}${top}/${pkg}/test/fixtures/`)
+    .filter((dir) => existsSync(dir)),
+);
+const others = [
+  ...fixtureDirs.flatMap((dir) =>
+    readdirSync(dir, { recursive: true, encoding: "utf8" }).map((f) => `${dir}${f}`),
+  ),
+  ...readdirSync(`${root}plugin/skills`, { recursive: true, encoding: "utf8" }).map((f) => `${root}plugin/skills/${f}`),
+]
+  .filter((f) => f.endsWith(".yaml"))
+  .filter((f) => !f.startsWith(variants) && !f.startsWith(desks))
+  .map((f) => f.slice(root.length).replace(/\.yaml$/, ""))
   .sort();
 
 interface Render {
@@ -232,6 +251,7 @@ describe("structural lint over every example", () => {
     ...specs.flatMap((n) => renders(n)),
     ...variantSpecs.flatMap((n) => renders(n, variants)),
     ...deskSpecs.flatMap((n) => renders(n, desks)),
+    ...others.flatMap((n) => renders(n, root)),
     ...crowded(),
   ];
 
@@ -239,6 +259,13 @@ describe("structural lint over every example", () => {
     expect(specs.length).toBeGreaterThanOrEqual(6);
     expect(all.some((r) => r.label.endsWith("(repaired)"))).toBe(true);
     expect(all.some((r) => r.label.endsWith("(plain)"))).toBe(true);
+  });
+
+  it("covers every other spec in the repository too: the test fixtures and the plugin's template", () => {
+    expect(others).toContain("packages/lint/test/fixtures/ledger/plan-guarded");
+    expect(others).toContain("apps/cli/test/fixtures/run-gate");
+    expect(others).toContain("plugin/skills/parallel-plan/template");
+    for (const name of others) expect(all.some((r) => r.label === name)).toBe(true);
   });
 
   it("draws a mark for every rule somewhere in the suite, so the marks are checked too", () => {
@@ -268,6 +295,7 @@ describe("structural lint over every example", () => {
     ...specs.flatMap((n) => renders(n)),
     ...variantSpecs.flatMap((n) => renders(n, variants)),
     ...deskSpecs.flatMap((n) => renders(n, desks)),
+    ...others.flatMap((n) => renders(n, root)),
     ...crowded(),
   ];
     expect(again.map((r) => r.svg)).toEqual(all.map((r) => r.svg));
@@ -346,6 +374,12 @@ describe("the checker sees the real markup", () => {
     const end = svg.indexOf('<g data-node="audit"');
     const ghost = svg.slice(start, end).replace('data-node="discover"', 'data-node="ghost"');
     expect(geometry(svg.slice(0, end) + ghost + svg.slice(end)).map(keyOf)).toContain("node-overlap|discover / ghost");
+  });
+
+  it("flags a step drawn off the row of its wave", () => {
+    const moved = svg.replace(/(<g data-node="discover" [^>]*data-rank=")0"/, '$11"');
+    expect(moved).not.toBe(svg);
+    expect(geometry(moved).map(keyOf)).toContain("off-row|discover");
   });
 
   it("flags a label longer than its box", () => {

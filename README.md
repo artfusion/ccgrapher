@@ -424,8 +424,9 @@ names a tier, never a model id: a target such as `claude-code` resolves it, so a
 stale when model names change.
 
 `--legend` numbers the steps in the order they run and lists them under the picture. The number is
-the wave, so steps that share one share a number and take a letter each in spec order: `2a` to `2e`
-for the diamond's five workers, which says what can run together. A fanned-out step is listed
+the wave, which is also the row its box is drawn on, so steps that share one share a number and take
+a letter each in spec order: `2a` to `2e` for the diamond's five workers, which says what can run
+together. A fanned-out step is listed
 once, with what it fans over and its cap. Each line gives the step's label and what it takes and
 gives, read from the field names in its `in` and `out` and shortened past three, so the legend is
 derived from the spec and cannot drift from the picture. In the SVG the number sits in a small
@@ -835,8 +836,9 @@ Two things worth knowing when reading its output:
 
 **The one invariant.** `core` computes *ranks*; `layout` computes *pixels*. The "6 layers → 4" figure
 in a lint report comes from `core` and never from the layout library, so the picture and the report
-cannot silently disagree. dagre runs with `ranker: "longest-path"` to match, and a test asserts the
-two agree on every fixture.
+cannot silently disagree. dagre is handed core's ranks rather than ranking the graph itself (its own
+`longest-path` ranker counts from the bottom and sinks a step towards whatever reads it), and a test
+asserts that every step is drawn on the row of its wave in every spec in the repository.
 
 `core`'s main entry is bundler-safe; filesystem helpers live at `@ccgrapher/core/node`. That's what
 lets the browser canvas run the identical linter.
