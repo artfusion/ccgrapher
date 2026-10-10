@@ -220,8 +220,7 @@ export function audit(
    * Not only `node_started`. A gate node never gets one at all: it lives in
    * `gate_waiting`/`gate_resolved` instead. And a node the runner skipped
    * because its own dependency failed gets `node_failed` with no `node_started`
-   * ever preceding it (`runner`'s `Promise.allSettled`-per-wave marks it failed
-   * without attempting it). Both are real evidence the run engine accounted
+   * ever preceding it (`runner` marks it failed without attempting it). Both are real evidence the run engine accounted
    * for the node — treating either as "never ran" would flag every gate and
    * every legitimately-skipped node on an otherwise ordinary run.
    */

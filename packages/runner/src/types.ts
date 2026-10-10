@@ -109,6 +109,13 @@ export interface ExecuteOptions {
   readonly gate?: GateResolver;
   /** Per node, and per instance of a fanned node. Absent means no timeout at all. */
   readonly timeoutMs?: number;
+  /**
+   * How many executor calls may be in flight at once. Each instance of a fanned
+   * node counts as one; a gate awaiting a decision and a skipped node count as
+   * none. Absent means no limit: every step starts the moment its inputs exist.
+   * Must be a whole number of at least 1, or `Infinity`.
+   */
+  readonly concurrency?: number;
   /** The run's arguments, recorded on `run_started` and handed to every node. */
   readonly args?: Record<string, unknown>;
   /** Who is writing this trace. Defaults to `ccg-run`. */
