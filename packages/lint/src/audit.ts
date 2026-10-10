@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { hasPath, type Graph } from "@ccgrapher/core";
+import { expectsShortfall, hasPath, type Graph } from "@ccgrapher/core";
 import { isTraceEvent, type TraceEvent, type TraceLine } from "@ccgrapher/trace";
 import { type Severity } from "./types.js";
 
@@ -40,12 +40,14 @@ import { type Severity } from "./types.js";
  * the problem once.
  *
  * **Declared versus observed, at the node level too.** The three capability
- * rules above hold `uses:` against what a run reports. Four more rules hold
+ * rules above hold `uses:` against what a run reports. Five more rules hold
  * the graph's nodes and edges themselves against the same run: a node the spec
  * declares that never started (`NODE_NEVER_RAN`), a `node_started` for an id
  * the spec does not know (`UNDECLARED_NODE`), a node that started before its
- * declared predecessor finished (`ORDER_VIOLATION` — the strongest of the four,
- * because it means the dependency the graph promises was not honoured), and
+ * declared predecessor finished (`ORDER_VIOLATION` — the strongest of these,
+ * because it means the dependency the graph promises was not honoured; for a
+ * fanned predecessor, finished means every copy), a guarded fan-in that
+ * started with fewer results than its `expects` (`FAN_IN_SHORTFALL`), and
  * two nodes with no declared path between them that consistently never
  * overlap across several runs (`OBSERVED_SERIALISATION` — a candidate hidden
  * edge, reported only once there is more than a single run's worth of
@@ -58,6 +60,7 @@ import { type Severity } from "./types.js";
 export const AUDIT_RULE_ORDER = [
   "CAPABILITY_GAP",
   "ORDER_VIOLATION",
+  "FAN_IN_SHORTFALL",
   "UNUSED_CAPABILITY",
   "UNDECLARED_CAPABILITY",
   "NODE_NEVER_RAN",
@@ -87,7 +90,7 @@ export interface AuditFinding {
   readonly message: string;
   /** The node(s) the finding is about. Empty for a run-scoped finding no node can be blamed for. */
   readonly nodes: readonly string[];
-  /** Set only for the three capability rules. The four node-level rules are not about any one capability. */
+  /** Set only for the three capability rules. The node-level rules are not about any one capability. */
   readonly capability?: string;
 }
 
@@ -151,6 +154,7 @@ export function auditRuleSeverity(rule: AuditRuleId): Severity {
   switch (rule) {
     case "CAPABILITY_GAP":
     case "ORDER_VIOLATION":
+    case "FAN_IN_SHORTFALL":
       return "error";
     case "UNUSED_CAPABILITY":
     case "UNDECLARED_CAPABILITY":
@@ -168,7 +172,7 @@ const finding = (
   message: string,
 ): AuditFinding => ({ rule, severity: auditRuleSeverity(rule), message, nodes, capability });
 
-/** Same shape, for the four rules that are not about any one capability. */
+/** Same shape, for the rules that are not about any one capability. */
 const nodeFinding = (
   rule: AuditRuleId,
   nodes: readonly string[],
@@ -374,6 +378,20 @@ function auditRun(
   const finishedCount = new Map<string, number>();
   /** How many times each node has started so far, for the same rule. */
   const startedCount = new Map<string, number>();
+  /**
+   * The largest `of` any instance of a node has reported: how many copies the
+   * run said it was starting. What a fanned predecessor owes before it counts
+   * as finished, alongside the copies that actually started.
+   */
+  const promised = new Map<string, number>();
+  /**
+   * Results each node has delivered so far, for `FAN_IN_SHORTFALL`: one per
+   * successful `node_finished`, and one per approving `gate_resolved`, since an
+   * approved gate passes its payload on. A failure delivers nothing.
+   */
+  const delivered = new Map<string, number>();
+  /** Nodes this run has said anything at all about, so an upstream it never mentions stays unknown. */
+  const seen = new Set<string>();
   // A separator that cannot occur in either half, so the key is unambiguous.
   // Written as an escape rather than the byte itself: a literal NUL in the
   // source makes git treat this whole file as binary, and a source file with
@@ -441,20 +459,38 @@ function auditRun(
           // never started at all says nothing either way (it might simply be
           // outside this trace's coverage), so it is not evidence here, the
           // same "absent is not zero" reasoning as everywhere else in this file.
+          //
+          // A fanned predecessor is finished only when every copy is. That is
+          // every copy the run started, or every copy it said it would start
+          // (`of`), whichever is more: a synthesis that began after one of five
+          // research copies landed did not wait for the other four. The
+          // declared `cap` is deliberately not the yardstick. It is a maximum,
+          // not a promise, and an uncapped fanOut has no count at all; `of` is
+          // the run's own word on how many copies it committed to.
           for (const edge of graph.inbound.get(event.node) ?? []) {
             const from = edge.from;
-            if ((startedCount.get(from) ?? 0) > 0 && (finishedCount.get(from) ?? 0) === 0) {
-              out.push(
-                nodeFinding(
-                  "ORDER_VIOLATION",
-                  [from, event.node],
-                  `${event.node} started before ${from} finished, though the spec declares ${from} -> ${event.node}`,
-                ),
-              );
-            }
+            const startedCopies = startedCount.get(from) ?? 0;
+            if (startedCopies === 0) continue;
+            const owed = Math.max(startedCopies, promised.get(from) ?? 0);
+            const finished = finishedCount.get(from) ?? 0;
+            if (finished >= owed) continue;
+            out.push(
+              nodeFinding(
+                "ORDER_VIOLATION",
+                [from, event.node],
+                owed > 1
+                  ? `${event.node} started when ${finished} of ${owed} copies of ${from} had finished, though the spec declares ${from} -> ${event.node}`
+                  : `${event.node} started before ${from} finished, though the spec declares ${from} -> ${event.node}`,
+              ),
+            );
           }
+
+          const expects = graph.nodes.get(event.node)?.expects;
+          if (expects !== undefined) auditFanIn(event.node, expects, graph, delivered, seen, out);
         }
         startedCount.set(event.node, (startedCount.get(event.node) ?? 0) + 1);
+        if (event.of !== undefined) promised.set(event.node, Math.max(promised.get(event.node) ?? 0, event.of));
+        seen.add(event.node);
         break;
       }
 
@@ -464,8 +500,19 @@ function auditRun(
         if (remaining > 0) open.set(event.node, remaining);
         else open.delete(event.node);
         finishedCount.set(event.node, (finishedCount.get(event.node) ?? 0) + 1);
+        if (event.type === "node_finished") delivered.set(event.node, (delivered.get(event.node) ?? 0) + 1);
+        seen.add(event.node);
         break;
       }
+
+      case "gate_waiting":
+        seen.add(event.node);
+        break;
+
+      case "gate_resolved":
+        seen.add(event.node);
+        if (event.decision === "approve") delivered.set(event.node, (delivered.get(event.node) ?? 0) + 1);
+        break;
 
       case "capability_invoked": {
         reportsInvocations = true;
@@ -532,6 +579,40 @@ function auditRun(
       );
     }
   }
+}
+
+/**
+ * A guarded fan-in that started with fewer results than its `expects` asks for.
+ *
+ * The comparison is `expectsShortfall` from `@ccgrapher/core`, the same one the
+ * runner applies before it lets a node start, so a recorded run is held to
+ * exactly the test a live one would have faced. A surplus is not a finding
+ * here: it is a stale count, which the linter reports at spec time.
+ *
+ * Results are counted as the trace records them arriving before this start.
+ * An upstream the run never mentions at all contributes nothing, but if the
+ * run mentions *none* of them, the trace is not watching the upstream and has
+ * no count to offer, so nothing is reported.
+ */
+function auditFanIn(
+  node: string,
+  expects: number,
+  graph: Graph,
+  delivered: ReadonlyMap<string, number>,
+  seen: ReadonlySet<string>,
+  out: AuditFinding[],
+): void {
+  const inbound = graph.inbound.get(node) ?? [];
+  if (!inbound.some((edge) => seen.has(edge.from))) return;
+  const arrivals = inbound.reduce((sum, edge) => sum + (delivered.get(edge.from) ?? 0), 0);
+  if (!expectsShortfall(expects, arrivals)) return;
+  out.push(
+    nodeFinding(
+      "FAN_IN_SHORTFALL",
+      [node],
+      `${node} started with ${arrivals} of the ${expects} results its 'expects' guard requires`,
+    ),
+  );
 }
 
 function because(reason: string | undefined): string {

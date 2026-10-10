@@ -480,6 +480,11 @@ ccg trace audit runs --spec spec.yaml --json     # a whole directory, pooled
 | `CAPABILITY_GAP` | A node ran while something it declares was reported gone. An error. |
 | `UNUSED_CAPABILITY` | A node ran and never reached for something it declares. |
 | `UNDECLARED_CAPABILITY` | A node used something it does not declare. Or, when the run named no node, something no node in the spec declares. |
+| `ORDER_VIOLATION` | A node started before a declared predecessor finished. For a fanned predecessor, finished means every copy, not the first one back. An error. |
+| `FAN_IN_SHORTFALL` | A node with `expects: N` started with fewer than N results recorded upstream, the same test `ccg run` applies before it lets the node start. A surplus is not reported here; the linter already calls it a stale count. An error. |
+| `NODE_NEVER_RAN` | The spec declares a node and no audited run shows it ran. |
+| `UNDECLARED_NODE` | A run started a node the spec does not declare. |
+| `OBSERVED_SERIALISATION` | Two nodes with no declared path between them never overlapped across several runs, which suggests an edge nobody wrote down. |
 
 Exit code is `0` when clean or only warnings, `1` when there is an error finding, `2` on bad usage,
 matching `lint`. Bad usage includes handing it a trace and a spec that have nothing to do with each

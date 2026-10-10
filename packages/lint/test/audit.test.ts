@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { buildGraph, WorkflowSpec } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { parseTraceLine, type TraceLine } from "@ccgrapher/trace";
 import { describe, expect, it } from "vitest";
@@ -28,6 +29,7 @@ describe("the rule set", () => {
     expect(AUDIT_RULE_ORDER.map(auditRuleSeverity)).toEqual([
       "error", // CAPABILITY_GAP
       "error", // ORDER_VIOLATION
+      "error", // FAN_IN_SHORTFALL
       "warn", // UNUSED_CAPABILITY
       "warn", // UNDECLARED_CAPABILITY
       "warn", // NODE_NEVER_RAN
@@ -567,6 +569,156 @@ describe("ORDER_VIOLATION", () => {
       line(1, { runId: "r1", type: "node_finished", node: "write_up", durationMs: 10 }),
     ];
     expect(audit(lines, graph).findings.filter((f) => f.rule === "ORDER_VIOLATION")).toEqual([]);
+  });
+});
+
+/**
+ * research-desk: `research` fans out (cap 5) into `dedupe`, which declares
+ * `expects: 5`. Each copy's start carries `of`, the way the runner writes it.
+ */
+const researchDesk = fixture("research-desk");
+
+function copies(
+  from: number,
+  count: number,
+  outcome: (instance: number) => "finished" | "failed" | "open",
+  of = count,
+): TraceLine[] {
+  const out: TraceLine[] = [];
+  let seq = from;
+  for (let i = 0; i < count; i++) {
+    out.push(line(seq++, { runId: "r1", type: "node_started", node: "research", instance: i, of }));
+  }
+  for (let i = 0; i < count; i++) {
+    const end = outcome(i);
+    if (end === "finished") {
+      out.push(line(seq++, { runId: "r1", type: "node_finished", node: "research", instance: i, durationMs: 10 }));
+    } else if (end === "failed") {
+      out.push(line(seq++, { runId: "r1", type: "node_failed", node: "research", instance: i, error: "boom" }));
+    }
+  }
+  return out;
+}
+
+const plan = [
+  line(0, { runId: "r1", type: "node_started", node: "plan" }),
+  line(1, { runId: "r1", type: "node_finished", node: "plan", durationMs: 10 }),
+];
+
+const dedupeStarts = (seq: number) => line(seq, { runId: "r1", type: "node_started", node: "dedupe" });
+
+const only = (lines: readonly TraceLine[], rule: string) =>
+  audit(lines, researchDesk).findings.filter((f) => f.rule === rule);
+
+describe("ORDER_VIOLATION over a fanned predecessor", () => {
+  it("flags a step that started after one of five copies finished", () => {
+    const lines = [...plan, ...copies(2, 5, (i) => (i === 0 ? "finished" : "open")), dedupeStarts(20)];
+    expect(only(lines, "ORDER_VIOLATION")).toEqual([
+      {
+        rule: "ORDER_VIOLATION",
+        severity: "error",
+        nodes: ["research", "dedupe"],
+        message:
+          "dedupe started when 1 of 5 copies of research had finished, though the spec declares research -> dedupe",
+      },
+    ]);
+  });
+
+  it("says nothing once every copy has finished", () => {
+    const lines = [...plan, ...copies(2, 5, () => "finished"), dedupeStarts(20)];
+    expect(only(lines, "ORDER_VIOLATION")).toEqual([]);
+  });
+
+  it("counts a failed copy as finished: whether its absence matters is the guard's question", () => {
+    const lines = [...plan, ...copies(2, 5, (i) => (i === 4 ? "failed" : "finished")), dedupeStarts(20)];
+    expect(only(lines, "ORDER_VIOLATION")).toEqual([]);
+  });
+
+  it("holds the step to every copy the run said it was starting, not only those it had started", () => {
+    // Three of a promised five started and finished; the other two never began
+    // before dedupe did. `of: 5` is the run's own word that two were owed.
+    const lines = [...plan, ...copies(2, 3, () => "finished", 5), dedupeStarts(20)];
+    expect(only(lines, "ORDER_VIOLATION").map((f) => f.message)).toEqual([
+      "dedupe started when 3 of 5 copies of research had finished, though the spec declares research -> dedupe",
+    ]);
+  });
+});
+
+describe("FAN_IN_SHORTFALL", () => {
+  it("flags a guarded fan-in that started with four of its five results", () => {
+    const lines = [...plan, ...copies(2, 5, (i) => (i === 4 ? "failed" : "finished")), dedupeStarts(20)];
+    expect(only(lines, "FAN_IN_SHORTFALL")).toEqual([
+      {
+        rule: "FAN_IN_SHORTFALL",
+        severity: "error",
+        nodes: ["dedupe"],
+        message: "dedupe started with 4 of the 5 results its 'expects' guard requires",
+      },
+    ]);
+  });
+
+  it("says nothing when all five arrived", () => {
+    const lines = [...plan, ...copies(2, 5, () => "finished"), dedupeStarts(20)];
+    expect(only(lines, "FAN_IN_SHORTFALL")).toEqual([]);
+  });
+
+  it("says nothing about a surplus: six of five is a stale count, and the linter reports that", () => {
+    const lines = [...plan, ...copies(2, 6, () => "finished"), dedupeStarts(20)];
+    expect(only(lines, "FAN_IN_SHORTFALL")).toEqual([]);
+    expect(only(lines, "ORDER_VIOLATION")).toEqual([]);
+  });
+
+  it("counts only results recorded before the guarded node started", () => {
+    const lines = [
+      ...plan,
+      ...copies(2, 5, (i) => (i === 4 ? "open" : "finished")),
+      dedupeStarts(20),
+      line(21, { runId: "r1", type: "node_finished", node: "research", instance: 4, durationMs: 10 }),
+    ];
+    expect(only(lines, "FAN_IN_SHORTFALL").map((f) => f.message)).toEqual([
+      "dedupe started with 4 of the 5 results its 'expects' guard requires",
+    ]);
+  });
+
+  it("counts an approved gate upstream as one result, and a rejected one as none", () => {
+    const graph = buildGraph(
+      WorkflowSpec.parse({
+        version: 1,
+        name: "gated",
+        nodes: [
+          { id: "draft", label: "draft", kind: "worker", out: { text: "string" } },
+          { id: "sign_off", label: "sign off", kind: "gate", in: { text: "string" }, out: { text: "string" } },
+          { id: "publish", label: "publish", kind: "worker", expects: 2, in: { text: "string" } },
+        ],
+        edges: [
+          { from: "draft", to: "sign_off", carries: ["text"] },
+          { from: "draft", to: "publish", carries: ["text"] },
+          { from: "sign_off", to: "publish", carries: ["text"] },
+        ],
+      }),
+    );
+    const shortfall = (decision: "approve" | "reject") =>
+      audit(
+        [
+          line(0, { runId: "r1", type: "node_started", node: "draft" }),
+          line(1, { runId: "r1", type: "node_finished", node: "draft", durationMs: 10 }),
+          line(2, { runId: "r1", type: "gate_waiting", node: "sign_off" }),
+          line(3, { runId: "r1", type: "gate_resolved", node: "sign_off", decision }),
+          line(4, { runId: "r1", type: "node_started", node: "publish" }),
+        ],
+        graph,
+      ).findings.filter((f) => f.rule === "FAN_IN_SHORTFALL");
+    expect(shortfall("approve")).toEqual([]);
+    expect(shortfall("reject").map((f) => f.message)).toEqual([
+      "publish started with 1 of the 2 results its 'expects' guard requires",
+    ]);
+  });
+
+  it("says nothing when the trace mentions none of the upstream at all", () => {
+    // A thin trace that only watched dedupe has no count to offer, and an
+    // absent count is unknown, not zero.
+    const lines = [dedupeStarts(0), line(1, { runId: "r1", type: "node_finished", node: "dedupe", durationMs: 10 })];
+    expect(only(lines, "FAN_IN_SHORTFALL")).toEqual([]);
   });
 });
 

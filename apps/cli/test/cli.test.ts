@@ -768,6 +768,45 @@ describe("trace audit", () => {
     expect(run.stdout).toContain("setup -> review_a");
   });
 
+  // A fanned step is finished only when every copy is, and a guarded fan-in
+  // that starts short is a finding of its own. Here dedupe starts while the
+  // fifth research copy is still running, so both rules fire.
+  it("1 when a fan-in started before every copy finished, and short of its guard", () => {
+    const early = join(out, "fan-in-shortfall.jsonl");
+    const event = (seq: number, body: string) =>
+      `{"v":1,"runId":"fan","seq":${seq},"ts":"2026-10-10T10:00:00.000Z",${body}}`;
+    writeFileSync(
+      early,
+      [
+        event(0, `"type":"run_started","spec":{"name":"research-desk"},"source":"custom"`),
+        event(1, `"type":"node_started","node":"plan"`),
+        event(2, `"type":"node_finished","node":"plan","durationMs":10`),
+        ...[0, 1, 2, 3, 4].map((i) => event(3 + i, `"type":"node_started","node":"research","instance":${i},"of":5`)),
+        ...[0, 1, 2, 3].map((i) => event(8 + i, `"type":"node_finished","node":"research","instance":${i},"durationMs":10`)),
+        event(12, `"type":"node_started","node":"dedupe"`),
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const text = ccg("trace", "audit", early, "--spec", example("research-desk"));
+    expect(text.status).toBe(1);
+    expect(text.stdout).toContain("ORDER_VIOLATION");
+    expect(text.stdout).toContain("dedupe started when 4 of 5 copies of research had finished");
+    expect(text.stdout).toContain("FAN_IN_SHORTFALL");
+    expect(text.stdout).toContain("dedupe started with 4 of the 5 results its 'expects' guard requires");
+
+    const json = ccg("trace", "audit", early, "--spec", example("research-desk"), "--json");
+    expect(json.status).toBe(1);
+    const report = JSON.parse(json.stdout);
+    expect(report.findings).toContainEqual({
+      rule: "FAN_IN_SHORTFALL",
+      severity: "error",
+      nodes: ["dedupe"],
+      message: "dedupe started with 4 of the 5 results its 'expects' guard requires",
+    });
+  });
+
   it("--json carries the capability as a field, not only inside the message", () => {
     const run = ccg("trace", "audit", trace("capability-gap"), "--spec", spec, "--json");
     expect(run.status).toBe(1);

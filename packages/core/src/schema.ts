@@ -89,11 +89,13 @@ export const NodeSpec = z.object({
    * that is all present is a different and worse error than the stale count —
    * which the linter already reports, where it can be fixed.
    *
-   * The run-time implementations — `execute` in `@ccgrapher/runner`, and the
-   * guards the `claude-code` and `plain-ts` targets emit — cannot share a
-   * predicate: one is a live engine and the others are strings of source for
-   * runtimes this repository never executes. They are held level by tests on
-   * either side that pin the surplus case, not by an abstraction.
+   * The run-time comparison is `expectsShortfall`, below, and the two readers
+   * that execute in this repository call it: `execute` in `@ccgrapher/runner`
+   * before a node runs, and `audit` in `@ccgrapher/lint` over a recorded run
+   * afterwards. The guards the `claude-code` and `plain-ts` targets emit cannot
+   * call it, since they are strings of source for runtimes this repository
+   * never executes. They are held level by tests that pin the surplus case, not
+   * by an abstraction.
    */
   expects: z.number().int().nonnegative().optional(),
   fanOut: FanOut.optional(),
@@ -101,6 +103,16 @@ export const NodeSpec = z.object({
   worktree: z.boolean().optional(),
 });
 export type NodeSpec = z.infer<typeof NodeSpec>;
+
+/**
+ * The run-time `expects` test: did fewer results arrive than the guard needs?
+ *
+ * A floor, not an equality. A surplus is a stale count for the linter to
+ * report, and is never a shortfall. `NodeSpec.expects` says why.
+ */
+export function expectsShortfall(expects: number, arrivals: number): boolean {
+  return arrivals < expects;
+}
 
 /**
  * An edge is a real data dependency. It only counts if `carries` names fields
