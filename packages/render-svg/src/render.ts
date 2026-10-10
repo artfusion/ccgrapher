@@ -9,12 +9,20 @@ import type { RoughGenerator } from "roughjs/bin/generator.js";
 import type { Drawable, OpSet } from "roughjs/bin/core.js";
 import { CAVEAT_NOTICE, caveatFontFace } from "./font.js";
 import { iconPath, iconTransform } from "./icons.js";
+import { renderFindingHalo, renderMarks, type Mark } from "./marks.js";
 import { DEFAULT_THEME, type Theme } from "./theme.js";
 
 export interface RenderOptions {
   readonly theme?: Partial<Theme>;
   /** Draw these edges as dead: dashed, red, labelled. */
   readonly fakeEdges?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  /**
+   * Fan-ins the linter flagged for their count guard, with the number of results
+   * that actually arrive. A node with no `expects` is drawn as missing its guard;
+   * one whose `expects` disagrees is drawn as a mismatch. The renderer does not
+   * compare the two itself: it draws what lint found.
+   */
+  readonly guardFindings?: ReadonlyArray<{ readonly id: string; readonly arriving: number }>;
   /** Name + goal caption above the diagram. On by default. */
   readonly header?: boolean;
   /** Inline the bundled Caveat face so the file is self-contained. On by default. */
@@ -42,6 +50,7 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   const gen = rough.generator();
 
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
+  const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
   const offsetY = showHeader ? HEADER_HEIGHT : 0;
 
   // A long goal line can be wider than the graph it captions, so the canvas
@@ -54,7 +63,7 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
 
   const body = [
     ...positioned.edges.map((edge) => renderEdge(gen, edge, theme, fake.has(`${edge.from}->${edge.to}`))),
-    ...positioned.nodes.map((node) => renderNode(gen, node, theme)),
+    ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id))),
   ].join("\n    ");
 
   const fontFace = (options.embedFont ?? true) ? caveatFontFace() : null;
@@ -129,7 +138,12 @@ function renderHeader(
     .join("\n");
 }
 
-function renderNode(gen: RoughGenerator, positioned: PositionedNode, theme: Theme): string {
+function renderNode(
+  gen: RoughGenerator,
+  positioned: PositionedNode,
+  theme: Theme,
+  arriving: number | undefined,
+): string {
   const { node, x, y, width, height, lines } = positioned;
   const style = renderStyle(node);
   const fill = theme.fill[node.kind];
@@ -146,6 +160,14 @@ function renderNode(gen: RoughGenerator, positioned: PositionedNode, theme: Them
     }
   }
 
+  const boxW = node.fanOut ? width - 10 : width;
+  const boxH = node.fanOut ? height - 10 : height;
+  const box = { x, y, width: boxW, height: boxH };
+  // A guard is a declaration, so the count is always drawn. Whether it is
+  // wrong is a finding, so that is drawn only when lint said so.
+  const guard =
+    arriving === undefined ? undefined : node.expects === undefined ? "missing" : "mismatch";
+
   // An isolated worktree gets a dashed halo — its writes cannot collide.
   if (node.worktree) {
     parts.push(
@@ -153,12 +175,12 @@ function renderNode(gen: RoughGenerator, positioned: PositionedNode, theme: Them
     );
   }
 
-  const boxW = node.fanOut ? width - 10 : width;
-  const boxH = node.fanOut ? height - 10 : height;
+  // After the worktree halo and before the box, so the ring sits behind it.
+  if (guard) parts.push(renderFindingHalo(box, theme.danger, theme.paper));
 
   if (style === "agent") {
     // Sketchy: this one costs tokens.
-    const box = gen.rectangle(x, y, boxW, boxH, {
+    const sketch = gen.rectangle(x, y, boxW, boxH, {
       stroke: theme.ink,
       strokeWidth: 1.9,
       fill,
@@ -167,7 +189,7 @@ function renderNode(gen: RoughGenerator, positioned: PositionedNode, theme: Them
       bowing: theme.bowing,
       seed,
     });
-    parts.push(drawableToSvg(gen, box, { stroke: theme.ink, strokeWidth: 1.9, fill }));
+    parts.push(drawableToSvg(gen, sketch, { stroke: theme.ink, strokeWidth: 1.9, fill }));
   } else {
     // Sharp corners: plain code, or a human gate. No model, no tokens.
     const dash = style === "human" ? ` stroke-dasharray="7 4"` : "";
@@ -199,14 +221,25 @@ function renderNode(gen: RoughGenerator, positioned: PositionedNode, theme: Them
     `<text font-size="${DEFAULT_METRICS.fontSize}" fill="${theme.ink}" text-anchor="middle">${tspans}</text>`,
   );
 
+  const marks: Mark[] = [];
   if (node.fanOut) {
-    const badge = `x${node.fanOut.cap ?? "n"}`;
-    parts.push(
-      `<text x="${r(x + boxW - 8)}" y="${r(y + 17)}" font-size="15" fill="${theme.accent}" text-anchor="end">${escapeText(badge)}</text>`,
+    marks.push({ slot: "top-right", text: `x${node.fanOut.cap ?? "n"}`, fill: theme.accent });
+  }
+  if (node.expects !== undefined) {
+    marks.push(
+      guard === "mismatch"
+        ? { slot: "bottom-right", text: `${node.expects} ≠ ${arriving}`, fill: theme.dangerInk }
+        : { slot: "bottom-right", text: `expects ${node.expects}`, fill: theme.quiet },
     );
   }
+  if (guard === "missing") {
+    marks.push({ slot: "bottom-left", text: "no count guard", fill: theme.dangerInk });
+  }
+  parts.push(renderMarks(marks, box));
 
-  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}">${parts.join("")}</g>`;
+  const declared = node.expects !== undefined ? ` data-expects="${node.expects}"` : "";
+  const flagged = guard ? ` data-guard="${guard}"` : "";
+  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}>${parts.join("")}</g>`;
 }
 
 function renderEdge(

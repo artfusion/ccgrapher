@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
+import { buildGraph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
 import { describe, expect, it } from "vitest";
@@ -169,6 +170,98 @@ function groupFor(svg: string, id: string): string {
   const next = svg.indexOf('<g data-node="', start + 1);
   return next < 0 ? svg.slice(start) : svg.slice(start, next);
 }
+
+describe("count guards", () => {
+  /** diamond with its checker's guard taken away, which is what lint flags as missing. */
+  const unguarded = () => {
+    const graph = loadGraph(`${examples}diamond.yaml`);
+    return layoutGraph(
+      buildGraph({
+        ...graph.spec,
+        nodes: graph.spec.nodes.map((n) => (n.id === "checker" ? { ...n, expects: undefined } : n)),
+      }),
+    );
+  };
+  const MISSING = [{ id: "checker", arriving: 5 }];
+  const MISMATCH = [{ id: "ci", arriving: 8 }];
+
+  it.each(["diamond", "research-desk"] as const)("%s draws the count it declares", (name) => {
+    const positioned = fixture(name);
+    const svg = renderSvg(positioned);
+    const guarded = positioned.nodes.filter((n) => n.node.expects !== undefined);
+    expect(guarded.length).toBeGreaterThan(0);
+    for (const { node } of guarded) {
+      const group = groupFor(svg, node.id);
+      expect(group).toContain(`data-expects="${node.expects}"`);
+      expect(group).toContain(`>expects ${node.expects}<`);
+    }
+    // A badge is a declaration, not a finding: nothing is warned about.
+    expect(svg).not.toContain("data-guard");
+    expect(svg).not.toContain("data-halo");
+  });
+
+  it("draws a guard that disagrees with lint as 'N ≠ M', in danger colour, with a halo", () => {
+    const ci = groupFor(renderSvg(fixture("release-session"), { guardFindings: MISMATCH }), "ci");
+    expect(ci).toContain('data-guard="mismatch"');
+    expect(ci).toContain('data-expects="9"');
+    expect(ci).toContain(`fill="${DEFAULT_THEME.dangerInk}" text-anchor="end">9 ≠ 8<`);
+    expect(ci).toContain('data-halo="finding"');
+    expect(ci).not.toContain("no count guard");
+  });
+
+  it("draws an unguarded fan-in with a halo and a caption", () => {
+    const checker = groupFor(renderSvg(unguarded(), { guardFindings: MISSING }), "checker");
+    expect(checker).toContain('data-guard="missing"');
+    expect(checker).not.toContain("data-expects");
+    expect(checker).toContain("no count guard");
+    expect(checker).toContain('data-halo="finding"');
+  });
+
+  it("makes the halo solid: a finding is told apart by colour, never by a new dash", () => {
+    const checker = groupFor(renderSvg(unguarded(), { guardFindings: MISSING }), "checker");
+    const halo = /<rect data-halo="finding"[^>]*>/.exec(checker)![0];
+    expect(halo).toContain(`stroke="${DEFAULT_THEME.danger}"`);
+    expect(halo).not.toContain("stroke-dasharray");
+  });
+
+  it("draws no warn marks when nothing is passed in, and still draws the badge", () => {
+    for (const svg of [renderSvg(unguarded()), renderSvg(fixture("release-session"))]) {
+      expect(svg).not.toContain("data-guard");
+      expect(svg).not.toContain("data-halo");
+      expect(svg).not.toContain("no count guard");
+    }
+    expect(renderSvg(fixture("release-session"))).toContain('data-expects="9"');
+  });
+
+  it("ignores a finding for a node that is not in the graph", () => {
+    const svg = renderSvg(fixture("diamond"), { guardFindings: [{ id: "nowhere", arriving: 3 }] });
+    expect(svg).not.toContain("data-guard");
+  });
+
+  it("keeps the guard clear of the fan-out count", () => {
+    // A node that fans out and also declares a count, so both marks are on one box.
+    const graph = loadGraph(`${examples}route-auth-audit.yaml`);
+    const both = layoutGraph(
+      buildGraph({
+        ...graph.spec,
+        nodes: graph.spec.nodes.map((n) => (n.id === "audit" ? { ...n, expects: 20 } : n)),
+      }),
+    );
+    const audit = groupFor(renderSvg(both), "audit");
+    expect(audit).toContain(">x20<");
+    expect(audit).toContain(">expects 20<");
+    const y = (text: string) => Number(new RegExp(`y="([\\d.]+)"[^>]*>${text}<`).exec(audit)![1]);
+    // The fan-out count sits at the top of the box and the guard at the bottom.
+    expect(y("expects 20")).toBeGreaterThan(y("x20") + 20);
+  });
+
+  it("is byte-identical across renders, findings included", () => {
+    const positioned = fixture("release-session");
+    expect(renderSvg(positioned, { guardFindings: MISMATCH })).toBe(
+      renderSvg(positioned, { guardFindings: MISMATCH }),
+    );
+  });
+});
 
 describe("paper grain", () => {
   // Per-pixel noise is free in an SVG and ruinous in a PNG, so it has to be

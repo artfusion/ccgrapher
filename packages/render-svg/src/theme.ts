@@ -11,6 +11,10 @@ export interface Theme {
   readonly accent: string;
   readonly muted: string;
   readonly danger: string;
+  /** Muted ink that still reads as small text on every node tint (4.5:1). */
+  readonly quiet: string;
+  /** Danger as small text: `danger` itself is 4.0:1 on the darker node tints. */
+  readonly dangerInk: string;
   /** Very light per-kind tint so the roles read apart at a glance. */
   readonly fill: Readonly<Record<NodeKind, string>>;
   readonly fontFamily: string;
@@ -26,6 +30,8 @@ export const DEFAULT_THEME: Theme = {
   accent: "#E8763A",
   muted: "#8A817A",
   danger: "#C4442E",
+  quiet: "#675F58",
+  dangerInk: "#B03A26",
   fill: {
     goal: "#FFFFFF",
     split: "#FFFFFF",
