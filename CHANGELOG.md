@@ -7,6 +7,16 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- `examples/research-desk.yaml` is honest about `vote`. It passed on the finding that survived,
+  but was handed only the three votes, with nothing to say what they were votes on. It now takes
+  `finding` from `dedupe` as well, on an edge of its own, and `expects: 4`. The three variants of
+  it under the linter's tests change the same way, and `docs/research-desk.svg` and its PNG are
+  redrawn with the new edge. The lint result is unchanged: clean, 7 layers.
+- No rule for it. A plain-code step whose outputs share no name with its inputs sounded narrow
+  enough to check, but tried against every spec in the repository it fires on all 51 such steps,
+  `vote` both before and after the fix among them, because renaming is what a step does. The
+  README's guidance on edges now describes the mistake instead.
+
 - A node can say it is urgent: `priority: urgent | high | normal`, and `prioritySetBy:` for who
   asked, one line of free text. Both optional, and `version` stays 1. It is a scheduling hint and
   not an edge: ranks, waves and every lint rule read the graph as they would without it.
