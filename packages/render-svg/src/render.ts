@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { renderStyle } from "@ccgrapher/core";
+import { agentTag, agentTypes, renderStyle } from "@ccgrapher/core";
 import { DEFAULT_METRICS, type Point, type PositionedEdge, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 // The `bin/` ESM build uses extensionless relative imports, which Node's
 // resolver rejects outside a bundler. The bundled build is a single file with
@@ -263,10 +263,13 @@ function renderNode(
     `<g transform="${iconTransform(iconX, iconY, ICON_SIZE)}" fill="none" stroke="${style === "agent" ? theme.accent : theme.muted}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${iconPath(node.kind)}"/></g>`,
   );
 
-  // Label, centred in the space left of the gutter.
+  // Label, centred in the space left of the gutter. The agent tag, when there
+  // is one, is a quieter line under it, and the two are centred as one block.
+  const tag = agentTag(node);
   const textLeft = x + DEFAULT_METRICS.iconGutter;
   const centreX = textLeft + (boxW - DEFAULT_METRICS.iconGutter) / 2;
-  const totalText = lines.length * DEFAULT_METRICS.lineHeight;
+  const labelHeight = lines.length * DEFAULT_METRICS.lineHeight;
+  const totalText = labelHeight + (tag ? DEFAULT_METRICS.tagLineHeight : 0);
   const firstBaseline = y + boxH / 2 - totalText / 2 + DEFAULT_METRICS.lineHeight * 0.75;
 
   const tspans = lines
@@ -278,8 +281,20 @@ function renderNode(
   parts.push(
     `<text font-size="${DEFAULT_METRICS.fontSize}" fill="${theme.ink}" text-anchor="middle">${tspans}</text>`,
   );
+  if (tag) {
+    const tagBaseline =
+      y + boxH / 2 - totalText / 2 + labelHeight + DEFAULT_METRICS.tagLineHeight * 0.75;
+    parts.push(
+      `<text x="${r(centreX)}" y="${r(tagBaseline)}" font-size="${DEFAULT_METRICS.tagSize}" fill="${theme.quiet}" text-anchor="middle">${escapeText(tag)}</text>`,
+    );
+  }
 
   const marks: Mark[] = [];
+  // What the node is: the tier it runs on. Plain code and an unspecified tier
+  // carry none; plain code already says so with its sharp corners.
+  if (node.model) {
+    marks.push({ slot: "top-left", text: node.model, fill: node.model === "strong" ? theme.ink : theme.quiet });
+  }
   if (node.fanOut) {
     marks.push({ slot: "top-right", text: `x${node.fanOut.cap ?? "n"}`, fill: theme.accent });
   }
@@ -297,7 +312,9 @@ function renderNode(
 
   const declared = node.expects !== undefined ? ` data-expects="${node.expects}"` : "";
   const flagged = guard ? ` data-guard="${guard}"` : "";
-  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}>${parts.join("")}</g>`;
+  const tier = node.model ? ` data-tier="${node.model}"` : "";
+  const agent = tag ? ` data-agent="${escapeAttr(agentTypes(node).join(" "))}"` : "";
+  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}${tier}${agent}>${parts.join("")}</g>`;
 }
 
 function renderEdge(

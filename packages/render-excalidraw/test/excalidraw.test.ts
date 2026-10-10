@@ -151,7 +151,29 @@ describe("styling carries the same meaning as the svg", () => {
   it("badges a fanOut label", () => {
     const scene = renderExcalidraw(fixture("route-auth-audit"));
     const label = scene.elements.find((e) => e["id"] === "text-audit")!;
-    expect(label["text"]).toBe("audit one route file ×20");
+    expect(label["text"]).toBe("audit one route file ×20 · cheap");
+  });
+
+  it("carries the tier and the agent in the label, and nothing for plain code", () => {
+    const desk = renderExcalidraw(fixture("research-desk"));
+    const text = (scene: typeof desk, id: string) => scene.elements.find((e) => e["id"] === `text-${id}`)!["text"];
+    expect(text(desk, "plan")).toBe("plan the angles · strong");
+    expect(text(desk, "dedupe")).toBe("dedupe by source · expects 5");
+    expect(text(desk, "gate")).toBe("human approves");
+
+    const review = renderExcalidraw(
+      layoutGraph(
+        buildGraph({
+          version: 1,
+          name: "review",
+          nodes: [
+            { id: "review", label: "review", kind: "verifier", model: "strong", uses: ["agent:reviewer"], in: {}, out: {} },
+          ],
+          edges: [],
+        }),
+      ),
+    );
+    expect(text(review, "review")).toBe("review · strong · agent: reviewer");
   });
 
   it("reddens and dashes fake edges", () => {
@@ -210,7 +232,7 @@ describe("count guards", () => {
 
   it("draws an unguarded fan-in with a red box, a halo and a note", () => {
     const scene = renderExcalidraw(unguarded(), { guardFindings: [{ id: "checker", arriving: 5 }] });
-    expect(find(scene, "text-checker")!["text"]).toBe("checker · no count guard");
+    expect(find(scene, "text-checker")!["text"]).toBe("checker · strong · no count guard");
     expect(find(scene, "checker")!["strokeColor"]).toBe("#c4442e");
     expect(find(scene, "halo-checker")).toBeDefined();
   });

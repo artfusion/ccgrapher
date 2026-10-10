@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { NodeSpec } from "@ccgrapher/core";
+import { agentTag, type NodeSpec } from "@ccgrapher/core";
 
 export interface Metrics {
   readonly fontSize: number;
@@ -15,6 +15,14 @@ export interface Metrics {
   readonly stackOffset: number;
   /** Left strip reserved for the per-kind line icon. */
   readonly iconGutter: number;
+  /**
+   * Extra height on a node with a model tier, so the tier mark in the top-left
+   * corner clears the label. Only `cheap` and `strong` carry one.
+   */
+  readonly tierBand: number;
+  /** The agent tag: a quieter second line under the label. */
+  readonly tagSize: number;
+  readonly tagLineHeight: number;
 }
 
 export const DEFAULT_METRICS: Metrics = {
@@ -28,6 +36,9 @@ export const DEFAULT_METRICS: Metrics = {
   minHeight: 52,
   stackOffset: 6,
   iconGutter: 26,
+  tierBand: 10,
+  tagSize: 14,
+  tagLineHeight: 18,
 };
 
 /**
@@ -65,13 +76,19 @@ export function measureNode(node: NodeSpec, m: Metrics = DEFAULT_METRICS): Measu
   const longest = Math.max(...lines.map((l) => l.length));
 
   const badge = node.fanOut ? ` x${node.fanOut.cap ?? "n"}`.length : 0;
-  const textWidth = (longest + badge) * m.fontSize * m.charRatio;
+  const tag = agentTag(node);
+  const textWidth = Math.max(
+    (longest + badge) * m.fontSize * m.charRatio,
+    tag ? tag.length * m.tagSize * m.charRatio : 0,
+  );
+  const textHeight = lines.length * m.lineHeight + (tag ? m.tagLineHeight : 0);
 
   const stack = node.fanOut ? m.stackOffset * 2 : 0;
+  const band = node.model ? m.tierBand : 0;
 
   return {
     lines,
     width: Math.max(m.minWidth, Math.ceil(textWidth + m.padX * 2 + m.iconGutter)) + stack,
-    height: Math.max(m.minHeight, lines.length * m.lineHeight + m.padY * 2) + stack,
+    height: Math.max(m.minHeight, textHeight + m.padY * 2) + band + stack,
   };
 }

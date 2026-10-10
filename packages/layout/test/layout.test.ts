@@ -4,6 +4,7 @@ import { buildGraph, rankGraph, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_METRICS,
   layoutGraph,
   measureNode,
   REGION_PAD_Y,
@@ -254,5 +255,24 @@ describe("boundary regions", () => {
   it("is deterministic", () => {
     const graph = withBoundaries(fixture("diamond"), [{ id: "odd", members: ["worker_1", "worker_3"] }]);
     expect(layoutGraph(graph).regions).toEqual(layoutGraph(graph).regions);
+  });
+});
+
+describe("room for who runs the step", () => {
+  const base = { id: "n", label: "review the diff", kind: "verifier" as const, in: {}, out: {} };
+
+  it("a tier adds a fixed band of height, so the mark clears the label", () => {
+    const plain = measureNode(base);
+    expect(measureNode({ ...base, model: "strong" }).height).toBe(plain.height + DEFAULT_METRICS.tierBand);
+    expect(measureNode({ ...base, model: "cheap" }).height).toBe(plain.height + DEFAULT_METRICS.tierBand);
+    expect(measureNode({ ...base, model: null })).toEqual(plain);
+  });
+
+  it("an agent tag adds a line, and widens the box when it is longer than the label", () => {
+    const plain = measureNode(base);
+    const tagged = measureNode({ ...base, uses: ["agent:a-rather-long-agent-name"] });
+    expect(tagged.height).toBeGreaterThan(plain.height);
+    expect(tagged.width).toBeGreaterThan(plain.width);
+    expect(measureNode({ ...base, uses: ["skill:x"] })).toEqual(plain);
   });
 });

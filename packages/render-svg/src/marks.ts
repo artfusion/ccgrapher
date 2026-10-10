@@ -11,7 +11,7 @@
  *
  * Slots are the four inside corners of the box, in paint order:
  *
- *   top-left      what the node is        (reserved: a tier or role mark)
+ *   top-left      what the node is        (the model tier, `strong`; layout adds height for it)
  *   top-right     what the node does      (the fan-out count, `x5`)
  *   bottom-left   what the linter says    (a short caption, `no count guard`)
  *   bottom-right  what the node declares  (the guard, `expects 5`)

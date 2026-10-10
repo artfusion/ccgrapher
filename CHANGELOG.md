@@ -23,6 +23,14 @@ private web canvas, which has its own train. Full notes accompany each
   danger colours.
 - The README images are regenerated, and `tools/rasterize.mjs` now falls back to system fonts
   for the `≠` that Caveat does not have.
+- `ccg render` says who does each step. The model tier sits top left, `strong` or `cheap`, with
+  `data-tier` on the node group; plain code and an unspecified tier carry no mark. A node that
+  declares `uses: [agent:<type>]` shows `agent: <type>` under its label, with `data-agent`.
+  Mermaid and Excalidraw append the same words to the label.
+- Layout makes the room: a tiered node is 10px taller, and an agent tag adds a line and widens
+  the box when it is longer than the label. `Metrics` gains `tierBand`, `tagSize` and
+  `tagLineHeight`, so a caller building its own metrics must now supply them. Core exports
+  `agentTypes` and `agentTag`. The spec still names a tier, never a model id.
 
 ## v0.5.0 — 2026-09-09
 
