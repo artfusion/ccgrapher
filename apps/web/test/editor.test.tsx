@@ -13,7 +13,9 @@
  * the live-run status text a person actually reads reaches the DOM.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { buildGraph, parseSpec } from "@ccgrapher/core";
+import { lint } from "@ccgrapher/lint";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildModel } from "../lib/graph-model";
@@ -21,9 +23,32 @@ import { FIXTURES } from "../lib/fixtures";
 import { encodeSpecFragment } from "../lib/viewer-link";
 import type { CCEdge, CCNode } from "../lib/view-model";
 
+// Each node is a button that selects it, the way a click on its card does,
+// and carries the parts of its `data` the inspector tests read back.
 vi.mock("../app/canvas/canvas", () => ({
-  Canvas: ({ nodes }: { nodes: readonly CCNode[]; edges: readonly CCEdge[] }) => (
-    <div data-testid="canvas-mock" data-node-count={nodes.length} />
+  Canvas: ({
+    nodes,
+    onSelect,
+  }: {
+    nodes: readonly CCNode[];
+    edges: readonly CCEdge[];
+    onSelect?: (id: string | undefined) => void;
+  }) => (
+    <div data-testid="canvas-mock" data-node-count={nodes.length}>
+      {nodes.map((n) => (
+        <button
+          key={n.id}
+          type="button"
+          data-testid={`node-${n.id}`}
+          data-style={String(n.data.style)}
+          data-uses={((n.data.uses as string[] | undefined) ?? []).join(" ")}
+          data-selected={n.data.selected === true ? "true" : undefined}
+          onClick={() => onSelect?.(n.id)}
+        >
+          {n.id}
+        </button>
+      ))}
+    </div>
   ),
 }));
 
@@ -148,5 +173,162 @@ describe("a spec carried in the URL fragment", () => {
 
     expect(screen.queryByText("load an example…")).not.toBeNull();
     expect(document.querySelector("textarea")).not.toBeNull();
+  });
+
+  it("has no inspector in viewer mode", async () => {
+    window.location.hash = "#view=1";
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    expect(document.querySelector(".pane.inspector")).toBeNull();
+  });
+});
+
+describe("the node inspector", () => {
+  beforeEach(() => mockRunsEndpoint(NO_RUNS));
+
+  /** The spec text, the source of truth everything else is checked against. */
+  const yaml = () => document.querySelector<HTMLTextAreaElement>(".pane.source textarea")!.value;
+  const nodeIn = (source: string, id: string) => parseSpec(source).nodes.find((n) => n.id === id)!;
+
+  /** The rules the footer shows, against the rules lint gives for the text. */
+  function expectFooterAgreesWithText() {
+    const shown = [...document.querySelectorAll("footer .findings .rule")].map((el) => el.textContent);
+    const linted = lint(buildGraph(parseSpec(yaml()))).findings.map((f) => f.rule);
+    expect(shown).toEqual(linted);
+  }
+
+  async function select(id: string) {
+    await screen.findByTestId("canvas-mock");
+    fireEvent.click(screen.getByTestId(`node-${id}`));
+  }
+
+  it("opens on the step clicked, marks it, and takes focus to it", async () => {
+    render(<Editor />);
+    await select("collate");
+    const heading = screen.getByRole("heading", { name: "collate everything" });
+    expect(document.activeElement).toBe(heading);
+    expect(screen.getByTestId("node-collate").getAttribute("data-selected")).toBe("true");
+    expect(screen.getByTestId("node-setup").getAttribute("data-selected")).toBeNull();
+  });
+
+  it("can be reached without the canvas, from the step picker", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    await user.selectOptions(screen.getByLabelText("inspect"), "write_report");
+    expect(screen.getByRole("heading", { name: "write the report" })).toBeTruthy();
+  });
+
+  it("changes a step's tier, and the text, the picture and the findings agree", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("write_report");
+    expect(screen.getByTestId("node-write_report").getAttribute("data-style")).toBe("agent");
+
+    await user.selectOptions(screen.getByLabelText("model"), "null");
+
+    expect(nodeIn(yaml(), "write_report").model).toBeNull();
+    expect(screen.getByTestId("node-write_report").getAttribute("data-style")).toBe("code");
+    expectFooterAgreesWithText();
+  });
+
+  it("changes an expects, and the linter says the count no longer matches", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("collate");
+    expect(screen.queryByText("SILENT_FAILURE")).toBeNull();
+
+    const expects = screen.getByLabelText("expects");
+    await user.clear(expects);
+    await user.type(expects, "2{Enter}");
+
+    expect(nodeIn(yaml(), "collate").expects).toBe(2);
+    expect(screen.getAllByText("SILENT_FAILURE").length).toBeGreaterThan(0);
+    expectFooterAgreesWithText();
+  });
+
+  it("adds a uses entry, and the card shows the capability", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("review_a");
+
+    await user.type(screen.getByLabelText("add to uses"), "agent:reviewer{Enter}");
+
+    expect(nodeIn(yaml(), "review_a").uses).toEqual(["agent:reviewer"]);
+    expect(screen.getByTestId("node-review_a").getAttribute("data-uses")).toBe("agent:reviewer");
+    expect(screen.getByRole("button", { name: "remove agent:reviewer from uses" })).toBeTruthy();
+    expectFooterAgreesWithText();
+  });
+
+  it("refuses an invalid value with the reason, and leaves the spec alone", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("collate");
+    const before = yaml();
+
+    const expects = screen.getByLabelText("expects");
+    await user.clear(expects);
+    await user.type(expects, "-1{Enter}");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("must be at least 0");
+    expect(expects.getAttribute("aria-invalid")).toBe("true");
+    // What was typed is still there to be corrected, and nothing was applied.
+    expect((expects as HTMLInputElement).value).toBe("-1");
+    expect(yaml()).toBe(before);
+
+    await user.type(screen.getByLabelText("add to uses"), "has space{Enter}");
+    expect(screen.getAllByRole("alert").map((a) => a.textContent).join()).toMatch(
+      /no commas or whitespace/,
+    );
+    expect(yaml()).toBe(before);
+  });
+
+  it("undoes a panel edit back to the exact text, and redoes it", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("write_report");
+    const before = yaml();
+
+    await user.selectOptions(screen.getByLabelText("model"), "cheap");
+    const after = yaml();
+    expect(after).not.toBe(before);
+
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(yaml()).toBe(before);
+    expect(nodeIn(yaml(), "write_report").model).toBe("strong");
+    expect((screen.getByLabelText("model") as HTMLSelectElement).value).toBe("strong");
+    expectFooterAgreesWithText();
+
+    await user.click(screen.getByRole("button", { name: "redo" }));
+    expect(yaml()).toBe(after);
+  });
+
+  it("applies the linter's repair for a fake edge from the step's findings", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await select("review_b");
+    const fakeBefore = lint(buildGraph(parseSpec(yaml()))).findings.filter(
+      (f) => f.rule === "FAKE_EDGE",
+    ).length;
+
+    const panel = document.querySelector<HTMLElement>(".pane.inspector")!;
+    const apply = within(panel).getAllByRole("button", { name: "apply" });
+    expect(apply.length).toBeGreaterThan(0);
+    await user.click(apply[0]!);
+
+    const fakeAfter = lint(buildGraph(parseSpec(yaml()))).findings.filter(
+      (f) => f.rule === "FAKE_EDGE",
+    ).length;
+    expect(fakeAfter).toBe(fakeBefore - 1);
+    expectFooterAgreesWithText();
+  });
+
+  it("follows the text: an edit typed there shows in the panel", async () => {
+    render(<Editor />);
+    await select("collate");
+    const textarea = document.querySelector<HTMLTextAreaElement>(".pane.source textarea")!;
+    fireEvent.change(textarea, { target: { value: yaml().replace("expects: 3", "expects: 4") } });
+    expect((screen.getByLabelText("expects") as HTMLInputElement).value).toBe("4");
   });
 });

@@ -121,6 +121,25 @@ private web canvas, which has its own train. Full notes accompany each
   plus four small specs built to crowd a node, and holds the shared-write line to the same
   rules as an edge. It passes with no new allowances.
 
+Web canvas (`apps/web`, its own train; not in the published packages):
+
+- A node inspector. Click a step, or pick it from the list in the new right-hand panel, and its
+  fields can be edited there: tier, kind, label, `in` and `out`, `writes`, `uses`, `expects`,
+  `fanOut`, `worktree`, `freshContext`. An edit rewrites the spec text, and the picture and the
+  findings follow, as they do for typing. The text area stays; the two are views of one spec.
+- The controls are read off the spec schema rather than written per field, so a field the schema
+  gains appears in the panel without UI work. A shape the panel has no control for is edited as
+  YAML.
+- A value the schema refuses is shown next to its control with the reason, and the spec is left
+  alone. Nothing is applied in part.
+- The step's lint findings sit at the top of the panel. A fake edge offers the linter's own
+  repair, applied with one click; the other rules are reported, not repaired.
+- Undo and redo for edits made in the panel, one step per edit, back to the exact text. Typing in
+  the text area, loading a spec or drawing a link starts the history afresh.
+- The canvas now redraws whenever the laid-out picture changes, not only when the number of steps
+  does, so a rewired dependency moves its box. It reframes when it does; animating the move is
+  separate work.
+
 ## v0.5.0 — 2026-09-09
 
 - New `html` render format: the same picture as `svg`, wrapped in a self-contained
