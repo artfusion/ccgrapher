@@ -7,6 +7,18 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- `ccg explain <spec> -o page.html` writes one page that explains a spec in three panels. The full
+  loop is the picture, numbered, with pan and zoom. One run, step by step lists the steps in the
+  order they run, numbered as on the picture. What it is made of lists the files `ccg codegen`
+  would write for `-t` (a tree for `managed-agents`), with a line on each, and the lint findings
+  grouped by rule. Under `--fix` it describes the repaired graph and, when the repair moves
+  anything, sets the spec as written beside it. Nothing on the page is written by a model, and the
+  same spec gives the same bytes. One file with nothing fetched, light or dark as the reader has
+  it, and the panels stack on a narrow screen.
+- `@ccgrapher/codegen` exports `describeFiles`, the files a target writes with a line on each;
+  `@ccgrapher/render-svg` exports `explainHtml`, the page itself; `@ccgrapher/lint` exports
+  `describeRepair`, one repair as the report prints it.
+
 - `ccg diff before.yaml after.yaml` says what changed between two specs: steps added and removed,
   edges added, removed, repointed or carrying something else, count guards added, removed or
   changed, the other declarations of a step that changed, the wave each step moved from and to,

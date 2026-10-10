@@ -10,6 +10,7 @@ npx @ccgrapher/cli lint my-workflow.yaml
 ccg lint    <spec.yaml>...            find fake edges and wasted sequencing
 ccg render  <spec.yaml> -o out.svg    draw it (svg | mermaid | excalidraw)
 ccg codegen <spec.yaml> -t <target>   emit orchestration code
+ccg explain <spec.yaml> -o page.html  one page: the picture, the steps, the files, the lint
 ccg ingest  <orchestration.ts>        reconstruct a spec from existing code
 ccg plan    <spec.yaml>               what can run at once, wave by wave
 ccg retro   <owner/repo>              rebuild the as-merged workflow from PR history
