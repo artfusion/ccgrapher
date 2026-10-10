@@ -277,14 +277,67 @@ describe("render guards", () => {
     expect(readFileSync(excalidraw, "utf8")).toContain("halo-ci");
   });
 
-  it("lint --json only gains `arriving`, on the guard findings", () => {
-    const [report] = JSON.parse(ccg("lint", example("release-session"), "--json").stdout);
-    const guard = report.findings.find((f: { rule: string }) => f.rule === "SILENT_FAILURE");
-    expect(Object.keys(guard).sort()).toEqual(
-      ["arriving", "message", "nodes", "phase", "rule", "severity"].sort(),
-    );
-    const others = report.findings.filter((f: { rule: string }) => f.rule !== "SILENT_FAILURE");
-    for (const f of others) expect(f).not.toHaveProperty("arriving");
+  it("lint --json gains one detail key per rule that needs it, and no other", () => {
+    const BASE = ["message", "nodes", "phase", "rule", "severity"];
+    const DETAIL: Record<string, string[]> = {
+      FAKE_EDGE: ["edge"],
+      MISSING_INPUT: ["field"],
+      HIDDEN_EDGE: ["resource"],
+      SELF_GRADING: [],
+      CONTEXT_COLLAPSE: ["arriving"],
+      SILENT_FAILURE: ["arriving"],
+    };
+    const seen = new Set<string>();
+    for (const name of ["release-session", "linear-chain", "self-grading", "wide-fanin"]) {
+      for (const report of JSON.parse(ccg("lint", example(name), "--json").stdout)) {
+        for (const f of report.findings as Array<{ rule: string }>) {
+          seen.add(f.rule);
+          expect(Object.keys(f).sort()).toEqual([...BASE, ...DETAIL[f.rule]!].sort());
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual(Object.keys(DETAIL).sort());
+  });
+});
+
+describe("render: every lint rule has a mark", () => {
+  // One example per rule, as written or (for linear-chain's shared file) repaired.
+  const CASES: Record<string, { spec: string; fix?: boolean; svg: string; mermaid: string; excalidraw: string }> = {
+    FAKE_EDGE: { spec: "linear-chain", svg: 'data-finding="FAKE_EDGE"', mermaid: "-.->", excalidraw: '"strokeStyle": "dashed"' },
+    MISSING_INPUT: { spec: "linear-chain", svg: ">no repo<", mermaid: "· no repo", excalidraw: "· no repo" },
+    HIDDEN_EDGE: { spec: "linear-chain", fix: true, svg: 'data-link="review_a~review_b"', mermaid: "shares notes/findings.md", excalidraw: '"link-review_a~review_b"' },
+    SELF_GRADING: { spec: "self-grading", svg: ">grades own work<", mermaid: "· grades own work", excalidraw: "· grades own work" },
+    CONTEXT_COLLAPSE: { spec: "wide-fanin", svg: ">200 raw in<", mermaid: "· 200 in, no reduce", excalidraw: "· 200 in, no reduce" },
+    SILENT_FAILURE: { spec: "release-session", svg: ">9 ≠ 8<", mermaid: "9 ≠ 8", excalidraw: "9 ≠ 8" },
+  };
+  let count = 0;
+  const draw = (ext: string, spec: string, ...flags: string[]) => {
+    const file = join(out, `marks-${count++}.${ext}`);
+    expect(ccg("render", example(spec), ...flags, "-o", file).status).toBe(0);
+    return readFileSync(file, "utf8");
+  };
+
+  it.each(Object.entries(CASES))("%s is drawn in svg, mermaid and excalidraw", (rule, c) => {
+    const flags = c.fix ? ["--fix"] : [];
+    const svg = draw("svg", c.spec, ...flags);
+    expect(svg).toMatch(new RegExp(`data-findings?="[^"]*\\b${rule}\\b`));
+    expect(svg).toContain(c.svg);
+    expect(draw("mmd", c.spec, ...flags)).toContain(c.mermaid);
+    expect(draw("excalidraw", c.spec, ...flags)).toContain(c.excalidraw);
+  });
+
+  it("covers every rule the linter has", async () => {
+    const { RULE_ORDER } = await import("@ccgrapher/lint");
+    expect(Object.keys(CASES).sort()).toEqual([...RULE_ORDER].sort());
+  });
+
+  it.each(Object.entries(CASES))("--plain leaves %s off", (rule, c) => {
+    const flags = c.fix ? ["--fix", "--plain"] : ["--plain"];
+    const svg = draw("svg", c.spec, ...flags);
+    expect(svg).not.toMatch(/data-findings?=|data-halo|data-link/);
+    expect(svg).not.toContain(c.svg);
+    expect(draw("mmd", c.spec, ...flags)).not.toContain("stroke:#C4442E");
+    expect(draw("excalidraw", c.spec, ...flags)).not.toContain('"halo-');
   });
 });
 

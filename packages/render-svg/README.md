@@ -9,11 +9,23 @@ const svg = renderSvg(layoutGraph(graph), {
   fakeEdges: [{ from: "a", to: "b" }],   // drawn red and dashed
   guardFindings: [{ id: "ci", arriving: 8 }], // fan-ins lint flagged, with what really arrives
 });
+
+// Or every finding at once, as the CLI does:
+import { lint, renderMarksFor } from "@ccgrapher/lint";
+const marked = renderSvg(layoutGraph(graph), renderMarksFor(lint(graph).findings.filter((f) => f.phase === "raw")));
 ```
 
 A node that declares `expects` always shows the count. A node named in `guardFindings`
 is also ringed in solid red: with no `expects` it reads "no count guard", with one it reads
 `9 ≠ 8`. The renderer draws what it is told and does not compare the two itself.
+
+Every other rule arrives in `findingMarks`. A starved node, a verifier that grades its own
+work and an overloaded fan-in are ringed the same way and captioned: `no repo`,
+`grades own work`, `200 in, no reduce`. A node has room for one caption, so with several
+findings it names the first in rule order and counts the rest (`no repo +1`), using a
+shorter form where the box is tight. Two concurrent writers of one file are joined by a thin
+solid red line, labelled with the file and routed above their row or round the margin, so it
+never crosses a box or reads as an edge.
 
 rough.js strokes, paper texture, per-kind icons. Agent nodes are sketchy; nodes
 with `model: null` get sharp corners to signal "plain code, costs nothing".

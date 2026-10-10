@@ -243,3 +243,25 @@ describe("escaping", () => {
     expect(withAngles).toContain("#lt;tag#gt;");
   });
 });
+
+describe("finding marks", () => {
+  const HIDDEN = { rule: "HIDDEN_EDGE", between: ["draft_a", "draft_b"], file: "out/draft.md" } as const;
+
+  it("notes each finding in the label and outlines the node in red", () => {
+    const out = renderMermaid(fixture("self-grading"), {
+      findingMarks: [HIDDEN, { rule: "SELF_GRADING", id: "check_own" }],
+    });
+    expect(out).toContain("grade the drafts · cheap · grades own work · expects 2");
+    expect(out).toContain("draft section A · cheap · shares out/draft.md with draft_b");
+    for (const id of ["draft_a", "draft_b", "check_own"]) {
+      expect(out).toContain(`style ${id} stroke:#C4442E,stroke-width:2.5px;`);
+    }
+  });
+
+  it("joins no two writers with a link, since a link would move a node down a row", () => {
+    const plain = renderMermaid(fixture("self-grading"));
+    const marked = renderMermaid(fixture("self-grading"), { findingMarks: [HIDDEN] });
+    const links = (s: string) => s.split("\n").filter((l) => /-->|-\.->|~~~|---/.test(l));
+    expect(links(marked)).toEqual(links(plain));
+  });
+});

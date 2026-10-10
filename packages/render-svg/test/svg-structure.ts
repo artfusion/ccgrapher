@@ -231,8 +231,13 @@ function readNode(g: El, dx: number, dy: number): SceneNode {
   };
 }
 
+/**
+ * An edge, or a finding's line between two nodes (`data-link="a~b"`). Both are
+ * held to the same rules: clear of every box but their own two ends.
+ */
 function readEdge(g: El, dx: number, dy: number): SceneEdge {
-  const [from = "", to = ""] = g.attrs["data-edge"]!.split("->");
+  const [from = "", to = ""] =
+    g.attrs["data-edge"] !== undefined ? g.attrs["data-edge"].split("->") : g.attrs["data-link"]!.split("~");
   // A rough path is several strokes; each `M` starts one, so keep them apart.
   const routes = g.children
     .filter((c) => c.name === "path")
@@ -259,7 +264,8 @@ function readScene(svg: El): Scene {
   const walk = (el: El, dx: number, dy: number): void => {
     for (const child of el.children) {
       if (child.attrs["data-node"] !== undefined) scene.nodes.push(readNode(child, dx, dy));
-      else if (child.attrs["data-edge"] !== undefined) scene.edges.push(readEdge(child, dx, dy));
+      else if (child.attrs["data-edge"] !== undefined || child.attrs["data-link"] !== undefined)
+        scene.edges.push(readEdge(child, dx, dy));
       else if (child.name === "text") scene.loose.push(...textBoxes(child, dx, dy, HEADER_CHAR_RATIO));
       else if (child.name === "g") {
         const t = translateOf(child);
