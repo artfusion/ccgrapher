@@ -205,8 +205,8 @@ Web canvas (`apps/web`, its own train; not in the published packages):
   alone. Nothing is applied in part.
 - The step's lint findings sit at the top of the panel. A fake edge offers the linter's own
   repair, applied with one click; the other rules are reported, not repaired.
-- Undo and redo for edits made in the panel, one step per edit, back to the exact text. Typing in
-  the text area, loading a spec or drawing a link starts the history afresh.
+- Undo and redo for edits made in the panel or on an edge, one step per edit, back to the exact
+  text. Typing in the text area or loading a spec starts the history afresh.
 - The canvas now redraws whenever the laid-out picture changes, not only when the number of steps
   does, so a rewired dependency moves its box.
 - And the move can be watched. An edit, whether typed, made in the panel, a repair applied or the
@@ -221,6 +221,29 @@ Web canvas (`apps/web`, its own train; not in the published packages):
   button in the corner brings the whole graph back into view.
 - While the text does not parse, the last picture that did stays on the canvas, faded and inert,
   under the error, so typing through a broken line no longer loses the view.
+- Edges can be changed on the picture, and the declarations follow. Each step that produces
+  something has one handle under it: drag from it onto another step and pick the field the new
+  edge carries. A field the target does not read yet is added to its `in`, typed as the source
+  produces it, and a field joins the edge already there rather than drawing a second one.
+- Click an edge to select it. Drag either end onto another step to move it, or delete it with
+  the button on the edge, the Delete key or the panel. A moved edge keeps what it carries: a new
+  target gains any field it lacked, and a new source has to produce every field.
+- Deleting or moving an edge never takes a field out of `in`. The step still needs it, and the
+  panel says beforehand that nothing will feed it and the linter will report so, or that the step
+  becomes a starting step when its last inbound edge goes.
+- A fake edge says so when selected, and deleting it is the linter's repair made by hand. Where
+  the linter would rewire it instead, the panel offers that repair too.
+- A gesture the spec cannot take is refused with the reason, and nothing is left drawn: a cycle
+  (named step by step), a self-loop, an edge that already carries the field, a source that does
+  not produce it.
+- Every gesture is one edit in the panel's undo history, and undo and redo also answer
+  Cmd/Ctrl+Z outside a text field. The boxes then move to where the new declarations put them.
+- From the keyboard: the panel lists a step's edges, each one selectable and deletable, a "wire
+  to" list draws a new one, and a selected edge's panel can move either end.
+- A step dragged by hand now slides straight back, and the first time it does a short note says
+  why: a step's place is worked out from what it depends on, so to move one, rewire it.
+- Drawing an edge no longer rewrites the others. The earlier hand-drawn link rebuilt every edge
+  from the canvas and lost what each one carried.
 
 ## v0.5.0 — 2026-09-09
 

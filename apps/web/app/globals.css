@@ -331,15 +331,30 @@ main {
 }
 
 /*
- * Real ports now — one per declared in:/out: field, drawn by JointJS itself
- * from the portMap bridge.ts builds, not the single invisible generic handle
- * React Flow used. Visible on purpose: a port is the drag affordance the
- * per-field connect model depends on, so hiding it would hide the feature.
+ * The one port a step has: the handle under it that a new edge is dragged
+ * out of (bridge.ts). Visible on purpose, since it is the only way in to
+ * drawing an edge with the pointer; it fills orange under the pointer to say
+ * it can be pulled.
  */
 .jj-port {
   fill: var(--paper);
   stroke: var(--ink);
   stroke-width: 1.4;
+  cursor: crosshair;
+}
+
+.jj-port:hover {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+/* The selected edge: drawn heavier, with its end handles and delete button. */
+.joint-link.edge-selected [joint-selector="line"] {
+  stroke-width: 3.5px !important;
+}
+
+.joint-link [joint-selector="wrapper"] {
+  cursor: pointer;
 }
 
 /* ---- run status --------------------------------------------------------- */
@@ -1355,6 +1370,254 @@ footer {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* ---- edge gestures ------------------------------------------------------ */
+
+/*
+ * The notes and the field chooser sit over the canvas, bottom left, clear of
+ * the fit button. Paper cards like the rest of the page; nothing animates.
+ */
+.canvas-notice-host {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 7;
+  max-width: min(520px, calc(100% - 24px));
+}
+
+.canvas-notice,
+.drag-note,
+.edge-chooser {
+  margin: 0;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow: 2px 2px 0 rgba(43, 39, 36, 0.12);
+  font-size: 13px;
+}
+
+.canvas-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 10px;
+}
+
+.canvas-notice.refused {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.canvas-notice span {
+  flex: 1;
+}
+
+.canvas-notice button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.canvas-notice button:focus-visible,
+.drag-note button:focus-visible,
+.edge-chooser button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.drag-note {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  z-index: 7;
+  max-width: min(360px, calc(100% - 24px));
+  padding: 10px 12px;
+}
+
+.drag-note p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.drag-note button,
+.edge-chooser button.ghost {
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.edge-chooser {
+  position: absolute;
+  left: 50%;
+  top: 52px;
+  z-index: 8;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px));
+  padding: 10px 12px;
+}
+
+.edge-chooser p {
+  margin: 0 0 8px;
+}
+
+.edge-chooser ul {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.edge-chooser li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.edge-chooser li button {
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 12px/1.4 var(--mono);
+  cursor: pointer;
+  text-align: left;
+}
+
+.edge-chooser li button .type {
+  font-weight: 400;
+}
+
+.edge-chooser li button:disabled {
+  background: #fff;
+  color: var(--muted);
+  border-color: var(--rule);
+  cursor: not-allowed;
+}
+
+.edge-chooser .note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.edge-chooser .note.refused {
+  color: var(--danger);
+}
+
+.inspector-edges,
+.edge-panel {
+  margin: 10px 0 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.inspector-edges h3,
+.edge-panel h3 {
+  margin: 0 0 6px;
+  font: 600 13px/1.3 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.edge-panel h3:focus {
+  outline: none;
+}
+
+.edge-panel h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.inspector-edges .clean {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.inspector-edges ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.inspector-edges li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font: 11.5px/1.4 var(--mono);
+}
+
+.pane.inspector .inspector-edges button.edge-pick {
+  font-family: var(--mono);
+}
+
+.inspector-edges .carries {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.inspector-edges .carries.fake {
+  color: var(--danger);
+}
+
+.edge-carries {
+  margin: 0 0 8px;
+  font: 12px/1.4 var(--mono);
+  color: var(--muted);
+}
+
+.edge-fake {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: #f6f1e8;
+  border-left: 2px solid var(--danger);
+  font-size: 12px;
+}
+
+.edge-fake p {
+  margin: 0 0 6px;
+}
+
+.edge-fake .rule {
+  color: var(--danger);
+  font: 600 11.5px var(--mono);
+}
+
+.edge-actions {
+  margin: 8px 0;
+}
+
+.pane.inspector button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.edge-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.edge-move select {
+  flex: 1;
+}
+
+.pane.inspector button.edge-back {
+  margin-top: 6px;
 }
 
 @media (max-width: 860px) {

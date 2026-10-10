@@ -1,10 +1,10 @@
 "use client";
 // SPDX-License-Identifier: Apache-2.0
 
-import { formatSpec, type WorkflowSpec } from "@ccgrapher/core";
+import { formatSpec } from "@ccgrapher/core";
 import { HeatData } from "@ccgrapher/trace";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildModel, type Model } from "../lib/graph-model";
 import { applyRunState } from "../lib/overlay";
 import { applyCapabilityState } from "../lib/capability";
@@ -17,7 +17,19 @@ import {
 import { DEFAULT_FIXTURE, FIXTURES } from "../lib/fixtures";
 import { decodeSpecFragment, isViewerHash } from "../lib/viewer-link";
 import { edit, redo, startHistory, undo, type SpecHistory } from "../lib/spec-history";
+import {
+  addEdge,
+  connectionRefusal,
+  fieldChoices,
+  retargetEdge,
+  deleteEdge,
+  edgeAt,
+  type EdgeRef,
+  type GestureResult,
+} from "../lib/edge-gestures";
 import { Inspector } from "./inspector";
+import { CanvasNotice, DragNote, EdgeChooser } from "./edge-panel";
+import type { EdgeGestures } from "./canvas/canvas";
 import {
   DEFAULT_SERVER_URL,
   useRunState,
@@ -31,11 +43,20 @@ import {
 // loaded after hydration rather than during SSR.
 const Canvas = dynamic(() => import("./canvas/canvas").then((m) => m.Canvas), { ssr: false });
 
-/** How long a connect/disconnect waits before it reaches the YAML pane. */
-const SPEC_WRITE_DEBOUNCE_MS = 75;
+/** How long a note about a gesture stays, unless dismissed first. A refusal stays longer: it has a reason to read. */
+const NOTICE_MS = { done: 5000, refused: 9000 } as const;
+
+/** Keys typed into a field are the field's, never a shortcut. */
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return (
+    !!el &&
+    (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)
+  );
+}
 
 export function Editor() {
-  // The spec text, with the undo history of edits made from the inspector.
+  // The spec text, with the undo history of edits made from the picture.
   // `setSource` replaces the text and starts the history afresh (see
   // lib/spec-history.ts for why typing does not join it); `editSource` is a
   // recorded edit, one undo step each.
@@ -52,7 +73,7 @@ export function Editor() {
 
   // A spec *loaded* (an example, a file, a link) is a new drawing: the canvas
   // remounts on it and frames it afresh. Everything else (typing, the panel,
-  // a repair, the preview toggle, a drawn link) is an edit, and moves the
+  // a repair, the preview toggle, an edge gesture) is an edit, and moves the
   // boxes of the drawing already on screen without touching pan or zoom.
   const [loaded, setLoaded] = useState(0);
   const loadSource = useCallback(
@@ -68,10 +89,21 @@ export function Editor() {
   // disappears while its id is being retyped comes back selected.
   const [selectedId, setSelectedId] = useState<string>();
   const [focusToken, setFocusToken] = useState(0);
+  // The edge the inspector is showing, by its ends. Shown over the step's
+  // fields while set; clearing it goes back to the step. Read through
+  // `selectedEdge` below, which drops it once the spec no longer has it (an
+  // undo, a typed edit), rather than leaving a panel about nothing.
+  const [pickedEdge, setSelectedEdge] = useState<EdgeRef>();
+  const [edgeFocusToken, setEdgeFocusToken] = useState(0);
   const selectFromCanvas = useCallback((id: string | undefined) => {
     setSelectedId(id);
+    setSelectedEdge(undefined);
     // A step picked on the canvas takes keyboard focus to its fields.
     if (id !== undefined) setFocusToken((n) => n + 1);
+  }, []);
+  const selectEdgeFromCanvas = useCallback((edge: EdgeRef) => {
+    setSelectedEdge(edge);
+    setEdgeFocusToken((n) => n + 1);
   }, []);
 
   // A spec carried in the URL fragment (see lib/viewer-link.ts) — read once,
@@ -124,27 +156,96 @@ export function Editor() {
   if (model.ok && (held?.model !== model || held.loaded !== loaded)) setHeld({ model, loaded });
   const drawn = model.ok ? model : held?.loaded === loaded ? held.model : undefined;
 
-  // ── canvas -> YAML ──────────────────────────────────────────────────────
-  // The only two things a canvas edit is allowed to be: a link connecting or
-  // disconnecting — `Canvas` enforces that a drag never reaches this handler
-  // at all (see app/canvas/canvas.tsx). `Canvas` is uncontrolled and
-  // event-driven rather than a two-way sync. A spec change does update the
-  // mounted graph in place, but every write that makes is marked as the
-  // canvas's own and `GraphSync` ignores it (app/canvas/canvas.tsx), so a
-  // change arriving from the spec is never written back as an edit. Only the
-  // debounce is needed here, so a user drawing a link across several ports in
-  // quick succession writes the YAML once.
-  const writeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const onCanvasSpecChange = useCallback(
-    (next: WorkflowSpec) => {
-      clearTimeout(writeTimer.current);
-      writeTimer.current = setTimeout(() => {
-        setSource(formatSpec(next));
-        setRepaired(false);
-      }, SPEC_WRITE_DEBOUNCE_MS);
+  // ── canvas -> spec ────────────────────────────────────────────────────────
+  // Every gesture on the picture is a gesture on the spec. The canvas reports
+  // what a drag or a click on an edge meant (app/canvas/canvas.tsx); here it
+  // becomes one recorded edit through lib/edge-gestures.ts, or a refusal with
+  // its reason. Either way the canvas has already put its drawing back as the
+  // spec has it, so a refused gesture leaves nothing behind.
+  const [notice, setNotice] = useState<{ tone: "done" | "refused"; text: string }>();
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(undefined), NOTICE_MS[notice.tone]);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  const onGesture = useCallback(
+    (result: GestureResult) => {
+      if (result.ok) {
+        editSource(result.source);
+        setSelectedEdge(result.edge);
+        // A deleted edge's panel is gone; focus goes back to the step's.
+        if (!result.edge) setFocusToken((n) => n + 1);
+        setNotice({ tone: "done", text: result.summary });
+      } else {
+        setNotice({ tone: "refused", text: result.reason });
+      }
     },
-    [setSource],
+    [editSource],
   );
+
+  // A new edge waiting for its field, when the source produces more than one.
+  const [choosing, setChoosing] = useState<{ from: string; to: string }>();
+  const spec = model.ok ? model.base.spec : undefined;
+  const selectedEdge = pickedEdge && spec && edgeAt(spec, pickedEdge) ? pickedEdge : undefined;
+
+  const onConnect = useCallback(
+    (from: string, to: string) => {
+      if (!spec) return;
+      const refusal = connectionRefusal(spec, from, to);
+      if (refusal) return setNotice({ tone: "refused", text: refusal });
+      const choices = fieldChoices(spec, from, to);
+      if (choices.length === 1) return onGesture(addEdge(spec, from, to, choices[0]!.field));
+      setChoosing({ from, to });
+    },
+    [spec, onGesture],
+  );
+
+  // Said once per visit: the first drag explains itself, later ones need not.
+  const [dragNote, setDragNote] = useState<"unseen" | "showing" | "seen">("unseen");
+
+  const gestures = useMemo<EdgeGestures | undefined>(
+    () =>
+      viewerMode || !spec
+        ? undefined
+        : {
+            selectedEdge,
+            onSelectEdge: selectEdgeFromCanvas,
+            onConnect,
+            onRetarget: (edge, end, node) => onGesture(retargetEdge(spec, edge, end, node)),
+            onDeleteEdge: (edge) => onGesture(deleteEdge(spec, edge)),
+            onNodeDrag: () => setDragNote((seen) => (seen === "unseen" ? "showing" : seen)),
+          },
+    [viewerMode, spec, selectedEdge, selectEdgeFromCanvas, onConnect, onGesture],
+  );
+
+  // Delete or Backspace removes the selected edge, Escape lets it go, and
+  // undo and redo work from anywhere outside a text field. The inspector
+  // handles its own keys first and marks them handled.
+  useEffect(() => {
+    if (viewerMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isTyping(event.target)) return;
+      if (choosing) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (selectedEdge && spec && (event.key === "Delete" || event.key === "Backspace")) {
+        event.preventDefault();
+        onGesture(deleteEdge(spec, selectedEdge));
+      } else if (selectedEdge && event.key === "Escape") {
+        setSelectedEdge(undefined);
+      } else if (mod && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        setHistory(event.shiftKey ? redo : undo);
+        setRepaired(false);
+      } else if (mod && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        setHistory(redo);
+        setRepaired(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [viewerMode, choosing, selectedEdge, spec, onGesture]);
 
   // ── the overlay seam ──────────────────────────────────────────────────────
   // Layout has already run at this point and its output is not touched below.
@@ -351,12 +452,28 @@ export function Editor() {
                 nodes={view.nodes}
                 edges={view.edges}
                 specNodes={drawn.graph.spec.nodes}
-                baseSpec={drawn.graph.spec}
-                onSpecChange={onCanvasSpecChange}
                 onSelect={viewerMode ? undefined : selectFromCanvas}
+                gestures={model.ok ? gestures : undefined}
               />
             </div>
           )}
+          {!viewerMode && (
+            <CanvasNotice notice={notice} onDismiss={() => setNotice(undefined)} />
+          )}
+          {choosing && spec && (
+            <EdgeChooser
+              key={`${choosing.from}->${choosing.to}`}
+              from={choosing.from}
+              to={choosing.to}
+              choices={fieldChoices(spec, choosing.from, choosing.to)}
+              onChoose={(field) => {
+                setChoosing(undefined);
+                onGesture(addEdge(spec, choosing.from, choosing.to, field));
+              }}
+              onCancel={() => setChoosing(undefined)}
+            />
+          )}
+          {dragNote === "showing" && <DragNote onDismiss={() => setDragNote("seen")} />}
           {!model.ok && (
             <pre className={drawn ? "error over" : "error"}>{model.error}</pre>
           )}
@@ -382,6 +499,14 @@ export function Editor() {
               setRepaired(false);
             }}
             focusToken={focusToken}
+            selectedEdge={selectedEdge}
+            onSelectEdge={(edge) => {
+              setSelectedEdge(edge);
+              if (edge) setEdgeFocusToken((n) => n + 1);
+            }}
+            onGesture={onGesture}
+            onConnect={onConnect}
+            edgeFocusToken={edgeFocusToken}
           />
         )}
       </main>

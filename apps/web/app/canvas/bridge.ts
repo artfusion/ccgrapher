@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { EdgeSpec, NodeSpec, WorkflowSpec } from "@ccgrapher/core";
+import type { NodeSpec } from "@ccgrapher/core";
 import type { CCEdge, CCNode } from "../../lib/view-model.js";
 
 /**
@@ -66,46 +66,20 @@ const arrowMarker = (fill: string) => ({ type: "path" as const, d: "M 10 -5 0 0 
 
 export type Cell = ElementCell | LinkCell;
 
-/** `in:<field>` / `out:<field>` — a port id encodes direction and field name. */
-export const inPort = (field: string): string => `in:${field}`;
-export const outPort = (field: string): string => `out:${field}`;
-
-/** The field name a port id carries. Inverse of `inPort`/`outPort`. */
-export function portField(portId: string): string {
-  return portId.slice(portId.indexOf(":") + 1);
-}
+/** The one port a step has: the handle a new edge is dragged out of. */
+export const OUT_PORT = "out";
 
 /**
- * Ports spread evenly along the node's top (inbound) and bottom (outbound)
- * edge — the same top-to-bottom flow the layout already draws. Purely a
- * drag affordance; `graphToSpec` below is what actually reconciles ports
- * back into the one `carries: [...]` list an edge is allowed to have.
+ * A step that produces something gets one handle, centred on its bottom edge,
+ * the side its outbound edges already leave from. Dragging from it draws a
+ * new edge; the field it carries is chosen on the drop (lib/edge-gestures.ts),
+ * not by which dot the drag started on, and the drop can land anywhere on the
+ * target step, so there are no inbound ports to aim at. A step with an empty
+ * `out` has nothing an edge from it could carry, and gets no handle.
  */
 function portMapFor(spec: NodeSpec | undefined): Record<string, PortSpec> {
-  if (!spec) return {};
-  const map: Record<string, PortSpec> = {};
-
-  const inFields = Object.keys(spec.in);
-  inFields.forEach((field, i) => {
-    map[inPort(field)] = {
-      cx: `calc(${(i + 1) / (inFields.length + 1)} * w)`,
-      cy: 0,
-      width: 8,
-      height: 8,
-    };
-  });
-
-  const outFields = Object.keys(spec.out);
-  outFields.forEach((field, i) => {
-    map[outPort(field)] = {
-      cx: `calc(${(i + 1) / (outFields.length + 1)} * w)`,
-      cy: "calc(h)",
-      width: 8,
-      height: 8,
-    };
-  });
-
-  return map;
+  if (!spec || Object.keys(spec.out).length === 0) return {};
+  return { [OUT_PORT]: { cx: "calc(0.5 * w)", cy: "calc(h)", width: 12, height: 12 } };
 }
 
 /**
@@ -118,6 +92,7 @@ function portMapFor(spec: NodeSpec | undefined): Record<string, PortSpec> {
 export function specToGraph(
   model: { readonly nodes: readonly CCNode[]; readonly edges: readonly CCEdge[] },
   specNodes: readonly NodeSpec[],
+  editable = true,
 ): Cell[] {
   const byId = new Map(specNodes.map((n) => [n.id, n]));
 
@@ -136,7 +111,7 @@ export function specToGraph(
     // rather than merged into the bare keys, so a spec field that happened to
     // be named `className` could never collide with the overlay's own.
     data: { ...n.data, overlayClassName: n.className, overlayStyle: n.style },
-    portMap: portMapFor(byId.get(n.id)),
+    portMap: editable ? portMapFor(byId.get(n.id)) : {},
   }));
 
   const links: LinkCell[] = model.edges.map((e) => {
@@ -169,78 +144,12 @@ export function specToGraph(
             },
           }
         : undefined,
-      data: e.data,
+      // The edge as the spec names it, so a gesture on this link (select,
+      // delete, drag an end) can say which edge it means. The link's own id
+      // carries an index that shifts as edges come and go.
+      data: { ...e.data, from: e.source, to: e.target },
     };
   });
 
   return [...elements, ...links];
-}
-
-export interface LinkEndpoint {
-  readonly id: unknown;
-  readonly port: string | null;
-}
-
-/**
- * The other direction. Merges every link sharing a `(from, to)` pair into
- * one `EdgeSpec` with a unioned `carries` — non-negotiable, because
- * `examples/diamond.yaml`'s checker edges each carry three fields on one
- * edge, and drawing three separate links there would change
- * `effectiveInboundCount` and fire a spurious `SILENT_FAILURE`.
- *
- * Patches `edges` on the already-parsed spec rather than reconstructing
- * nodes — every field the canvas doesn't model (`model`, `writes`, `uses`,
- * `freshContext`, `expects`, `fanOut`, `worktree`, `priority`, top-level `goal:`)
- * survives untouched.
- */
-export function graphToSpec(
-  links: readonly { readonly source: LinkEndpoint; readonly target: LinkEndpoint }[],
-  base: WorkflowSpec,
-): WorkflowSpec {
-  const merged = new Map<string, { from: string; to: string; carries: Set<string> }>();
-
-  for (const link of links) {
-    if (link.source.id === undefined || link.target.id === undefined) continue;
-    const from = String(link.source.id);
-    const to = String(link.target.id);
-    if (from === to) continue;
-
-    const key = `${from}->${to}`;
-    const entry = merged.get(key) ?? { from, to, carries: new Set<string>() };
-
-    // A field can be named from either end — the target's `in:` port if the
-    // drag landed there, the source's `out:` port otherwise. Either way it's
-    // one field per port, unioned in.
-    if (link.target.port?.startsWith("in:")) entry.carries.add(portField(link.target.port));
-    if (link.source.port?.startsWith("out:")) entry.carries.add(portField(link.source.port));
-
-    merged.set(key, entry);
-  }
-
-  const edges: EdgeSpec[] = [...merged.values()].map((e) => ({
-    from: e.from,
-    to: e.to,
-    carries: [...e.carries],
-  }));
-
-  return { ...base, edges };
-}
-
-/**
- * Cheap structural check during drag, before a link ever reaches
- * `graphToSpec`: no self-loops, and direction must run `out:` -> `in:`.
- * Both ends must be real ports — dropping on a node's body rather than a
- * port is not a connection this canvas accepts.
- */
-export function validateLinkConnection(
-  sourceId: unknown,
-  sourcePort: string | null,
-  targetId: unknown,
-  targetPort: string | null,
-): boolean {
-  if (sourceId === targetId) return false;
-  if (!sourcePort || !targetPort) return false;
-  if (!sourcePort.startsWith("out:")) return false;
-  if (!targetPort.startsWith("in:")) return false;
-  return true;
 }

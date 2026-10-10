@@ -80,8 +80,8 @@ export interface CellDiff {
  * link's id carries its index in the edge list (graph-model.ts), which shifts
  * whenever an earlier edge is added or dropped, and a link someone drew on
  * the canvas has an id JointJS made up. When two drawn links join the same
- * pair (one per port), the first is kept and the rest leave, because the spec
- * holds them as one edge (bridge.ts's `graphToSpec`).
+ * pair, the first is kept and the rest leave, because the spec holds them as
+ * one edge (lib/edge-gestures.ts joins a field onto the edge already there).
  */
 export function diffCells(
   live: { readonly elements: readonly { readonly id: string }[]; readonly links: readonly LiveLink[] },

@@ -15,19 +15,23 @@
 
 import { buildGraph, parseSpec } from "@ccgrapher/core";
 import { lint } from "@ccgrapher/lint";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildModel } from "../lib/graph-model";
 import { FIXTURES } from "../lib/fixtures";
 import { encodeSpecFragment } from "../lib/viewer-link";
 import type { CCEdge, CCNode } from "../lib/view-model";
+import type { EdgeGestures } from "../app/canvas/canvas";
 
 // Each node is a button that selects it, the way a click on its card does,
 // and carries the parts of its `data` the inspector tests read back.
 // The real canvas frames the graph once, when it mounts, so counting mounts is
 // how these tests see whether an edit kept the reader's pan and zoom.
 const canvasMounts = vi.hoisted(() => ({ count: 0 }));
+// The edge gestures the editor last handed the canvas: the tests below call
+// them the way the real canvas does when a link is drawn, dragged or deleted.
+const canvasGestures = vi.hoisted(() => ({ current: undefined as EdgeGestures | undefined }));
 
 vi.mock("../app/canvas/canvas", async () => {
   const { useEffect } = await import("react");
@@ -35,11 +39,14 @@ vi.mock("../app/canvas/canvas", async () => {
   Canvas: function CanvasMock({
     nodes,
     onSelect,
+    gestures,
   }: {
     nodes: readonly CCNode[];
     edges: readonly CCEdge[];
     onSelect?: (id: string | undefined) => void;
+    gestures?: EdgeGestures;
   }) {
+    canvasGestures.current = gestures;
     useEffect(() => {
       canvasMounts.count += 1;
     }, []);
@@ -395,5 +402,123 @@ describe("the node inspector", () => {
     const textarea = document.querySelector<HTMLTextAreaElement>(".pane.source textarea")!;
     fireEvent.change(textarea, { target: { value: yaml().replace("expects: 3", "expects: 4") } });
     expect((screen.getByLabelText("expects") as HTMLInputElement).value).toBe("4");
+  });
+});
+
+describe("edge gestures", () => {
+  beforeEach(() => mockRunsEndpoint(NO_RUNS));
+
+  const yaml = () => document.querySelector<HTMLTextAreaElement>(".pane.source textarea")!.value;
+  const edges = () => parseSpec(yaml()).edges.map((e) => `${e.from}->${e.to}:${e.carries.join(",")}`);
+  const notice = () => document.querySelector(".canvas-notice")?.textContent ?? "";
+  const gestures = () => {
+    if (!canvasGestures.current) throw new Error("the canvas was given no gestures");
+    return canvasGestures.current;
+  };
+  async function loadDiamond() {
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    fireEvent.change(screen.getByDisplayValue("load an example…"), { target: { value: "diamond" } });
+    await waitFor(() => expect(yaml()).toBe(FIXTURES.diamond));
+  }
+
+  it("draws an edge: the field is chosen, the target reads it, and one undo takes it all back", async () => {
+    const user = userEvent.setup();
+    await loadDiamond();
+    const before = yaml();
+
+    act(() => gestures().onConnect("worker_5", "merge"));
+    const chooser = await screen.findByRole("dialog");
+    expect(within(chooser).getByRole("button", { name: /claim/ })).toBeTruthy();
+    await user.click(within(chooser).getByRole("button", { name: /source/ }));
+
+    expect(edges()).toContain("worker_5->merge:source");
+    expect(parseSpec(yaml()).nodes.find((n) => n.id === "merge")!.in.source).toBe("url");
+    expect(notice()).toMatch(/wired worker_5 → merge, carrying source/);
+    // The new edge is selected, and its panel says what it carries.
+    expect(screen.getByRole("heading", { name: "edge worker_5 → merge" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(yaml()).toBe(before);
+  });
+
+  it("rewires the diamond's fan-in by dragging an edge's end, as one undoable edit", async () => {
+    const user = userEvent.setup();
+    await loadDiamond();
+    const before = yaml();
+
+    act(() => gestures().onRetarget({ from: "worker_5", to: "checker" }, "to", "merge"));
+    expect(edges()).toContain("worker_5->merge:claim,source,date");
+    expect(edges().filter((e) => e.includes("->checker:"))).toHaveLength(4);
+    // The linter follows: the checker still expects five.
+    expect(screen.getAllByText("SILENT_FAILURE").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(yaml()).toBe(before);
+    await user.click(screen.getByRole("button", { name: "redo" }));
+    expect(edges()).toContain("worker_5->merge:claim,source,date");
+  });
+
+  it("refuses a cycle with the reason and leaves the text alone", async () => {
+    await loadDiamond();
+    const before = yaml();
+    act(() => gestures().onConnect("merge", "split"));
+    expect(notice()).toMatch(/cycle: split → .* → merge → split/);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(yaml()).toBe(before);
+  });
+
+  it("reaches an edge from the keyboard, deletes it with Delete, and Cmd+Z brings it back", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    const before = yaml();
+    await user.selectOptions(screen.getByLabelText("inspect"), "review_b");
+
+    await user.click(screen.getByRole("button", { name: "review_b → lint_docs" }));
+    const heading = screen.getByRole("heading", { name: "edge review_b → lint_docs" });
+    expect(document.activeElement).toBe(heading);
+    // A fake edge says so, and says that deleting it is the repair.
+    expect(screen.getByText("FAKE_EDGE", { selector: ".edge-fake .rule" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "delete this fake edge" })).toBeTruthy();
+
+    await user.keyboard("{Delete}");
+    expect(edges().some((e) => e.startsWith("review_b->lint_docs"))).toBe(false);
+    expect(notice()).toMatch(/linter's repair, made by hand/);
+
+    await user.keyboard("{Meta>}z{/Meta}");
+    expect(yaml()).toBe(before);
+  });
+
+  it("lets go of an edge that an undo took away", async () => {
+    const user = userEvent.setup();
+    await loadDiamond();
+    act(() => gestures().onRetarget({ from: "worker_5", to: "checker" }, "to", "merge"));
+    expect(screen.getByRole("heading", { name: "edge worker_5 → merge" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(screen.queryByRole("heading", { name: /^edge / })).toBeNull();
+  });
+
+  it("explains a dragged step once, and not again after it is dismissed", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    expect(screen.queryByRole("note")).toBeNull();
+
+    act(() => gestures().onNodeDrag());
+    const note = screen.getByRole("note", { name: "why the step went back" });
+    expect(note.textContent).toMatch(/worked out from what it depends on/);
+    await user.click(within(note).getByRole("button", { name: "understood" }));
+
+    act(() => gestures().onNodeDrag());
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("gives the canvas no gestures in viewer mode", async () => {
+    window.location.hash = "#view=1";
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    expect(canvasGestures.current).toBeUndefined();
+    window.location.hash = "";
   });
 });

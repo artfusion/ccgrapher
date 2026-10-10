@@ -3,6 +3,7 @@
 
 import type { NodeSpec } from "@ccgrapher/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { EdgeRef, GestureResult } from "../lib/edge-gestures";
 import type { ModelState } from "../lib/graph-model";
 import {
   applyRepair,
@@ -18,6 +19,7 @@ import {
   valueOf,
   type Field,
 } from "../lib/inspector";
+import { EdgePanel, StepEdges } from "./edge-panel";
 
 /**
  * The node inspector: the selected step's fields, edited in place.
@@ -37,6 +39,10 @@ import {
  * Text-like controls commit on Enter or when focus leaves them, so one change
  * is one undoable edit rather than one per keystroke. Escape puts the draft
  * back. Selects, toggles and chip removal commit at once.
+ *
+ * Edges live here too (app/edge-panel.tsx): a step lists its edges, and a
+ * selected edge, picked here or on the canvas, gets its own panel. An edge
+ * gesture is one undoable edit in the same history as a field edit.
  */
 export function Inspector({
   model,
@@ -48,6 +54,11 @@ export function Inspector({
   onUndo,
   onRedo,
   focusToken,
+  selectedEdge,
+  onSelectEdge,
+  onGesture,
+  onConnect,
+  edgeFocusToken,
 }: {
   model: ModelState;
   selectedId: string | undefined;
@@ -59,6 +70,13 @@ export function Inspector({
   onRedo: () => void;
   /** Changes whenever focus should move to the panel: a step was picked on the canvas. */
   focusToken: number;
+  selectedEdge: EdgeRef | undefined;
+  /** Select an edge, or with undefined go back to the step. */
+  onSelectEdge: (edge: EdgeRef | undefined) => void;
+  onGesture: (result: GestureResult) => void;
+  onConnect: (from: string, to: string) => void;
+  /** As `focusToken`, for an edge picked on the canvas. */
+  edgeFocusToken: number;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
@@ -88,6 +106,9 @@ export function Inspector({
     } else if (mod && !typing && event.key.toLowerCase() === "y") {
       event.preventDefault();
       onRedo();
+    } else if (event.key === "Escape" && !event.defaultPrevented && selectedEdge) {
+      onSelectEdge(undefined);
+      heading.current?.focus();
     } else if (event.key === "Escape" && !event.defaultPrevented && node) {
       onSelect(undefined);
       picker.current?.focus();
@@ -98,7 +119,7 @@ export function Inspector({
     <aside className="pane inspector" aria-labelledby="inspector-title" onKeyDown={onKeyDown}>
       <div className="inspector-head">
         <h2 id="inspector-title" ref={heading} tabIndex={-1}>
-          {node ? node.label : "step"}
+          {selectedEdge && model.ok ? "edge" : node ? node.label : "step"}
         </h2>
         <div className="inspector-history">
           <button
@@ -143,6 +164,16 @@ export function Inspector({
         <p className="inspector-note bad">
           The spec does not parse, so there is nothing to edit here until the text is fixed.
         </p>
+      ) : selectedEdge ? (
+        <EdgePanel
+          key={`${selectedEdge.from}->${selectedEdge.to}`}
+          model={model}
+          edge={selectedEdge}
+          onGesture={onGesture}
+          onEdit={onEdit}
+          onBack={() => onSelectEdge(undefined)}
+          focusToken={edgeFocusToken}
+        />
       ) : !node ? (
         <p className="inspector-note">
           Select a step on the canvas, or pick one above. Its fields are the spec: change one and
@@ -155,6 +186,13 @@ export function Inspector({
             nodeId={node.id}
             model={model}
             onApply={(repairSource) => onEdit(repairSource)}
+          />
+          <StepEdges
+            model={model}
+            nodeId={node.id}
+            onSelectEdge={onSelectEdge}
+            onGesture={onGesture}
+            onConnect={onConnect}
           />
           <div className="inspector-fields">
             {NODE_FIELDS.map((field) => {

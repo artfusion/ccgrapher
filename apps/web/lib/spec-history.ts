@@ -8,8 +8,9 @@
  * copy of it.
  *
  * The scope is deliberately narrow. Only edits that go through `edit` are
- * recorded. Anything else that replaces the text (typing in it, loading an
- * example, opening a file, drawing a link) starts a fresh history with
+ * recorded: the inspector's, and every edge gesture on the canvas (drawing,
+ * moving or deleting an edge). Anything else that replaces the text (typing
+ * in it, loading an example, opening a file) starts a fresh history with
  * `startHistory`: an undo that restored a spec from before the reader's own
  * typing would throw that typing away, and the text area keeps its own undo
  * for what is typed into it.
