@@ -1023,8 +1023,114 @@ describe("help", () => {
   it("lists every command", () => {
     const run = ccg("--help");
     expect(run.status).toBe(0);
-    for (const command of ["lint", "render", "codegen", "ingest", "plan", "retro", "serve", "trace"]) {
+    for (const command of ["lint", "render", "codegen", "explain", "ingest", "plan", "retro", "serve", "trace"]) {
       expect(run.stdout).toContain(`ccg ${command}`);
     }
+  });
+});
+
+describe("explain", () => {
+  function explain(name: string, ...flags: string[]): { run: Run; html: string } {
+    const file = join(out, `explain-${name}${flags.join("").replace(/[^a-z]/g, "")}.html`);
+    const run = ccg("explain", example(name), "-o", file, ...flags);
+    return { run, html: existsSync(file) ? readFileSync(file, "utf8") : "" };
+  }
+
+  /** The step numbers drawn on the picture, and the ones the list gives, in order. */
+  const drawn = (html: string) => [...html.matchAll(/<g data-step="([^"]+)"/g)].map((m) => m[1]);
+  const listed = (html: string) => [...html.matchAll(/<li data-step="([^"]+)"/g)].map((m) => m[1]);
+
+  it("writes one page with the three panels", () => {
+    const { run, html } = explain("research-desk");
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain("explain, 9 steps");
+    expect(html.startsWith("<!doctype html>")).toBe(true);
+    expect(html).toContain("<h1>research-desk</h1>");
+    expect(html).toContain("decision-grade research on &lt;question&gt;");
+    expect(html).toMatch(/<h2 id="loop-heading">.*The full loop<\/h2>/);
+    expect(html).toMatch(/<h2 id="steps-heading">.*One run, step by step<\/h2>/);
+    expect(html).toMatch(/<h2 id="made-heading">.*What it is made of<\/h2>/);
+    // The picture is the one render draws, boundary and all.
+    expect(html).toContain("gather and check");
+  });
+
+  it("numbers the list exactly as the picture is numbered", () => {
+    for (const name of ["research-desk", "release-session", "diamond"]) {
+      const { html } = explain(name);
+      expect(listed(html).length).toBeGreaterThan(0);
+      expect([...listed(html)].sort()).toEqual([...drawn(html)].sort());
+    }
+  });
+
+  it("lists the one file a one-file target writes", () => {
+    const { html } = explain("research-desk");
+    expect(html).toContain('<span class="path">research-desk.workflow.mjs</span>');
+    expect(html).toContain("the workflow script Claude Code runs: 9 steps in 7 waves");
+  });
+
+  it("lists the managed-agents directory as a tree, each agent by its step", () => {
+    const { run, html } = explain("research-desk", "-t", "managed-agents");
+    expect(run.status).toBe(0);
+    expect(html).toContain('<li class="dir"><span class="path">agents/</span>');
+    expect(html).toContain('<span class="path">plan/</span>');
+    expect(html).toContain('<span class="path">environment.yaml</span>');
+    expect(html).toContain("the agent for step 1, plan the angles, on claude-opus-5-5");
+    expect(html.match(/<span class="path">agent\.md<\/span>/g)).toHaveLength(6);
+  });
+
+  it("lists the findings grouped by rule, and says when the spec is clean", () => {
+    expect(explain("research-desk").html).toContain("No findings.");
+    const { run, html } = explain("release-session");
+    // A page about a spec with errors is still a page written: lint's exit code is lint's.
+    expect(run.status).toBe(0);
+    expect(html).not.toContain("No findings.");
+    expect(html.match(/<code>FAKE_EDGE<\/code>/g)).toHaveLength(1);
+    expect(html.match(/<code>MISSING_INPUT<\/code>/g)).toHaveLength(1);
+    expect(html).toContain("pr_hotfix -&gt; pr_landing carries nothing");
+    expect(html).toContain("ci declares expects: 9 but 8 results actually arrive");
+    expect(html).toContain("Critical path: 12 layers as written, 5 once repaired.");
+  });
+
+  it("draws the repair beside the spec as written only under --fix, and only when it changes something", () => {
+    const plain = explain("release-session").html;
+    expect(plain).not.toContain("The repair, before and after");
+    expect(plain).toContain("ccg explain --fix</code> draws the repair");
+
+    const fixed = explain("release-session", "--fix").html;
+    expect(fixed).toContain("The repair, before and after");
+    expect(fixed).toContain("As written: 12 layers");
+    expect(fixed).toContain("Repaired: 5 layers");
+    // The main picture and its list describe the repaired graph: five waves.
+    expect(listed(fixed)).toContain("5");
+    expect(listed(fixed)).not.toContain("6");
+
+    const clean = explain("research-desk", "--fix").html;
+    expect(clean).not.toContain("The repair, before and after");
+    expect(clean).toContain("nothing to repair");
+  });
+
+  it("is the same bytes every time", () => {
+    const a = ccg("explain", example("release-session"), "--fix", "-t", "managed-agents");
+    const b = ccg("explain", example("release-session"), "--fix", "-t", "managed-agents");
+    expect(a.status).toBe(0);
+    expect(a.stdout.length).toBeGreaterThan(0);
+    expect(a.stdout).toBe(b.stdout);
+  });
+
+  it("asks for nothing over the network", () => {
+    for (const html of [explain("release-session", "--fix").html, explain("research-desk", "-t", "managed-agents").html]) {
+      expect(html).not.toMatch(/<script[^>]+src=/);
+      expect(html).not.toMatch(/<link[^>]/);
+      expect(html).not.toMatch(/\b(?:src|href)="(?!#)/);
+      expect(html).not.toMatch(/url\((?!data:|#)/);
+    }
+  });
+
+  it("2 on bad usage", () => {
+    expect(ccg("explain").status).toBe(2);
+    expect(ccg("explain", example("diamond"), example("diamond")).status).toBe(2);
+    expect(ccg("explain", example("diamond"), "-t", "nonsense").status).toBe(2);
+    expect(ccg("explain", example("diamond"), "--nonsense").status).toBe(2);
+    expect(ccg("explain", join(out, "missing.yaml")).status).toBe(2);
   });
 });

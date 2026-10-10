@@ -70,7 +70,8 @@ export function formatReport(
   return lines.join("\n");
 }
 
-function describeRepair(repair: Repair): string {
+/** One repair as the report prints it, padded to line up: `repoint  a -> b becomes c -> b, carrying 'x'`. */
+export function describeRepair(repair: Repair): string {
   if (repair.kind === "drop") {
     return `drop     ${repair.from} -> ${repair.to}`;
   }

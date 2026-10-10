@@ -11,3 +11,10 @@ export {
   type WrapLedgerHtmlOptions,
   type LedgerBlockSection,
 } from "./html.js";
+export {
+  explainHtml,
+  type ExplainFile,
+  type ExplainLint,
+  type ExplainPage,
+  type ExplainRule,
+} from "./explain.js";

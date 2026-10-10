@@ -5,7 +5,7 @@ import { parseArgs } from "../args.js";
 import { stepLegend, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { layoutGraph } from "@ccgrapher/layout";
-import { formatLedger, ledgerSections, lint, renderMarksFor, type RenderMarks } from "@ccgrapher/lint";
+import { formatLedger, ledgerSections, lint, renderMarksFor, type LintResult, type RenderMarks } from "@ccgrapher/lint";
 import { renderExcalidraw } from "@ccgrapher/render-excalidraw";
 import { renderMermaid } from "@ccgrapher/render-mermaid";
 import { renderSvg, wrapHtml, wrapLedgerHtml } from "@ccgrapher/render-svg";
@@ -142,24 +142,37 @@ interface Drawing {
 function draw(path: string, format: Format, style: Style, fenced = false): Drawing {
   const original = loadGraph(path);
   const result = lint(original);
-  const graph = style.fix ? withEdges(original, result.repairedEdges) : original;
-
-  // Findings are read from the graph on the page. Repairing moves edges, which
-  // changes how many results reach a node, so the as-written findings would
-  // describe a picture that is no longer drawn.
-  const shown = style.fix ? lint(graph) : result;
-  const raw = shown.findings.filter((f) => f.phase === "raw");
-
-  // Every rule has a mark (lint's `renderMarksFor` will not compile otherwise),
-  // and --plain leaves all of them off.
-  const found = style.plain ? NO_MARKS : renderMarksFor(raw);
-  const marks: RenderMarks = { ...found, fakeEdges: style.fix ? [] : found.fakeEdges };
+  const { graph, marks } = drawable(original, result, style.fix, style.plain);
 
   return {
     text: emit(format, graph, original, marks, { ...style, fenced }),
     layers: style.fix ? result.layersAfter : result.layersBefore,
     nodes: graph.nodes.size,
   };
+}
+
+/**
+ * The graph a picture shows, as written or repaired, and the marks for the
+ * findings on it. Shared with `ccg explain`, so both draw a spec the same way.
+ */
+export function drawable(
+  original: Graph,
+  result: LintResult,
+  fix: boolean,
+  plain = false,
+): { graph: Graph; marks: RenderMarks } {
+  const graph = fix ? withEdges(original, result.repairedEdges) : original;
+
+  // Findings are read from the graph on the page. Repairing moves edges, which
+  // changes how many results reach a node, so the as-written findings would
+  // describe a picture that is no longer drawn.
+  const shown = fix ? lint(graph) : result;
+  const raw = shown.findings.filter((f) => f.phase === "raw");
+
+  // Every rule has a mark (lint's `renderMarksFor` will not compile otherwise),
+  // and --plain leaves all of them off.
+  const found = plain ? NO_MARKS : renderMarksFor(raw);
+  return { graph, marks: { ...found, fakeEdges: fix ? [] : found.fakeEdges } };
 }
 
 const NO_MARKS: RenderMarks = { fakeEdges: [], guardFindings: [], findingMarks: [] };

@@ -5,6 +5,7 @@ import { UsageError } from "./args.js";
 import { lintCommand } from "./commands/lint.js";
 import { codegenCommand } from "./commands/codegen.js";
 import { diffCommand } from "./commands/diff.js";
+import { explainCommand } from "./commands/explain.js";
 import { ingestCommand } from "./commands/ingest.js";
 import { planCommand } from "./commands/plan.js";
 import { renderCommand } from "./commands/render.js";
@@ -22,6 +23,7 @@ Usage:
   ccg render --pair <before.yaml> <after.yaml> -o out.svg   two specs, before then after
   ccg diff <before.yaml> [after.yaml]  what changed, in words: one spec against its repair, or two
   ccg codegen <spec.yaml> -t <target>  emit the matching orchestration code
+  ccg explain <spec.yaml> -o page.html  one page: the picture, the steps, the files, the lint
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
   ccg plan <spec.yaml>                 what can run at once, wave by wave
   ccg retro <owner/repo>               rebuild the as-merged workflow from a repo's PR history
@@ -58,6 +60,11 @@ Codegen options:
   --fix             generate from the repaired graph
   --no-banner       omit the generated-from header comment
   --force           managed-agents: write into a directory that is not empty
+
+Explain options:
+  -o, --out <file>  write here instead of stdout
+  -t, --target <t>  the codegen target whose files it lists (default: claude-code)
+  --fix             describe the repaired graph, and draw it beside the spec as written
 
 Plan options:
   --fix             plan the repaired graph rather than the graph as written
@@ -135,6 +142,8 @@ function main(argv: string[]): number {
         return codegenCommand(rest);
       case "diff":
         return diffCommand(rest);
+      case "explain":
+        return explainCommand(rest);
       case "ingest":
         return ingestCommand(rest);
       case "plan":

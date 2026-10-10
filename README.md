@@ -522,6 +522,26 @@ generated files and leaves everything else alone. Apply by naming the generated 
 generated README shows. `ant apply .` walks the whole tree, and in a repository that holds other
 skills it would upload those as well.
 
+## Explaining a spec
+
+```bash
+ccg explain examples/research-desk.yaml -o desk.html
+```
+
+One page that sets a spec out for someone who has not read it, in three panels. The full loop is
+the picture `ccg render` draws, with its boundaries, marks and numbered steps, and it pans and zooms
+as the HTML render does. One run, step by step is the numbered list from `--legend`, so a number on
+the picture can be found in the list. What it is made of lists the files `ccg codegen` would write
+for the target, `claude-code` unless `-t` says otherwise (`managed-agents` shows its directory as a
+tree), each with a line on what it is for, and then the lint findings, grouped by rule. With
+`--fix` the page describes the repaired graph, and when the repair changes anything, the spec as
+written and as repaired sit side by side.
+
+Every word on the page comes from the spec, the linter or the code generator. None of it is written
+by a model, and the same spec gives the same bytes. The page is one file, with the handwriting face
+inline and nothing fetched, so it reads offline; it follows the reader's light or dark setting, and
+the panels stack on a narrow screen.
+
 ## Reading existing code
 
 The other direction — what does my workflow *actually* do, rather than what did I intend?
@@ -771,7 +791,7 @@ Two things worth knowing when reading its output:
 | [`runner`](packages/runner) | Walks the ranks, enforces the guards, emits the trace |
 | [`runner-managed-agents`](packages/runner-managed-agents) | Runs each model step as a Claude Managed Agents session |
 | [`adapter-claude-code`](packages/adapter-claude-code) | Claude Code hooks → a trace of a real session |
-| [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest · run · serve` |
+| [`apps/cli`](apps/cli) | `ccg lint · render · codegen · explain · ingest · run · serve` |
 | [`apps/web`](apps/web) | Next.js + JointJS canvas |
 
 **The one invariant.** `core` computes *ranks*; `layout` computes *pixels*. The "6 layers → 4" figure
