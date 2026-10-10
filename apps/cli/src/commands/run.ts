@@ -17,6 +17,16 @@ import {
   type NodeOutput,
   type RunResult,
 } from "@ccgrapher/runner";
+import {
+  CREDENTIAL_VARIABLES,
+  clientFromEnvironment,
+  LockError,
+  managedAgents,
+  readLock,
+  resolveIds,
+  type ManagedAgents,
+  type ManagedAgentsClient,
+} from "@ccgrapher/runner-managed-agents";
 import type { TraceEvent } from "@ccgrapher/trace";
 import { TraceWriter, type TraceEventInput } from "@ccgrapher/trace/node";
 import { DEFAULT_PORT, startTraceServer, type TraceServer } from "../serve.js";
@@ -30,7 +40,8 @@ import { DEFAULT_PORT, startTraceServer, type TraceServer } from "../serve.js";
  * decides who gets to answer a gate.
  *
  * Two things happen before a single node runs. Every non-gate node must have a
- * matching export, and every gate must have somebody who could answer it.
+ * matching export (or, with `--managed-agents`, an agent in the lock file), and
+ * every gate must have somebody who could answer it.
  * Finding either out halfway through a run is the failure this project exists
  * to prevent, so both are checked up front and reported in full.
  */
@@ -177,7 +188,9 @@ type Loaded =
  *
  * Gates are not in the list: the engine never calls an executor for one, so
  * demanding an implementation would be asking for code that could only ever be
- * dead. Lookup is by property rather than by destructuring, because a node id
+ * dead. Nor are the nodes in `provided`, which something other than the module
+ * already implements; an export for one of those is still taken, and wins.
+ * Lookup is by property rather than by destructuring, because a node id
  * is any non-empty string and need not be a valid identifier.
  *
  * The optional `capabilities` export is the module saying what it verified was
@@ -186,8 +199,15 @@ type Loaded =
  * nothing stands behind. Not exporting it at all is entirely fine and means
  * unreported, which is a different thing from reporting none.
  */
-async function loadImpls(path: string, graph: Graph): Promise<Loaded> {
-  const module = (await import(pathToFileURL(resolve(path)).href)) as Record<string, unknown>;
+async function loadImpls(
+  path: string | undefined,
+  graph: Graph,
+  provided: ReadonlySet<string> = new Set(),
+): Promise<Loaded> {
+  // No module is fine only when something else covers every node, which the
+  // missing check below decides like any other gap.
+  const module =
+    path === undefined ? {} : ((await import(pathToFileURL(resolve(path)).href)) as Record<string, unknown>);
 
   const declared = module["capabilities"];
   if (declared !== undefined && !isStringArray(declared)) {
@@ -204,7 +224,7 @@ async function loadImpls(path: string, graph: Graph): Promise<Loaded> {
     if (node.kind === "gate") continue;
     const impl = module[node.id];
     if (typeof impl === "function") impls.set(node.id, impl as NodeImpl);
-    else missing.push(node.id);
+    else if (!provided.has(node.id)) missing.push(node.id);
   }
   return missing.length > 0 ? { missing } : { impls, capabilities: declared };
 }
@@ -270,15 +290,88 @@ function summarise(result: RunResult): string {
   return `${result.nodes.size} node(s): ${parts.join(", ")}`;
 }
 
+/**
+ * Orchestrated mode: each model node runs as its own Claude Managed Agents
+ * session, from the directory `ccg codegen -t managed-agents` wrote and its
+ * `claude-lock.json`.
+ */
+export interface ManagedAgentsRunOptions {
+  /** The generated directory. `claude-lock.json` must sit in it. */
+  readonly dir: string;
+  /** A hard cap per session, in US cents. */
+  readonly sessionBudgetCents?: number;
+  /**
+   * The client to use instead of one built from the environment. This is how
+   * the tests run without a network: they always pass one, or an `env` with no
+   * credentials in it.
+   */
+  readonly client?: ManagedAgentsClient;
+  /** Where credentials are looked for. Defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Passed through to the executor, so a test's status polls wait for nothing real. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
 export interface RunOptions {
   readonly spec: string;
-  readonly impl: string;
+  /** Optional only with `managedAgents`, and then only if every other node is a gate. */
+  readonly impl?: string;
   readonly trace?: string;
   readonly serve: boolean;
   readonly port: number;
   readonly timeoutMs?: number;
   /** How many node calls may run at once. Absent means no limit. */
   readonly concurrency?: number;
+  readonly managedAgents?: ManagedAgentsRunOptions;
+}
+
+/**
+ * The managed-agents half of a run, set up before anything starts: the lock
+ * file must cover every model node, and credentials must be in the
+ * environment. Either missing is bad usage, reported before a session exists.
+ */
+async function prepareManagedAgents(
+  graph: Graph,
+  options: ManagedAgentsRunOptions,
+): Promise<{ managed: ManagedAgents; client: string } | { problem: string }> {
+  let ids;
+  try {
+    ids = resolveIds(graph, readLock(options.dir));
+  } catch (cause) {
+    if (cause instanceof LockError || cause instanceof SpecError) return { problem: cause.message };
+    throw cause;
+  }
+
+  const env = options.env ?? process.env;
+  const named = CREDENTIAL_VARIABLES.find((name) => (env[name] ?? "") !== "");
+  const client = options.client ?? (await clientFromEnvironment(env));
+  if (!client) {
+    return {
+      problem:
+        `--managed-agents runs sessions on an Anthropic account, and neither ${CREDENTIAL_VARIABLES.join(" nor ")} is set. ` +
+        `Set one for this command. A saved ant profile is not used on its own, so nothing is spent by accident.`,
+    };
+  }
+
+  const managed = managedAgents({
+    graph,
+    ids,
+    client,
+    sessionBudgetCents: options.sessionBudgetCents,
+    sleep: options.sleep,
+    detachedLog: (line) => stderr(`    ${line}\n`),
+  });
+  return { managed, client: options.client ? "the supplied client" : `the account behind ${named}` };
+}
+
+/** Sessions a full run opens: one per model node, one per copy of a fanned one. */
+function sessionCount(graph: Graph, nodes: Iterable<string>): number {
+  let count = 0;
+  for (const id of nodes) {
+    const node = graph.nodes.get(id);
+    count += node?.fanOut ? (node.fanOut.cap ?? 1) : 1;
+  }
+  return count;
 }
 
 /**
@@ -334,7 +427,20 @@ export async function runSpec(options: RunOptions): Promise<number> {
     return USAGE;
   }
 
-  const loaded = await loadImpls(options.impl, graph).catch((cause: unknown) => cause as Error);
+  let managed: ManagedAgents | undefined;
+  let spender = "";
+  if (options.managedAgents) {
+    const prepared = await prepareManagedAgents(graph, options.managedAgents);
+    if ("problem" in prepared) {
+      stderr(`ccg run: ${prepared.problem} Nothing was run.\n`);
+      return USAGE;
+    }
+    managed = prepared.managed;
+    spender = prepared.client;
+  }
+  const provided = new Set(managed?.impls.keys() ?? []);
+
+  const loaded = await loadImpls(options.impl, graph, provided).catch((cause: unknown) => cause as Error);
   if (loaded instanceof Error) {
     stderr(`ccg run: cannot load ${options.impl}: ${loaded.message}\n`);
     return USAGE;
@@ -346,13 +452,28 @@ export async function runSpec(options: RunOptions): Promise<number> {
   if ("missing" in loaded) {
     // Every one of them, now, rather than one per run until they are all found.
     stderr(
-      `ccg run: ${options.impl} has no implementation for ${loaded.missing.length} node(s):\n` +
+      (options.impl
+        ? `ccg run: ${options.impl} has no implementation for ${loaded.missing.length} node(s):\n`
+        : `ccg run: no --impl module was given, and ${loaded.missing.length} node(s) have no implementation:\n`) +
         loaded.missing.map((id) => `  ${id}\n`).join("") +
         `  Each node needs an exported function named after its id. Nothing was run.\n`,
     );
     return USAGE;
   }
   const { impls, capabilities } = loaded;
+
+  if (managed) {
+    // A local export wins over a session, which is how one expensive step is
+    // stubbed while the rest run for real. Said aloud, so it is never a surprise.
+    const sessions = [...managed.impls.keys()].filter((id) => !impls.has(id));
+    for (const id of managed.impls.keys()) {
+      if (impls.has(id)) stderr(`ccg run: ${id} is exported by ${options.impl}, so it runs locally and opens no session\n`);
+    }
+    stderr(
+      `ccg run: managed agents for ${sessions.length} model node(s), up to ${sessionCount(graph, sessions)} session(s) ` +
+        `in all, one per node and one per copy of a fanned node, billed to ${spender}\n`,
+    );
+  }
 
   mkdirSync(dirname(resolve(tracePath)), { recursive: true });
 
@@ -394,9 +515,11 @@ export async function runSpec(options: RunOptions): Promise<number> {
 
   const executor: NodeExecutor = async (context) => {
     const impl = impls.get(context.node.id);
-    // Unreachable: every non-gate node was paired with an export above.
-    if (!impl) throw new Error(`${context.node.id}: no implementation was resolved`);
-    return asOutput(context.node.id, await impl(context));
+    if (impl) return asOutput(context.node.id, await impl(context));
+    const session = managed?.impls.get(context.node.id);
+    // Unreachable: every non-gate node was paired with an export or a session above.
+    if (!session) throw new Error(`${context.node.id}: no implementation was resolved`);
+    return session(context);
   };
 
   stderr(`ccg run: ${graph.spec.name} — ${graph.nodes.size} node(s), trace ${tracePath}\n`);
@@ -442,6 +565,9 @@ export async function runSpec(options: RunOptions): Promise<number> {
     stderr(`run stopped: ${cause instanceof Error ? cause.message : String(cause)}\n`);
     return RUN_FAILED;
   } finally {
+    // A session whose node timed out is still being interrupted and archived,
+    // and exiting now would cut that off and leave it running on the account.
+    await managed?.settled();
     // Closed either way. The run is over, so a stream held open would be
     // following a file nothing is going to append to; `ccg serve` replays it.
     await server?.close();
@@ -469,6 +595,10 @@ export function runCommand(args: string[]): number {
       timeout: { type: "string" },
       /** How many node calls may run at once. */
       concurrency: { type: "string" },
+      /** Run each model node as a Claude Managed Agents session, from this generated directory. */
+      "managed-agents": { type: "string" },
+      /** A hard spend cap on each session, in US dollars. */
+      "session-budget": { type: "string" },
     },
     allowPositionals: true,
     allowNegative: true,
@@ -479,9 +609,24 @@ export function runCommand(args: string[]): number {
     stderr("ccg run: no spec file given\n");
     return USAGE;
   }
-  if (!values.impl) {
+  const managedDir = values["managed-agents"];
+  if (!values.impl && managedDir === undefined) {
     stderr("ccg run: --impl <module> is required (a JS module exporting one function per node)\n");
     return USAGE;
+  }
+
+  let sessionBudgetCents: number | undefined;
+  if (values["session-budget"] !== undefined) {
+    const dollars = Number(values["session-budget"]);
+    sessionBudgetCents = Math.round(dollars * 100);
+    if (managedDir === undefined) {
+      stderr("ccg run: --session-budget only applies with --managed-agents\n");
+      return USAGE;
+    }
+    if (!Number.isFinite(dollars) || sessionBudgetCents < 1) {
+      stderr("ccg run: --session-budget must be a number of US dollars, at least 0.01\n");
+      return USAGE;
+    }
   }
 
   let timeoutMs: number | undefined;
@@ -517,6 +662,7 @@ export function runCommand(args: string[]): number {
     port,
     timeoutMs,
     concurrency,
+    managedAgents: managedDir === undefined ? undefined : { dir: managedDir, sessionBudgetCents },
   }).then(
     (code) => {
       process.exitCode = code;

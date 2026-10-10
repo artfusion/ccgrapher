@@ -58,6 +58,7 @@ export const managedAgentsEmitter: DirectoryEmitter = {
 
   emitFiles(graph: Graph, options: EmitOptions): Files {
     const folders = folderMap(graph);
+    const layout = managedAgentsLayout(graph);
     const files: Record<string, string> = {};
     const comments = bannerComments(graph, options);
     let mcp = false;
@@ -65,16 +66,35 @@ export const managedAgentsEmitter: DirectoryEmitter = {
     for (const node of agentNodes(graph)) {
       const caps = capabilities(graph, node, folders);
       if (caps.mcpServers.length > 0) mcp = true;
-      files[`agents/${folders.get(node.id)!}/agent.md`] = agentFile(graph, node, caps, comments);
+      files[layout.agents.get(node.id)!] = agentFile(graph, node, caps, comments);
     }
 
-    const environment = `agents/${environmentFolder(graph)}/environment.yaml`;
+    const environment = layout.environment;
     files[environment] = environmentFile(graph, mcp, comments);
     files["README.md"] = readme(graph, folders, environment, options);
 
     return Object.fromEntries(Object.keys(files).sort().map((path) => [path, files[path]!]));
   },
 };
+
+/**
+ * Where the generated files sit, relative to the output directory: each model
+ * node's `agent.md` by node id, and the workflow's `environment.yaml`.
+ *
+ * Exported because `ant apply` keys `claude-lock.json` by these paths, so a
+ * runner that starts sessions from the lock file has to find them by the same
+ * rule that wrote them. One function, so the two cannot drift.
+ */
+export function managedAgentsLayout(graph: Graph): {
+  readonly agents: ReadonlyMap<string, string>;
+  readonly environment: string;
+} {
+  const folders = folderMap(graph);
+  return {
+    agents: new Map([...folders].map(([id, folder]) => [id, `agents/${folder}/agent.md`])),
+    environment: `agents/${environmentFolder(graph)}/environment.yaml`,
+  };
+}
 
 /** A node becomes an agent unless it is plain code or a human gate. */
 export function agentNodes(graph: Graph): NodeSpec[] {
@@ -338,10 +358,18 @@ function systemPrompt(graph: Graph, node: NodeSpec): string {
     );
   }
 
+  // The envelope described here is the one `@ccgrapher/runner-managed-agents`
+  // sends as the session's first message. Change the two together.
   parts.push(
-    Object.keys(node.in).length > 0
-      ? `## Input\n\nThe message you receive is one JSON object with these fields:\n\n${fieldList(node.in)}`
-      : "## Input\n\nNo input fields are declared for this step.",
+    [
+      "## Input",
+      "",
+      `The message you receive holds one JSON object in a \`\`\`json block. \`node\` is this step's id${node.fanOut ? ", `instance` and `of` say which of the copies you are, counting from 0," : ""} and \`args\` holds the run's arguments. \`inputs\` lists what arrived from earlier steps, each entry with \`from\` (the step it came from), \`fields\` (what that step hands on to you) and \`output\` (what it produced).`,
+      "",
+      Object.keys(node.in).length > 0
+        ? `This step reads these fields:\n\n${fieldList(node.in)}`
+        : "No input fields are declared for this step.",
+    ].join("\n"),
   );
   parts.push(
     Object.keys(node.out).length > 0
@@ -426,6 +454,14 @@ function readme(
     "```sh",
     "grep -rn YOUR_ agents/",
     `ant apply --dry-run ${[...agentFiles, environment].join(" ")}`,
+    "```",
+    "",
+    "## Running",
+    "",
+    "Apply from this directory, so that `claude-lock.json` is written beside the files, then let `ccg run` open one session per model node, and one per copy of a fanned node. Every session is billed to the account behind `ANTHROPIC_API_KEY`.",
+    "",
+    "```sh",
+    `ccg run ${options.specPath ?? `${graph.spec.name}.yaml`} --managed-agents <this directory>${local.some((node) => node.kind !== "gate") ? " --impl <module exporting the plain-code steps>" : ""}`,
     "```",
     "",
   );

@@ -1,8 +1,8 @@
 {
-  "name": "@ccgrapher/cli",
+  "name": "@ccgrapher/runner-managed-agents",
   "version": "0.5.0",
   "type": "module",
-  "description": "Command line interface for ccgrapher: lint, render, codegen and ingest.",
+  "description": "Runs each model step of a workflow graph as its own Claude Managed Agents session, so the ccgrapher runner keeps the order, the guards and the trace.",
   "keywords": [
     "agent",
     "workflow",
@@ -19,13 +19,18 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/artfusion/ccgrapher.git",
-    "directory": "apps/cli"
+    "directory": "packages/runner-managed-agents"
   },
   "bugs": {
     "url": "https://github.com/artfusion/ccgrapher/issues"
   },
-  "bin": {
-    "ccg": "./dist/index.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
     "dist",
@@ -40,16 +45,13 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@ccgrapher/codegen": "workspace:*",
     "@ccgrapher/core": "workspace:*",
-    "@ccgrapher/ingest": "workspace:*",
-    "@ccgrapher/layout": "workspace:*",
+    "@ccgrapher/runner": "workspace:*"
+  },
+  "devDependencies": {
     "@ccgrapher/lint": "workspace:*",
-    "@ccgrapher/render-excalidraw": "workspace:*",
-    "@ccgrapher/render-mermaid": "workspace:*",
-    "@ccgrapher/render-svg": "workspace:*",
-    "@ccgrapher/runner": "workspace:*",
-    "@ccgrapher/runner-managed-agents": "workspace:*",
     "@ccgrapher/trace": "workspace:*"
   }
 }

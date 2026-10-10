@@ -45,6 +45,7 @@ PACKAGES=(
   packages/render-mermaid
   packages/render-excalidraw
   packages/codegen
+  packages/runner-managed-agents
   packages/ingest
   apps/cli
 )

@@ -37,6 +37,9 @@
     },
     {
       "path": "../../packages/trace"
+    },
+    {
+      "path": "../../packages/runner-managed-agents"
     }
   ]
 }

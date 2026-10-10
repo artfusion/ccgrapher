@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ManagedAgentsClient, SessionCreateParams, SessionEvent } from "@ccgrapher/runner-managed-agents";
 import { emptyRunState, reduceRun, type RunState } from "@ccgrapher/trace";
 import { readTrace } from "@ccgrapher/trace/node";
 import { afterAll, describe, expect, it } from "vitest";
@@ -360,6 +361,175 @@ describe("--timeout", () => {
   });
 });
 
+/**
+ * A Managed Agents client that never leaves the process: every session
+ * answers its one message with a canned reply for its agent, then goes idle.
+ * The package's own tests drive the protocol in detail; this one is about the
+ * command wiring around it.
+ */
+function cannedClient(answers: Record<string, unknown>): ManagedAgentsClient & { created: SessionCreateParams[] } {
+  const created: SessionCreateParams[] = [];
+  const feeds = new Map<string, Array<(event: SessionEvent) => void>>();
+  let n = 0;
+  return {
+    created,
+    beta: {
+      sessions: {
+        create: async (params) => {
+          created.push(params);
+          return { id: `sesn_${++n}_${params.agent}` };
+        },
+        retrieve: async () => ({ status: "idle", usage: { input_tokens: 10, output_tokens: 2 } }),
+        archive: async () => ({}),
+        events: {
+          stream: async (id) => {
+            const queue: SessionEvent[] = [];
+            const waiting: Array<(event: SessionEvent) => void> = [];
+            feeds.set(id, [(event) => (waiting.length > 0 ? waiting.shift()!(event) : queue.push(event))]);
+            return {
+              [Symbol.asyncIterator]: () => ({
+                next: () =>
+                  queue.length > 0
+                    ? Promise.resolve({ value: queue.shift()!, done: false })
+                    : new Promise((resolve) => waiting.push((value) => resolve({ value, done: false }))),
+                return: () => Promise.resolve({ value: undefined, done: true }),
+              }),
+            };
+          },
+          send: async (id, { events }) => {
+            if (events[0]?.type !== "user.message") return {};
+            const agent = id.split("_").slice(2).join("_");
+            const push = (event: SessionEvent & Record<string, unknown>) => feeds.get(id)?.forEach((emit) => emit(event));
+            setImmediate(() => {
+              push({ type: "session.status_running", id: `${id}-1` });
+              push({ type: "agent.message", id: `${id}-2`, content: [{ type: "text", text: JSON.stringify(answers[agent]) }] });
+              push({ type: "session.status_idle", id: `${id}-3`, stop_reason: { type: "end_turn" } });
+            });
+            return {};
+          },
+          list: () => ({ [Symbol.asyncIterator]: async function* () {} })[Symbol.asyncIterator](),
+        },
+      },
+    },
+  };
+}
+
+const DESK_ANSWERS = {
+  agent_plan: { angle: ["cost", "speed", "risk", "law", "market"] },
+  agent_research: { claim: "c", source: "https://example.org", date: "2026-10-01" },
+  agent_skeptic_correct: { vote: "keep", why: "fine" },
+  agent_skeptic_current: { vote: "keep", why: "fine" },
+  agent_skeptic_source: { vote: "keep", why: "fine" },
+  agent_report: { report: "# done" },
+};
+
+/** A generated directory for research-desk, with the lock `ant apply` would have written. */
+function agentsDir(lock: Record<string, { id: string }> | undefined): string {
+  const dir = mkdtempSync(join(work, "agents-"));
+  if (lock) writeFileSync(join(dir, "claude-lock.json"), JSON.stringify({ resources: lock }));
+  return dir;
+}
+
+const DESK_LOCK = {
+  "./agents/plan/agent.md": { id: "agent_plan" },
+  "./agents/research/agent.md": { id: "agent_research" },
+  "./agents/skeptic-correct/agent.md": { id: "agent_skeptic_correct" },
+  "./agents/skeptic-current/agent.md": { id: "agent_skeptic_current" },
+  "./agents/skeptic-source/agent.md": { id: "agent_skeptic_source" },
+  "./agents/report/agent.md": { id: "agent_report" },
+  "./agents/research-desk/environment.yaml": { id: "env_desk" },
+};
+
+/** No credentials at all, so nothing could ever be built from them. */
+const NO_CREDENTIALS = {};
+
+describe("--managed-agents", () => {
+  it("runs research-desk with a session per model node, and the audit finds nothing", async () => {
+    const client = cannedClient(DESK_ANSWERS);
+    const run = options(example("research-desk.yaml"), fixture("research-desk.local.impl.mjs"), {
+      serve: true,
+      managedAgents: { dir: agentsDir(DESK_LOCK), client, sleep: () => Promise.resolve() },
+    });
+    const { code, text } = await runAndAnswer(run, "gate", "approve");
+    expect(code).toBe(0);
+    expect(text).toContain("managed agents for 6 model node(s), up to 10 session(s)");
+    expect(client.created).toHaveLength(10);
+
+    const state = fold(run.trace!);
+    expect(state.status).toBe("done");
+    expect(state.nodes.get("report")?.status).toBe("done");
+
+    const audited = spawnSync(
+      "node",
+      [cli, "trace", "audit", run.trace!, "--spec", example("research-desk.yaml")],
+      { encoding: "utf8" },
+    );
+    expect(audited.status).toBe(0);
+    expect(audited.stdout).toContain("no findings");
+  });
+
+  it("runs a model node locally, with no session, when --impl exports it", async () => {
+    const client = cannedClient(DESK_ANSWERS);
+    const dir = mkdtempSync(join(work, "impl-"));
+    const impl = join(dir, "with-report.impl.mjs");
+    writeFileSync(
+      impl,
+      `export { dedupe, vote } from ${JSON.stringify(fixture("research-desk.local.impl.mjs"))};\n` +
+        `export async function report() { return { output: { report: "local" } }; }\n`,
+    );
+    const run = options(example("research-desk.yaml"), impl, {
+      serve: true,
+      managedAgents: { dir: agentsDir(DESK_LOCK), client, sleep: () => Promise.resolve() },
+    });
+    const { code, text } = await runAndAnswer(run, "gate", "approve");
+    expect(code).toBe(0);
+    expect(text).toContain("report is exported by");
+    expect(client.created.map((params) => params.agent)).not.toContain("agent_report");
+    expect(client.created).toHaveLength(9);
+  });
+
+  it("exits 2 without credentials, before anything runs", async () => {
+    const run = options(example("research-desk.yaml"), fixture("research-desk.local.impl.mjs"), {
+      serve: true,
+      managedAgents: { dir: agentsDir(DESK_LOCK), env: NO_CREDENTIALS },
+    });
+    const { result, text } = await withStderr(() => runSpec(run));
+    expect(result).toBe(2);
+    expect(text).toContain("neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set");
+    expect(existsSync(run.trace!)).toBe(false);
+  });
+
+  it("exits 2 when the lock file is missing or does not cover a model node", async () => {
+    const missing = options(example("research-desk.yaml"), fixture("research-desk.local.impl.mjs"), {
+      serve: true,
+      managedAgents: { dir: agentsDir(undefined), client: cannedClient(DESK_ANSWERS) },
+    });
+    const first = await withStderr(() => runSpec(missing));
+    expect(first.result).toBe(2);
+    expect(first.text).toContain("claude-lock.json does not exist");
+
+    const { "./agents/report/agent.md": _dropped, ...partial } = DESK_LOCK;
+    const short = options(example("research-desk.yaml"), fixture("research-desk.local.impl.mjs"), {
+      serve: true,
+      managedAgents: { dir: agentsDir(partial), client: cannedClient(DESK_ANSWERS) },
+    });
+    const second = await withStderr(() => runSpec(short));
+    expect(second.result).toBe(2);
+    expect(second.text).toContain("no id for 1 file(s): report (agents/report/agent.md)");
+    expect(existsSync(short.trace!)).toBe(false);
+  });
+
+  it("still needs an implementation for every plain-code node", async () => {
+    const run = options(example("research-desk.yaml"), fixture("run-clean.impl.mjs"), {
+      serve: true,
+      managedAgents: { dir: agentsDir(DESK_LOCK), client: cannedClient(DESK_ANSWERS) },
+    });
+    const { result, text } = await withStderr(() => runSpec(run));
+    expect(result).toBe(2);
+    expect(text).toContain("no implementation for 2 node(s):\n  dedupe\n  vote\n");
+  });
+});
+
 describe("the trace file", () => {
   it("is never appended to by a second run", async () => {
     const run = options(fixture("run-clean.yaml"), fixture("run-clean.impl.mjs"));
@@ -428,6 +598,42 @@ describe("through the real binary", () => {
     );
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("--concurrency");
+  });
+
+  it("2 with --managed-agents and no credentials, and the SDK is never asked", () => {
+    // Every Anthropic variable is removed, and the base URL points at a port
+    // nothing listens on: even a bug that got past the check could not spend.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("ANTHROPIC_")));
+    const run = spawnSync(
+      "node",
+      [
+        cli,
+        "run",
+        example("research-desk.yaml"),
+        "--managed-agents",
+        agentsDir(DESK_LOCK),
+        "--impl",
+        fixture("research-desk.local.impl.mjs"),
+        "--serve",
+        "--port",
+        "0",
+        "--trace",
+        tracePath(),
+      ],
+      { encoding: "utf8", env: { ...env, ANTHROPIC_BASE_URL: "http://127.0.0.1:9" } },
+    );
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set");
+  });
+
+  it("2 on --session-budget without --managed-agents", () => {
+    const run = spawnSync(
+      "node",
+      [cli, "run", fixture("run-clean.yaml"), "--impl", fixture("run-clean.impl.mjs"), "--session-budget", "1"],
+      { encoding: "utf8" },
+    );
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("--session-budget only applies with --managed-agents");
   });
 
   it("2 on a --timeout that is not a positive number of seconds", () => {

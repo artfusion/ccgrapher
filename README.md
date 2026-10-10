@@ -396,7 +396,8 @@ nodes and gates get no agent, since the runner runs those itself, and the genera
 them. One `environment.yaml` covers the workflow, a `cloud` container with limited networking.
 
 There is no coordinator agent. The files are meant for a runner that opens one session per node in
-the order the spec declares, so the order is kept by code rather than by a prompt.
+the order the spec declares, so the order is kept by code rather than by a prompt. `ccg run
+--managed-agents` is that runner; see [Running on Claude Managed Agents](#running-on-claude-managed-agents).
 
 `uses:` maps where the platform has an equivalent. A skill becomes a skill reference and an agent a
 roster entry, though a custom skill, or an agent from outside the spec, needs an id the spec does not
@@ -513,6 +514,37 @@ needs to be able to tell "the workflow broke" from "a human said no".
 a sample run to develop against. `ccg trace stats` summarises it; `ccg serve examples/traces`
 replays it.
 
+### Running on Claude Managed Agents
+
+The model steps can run as Claude Managed Agents sessions instead of local functions. Generate the
+agent files, apply them by name from the generated directory so `claude-lock.json` is written
+there, and point the run at it:
+
+```bash
+ccg codegen examples/research-desk.yaml -t managed-agents -o desk/
+# in desk/: grep -rn YOUR_ agents/, then ant apply the files its README lists
+ANTHROPIC_API_KEY=... ccg run examples/research-desk.yaml --managed-agents desk --impl local.mjs
+```
+
+Each model node opens one session for its agent, and each copy of a fanned node opens one more. The
+plain-code steps still come from `--impl`, and the runner still keeps the order, the `expects`
+guards and the gates, and writes the trace itself, so `ccg trace audit` reads it like any other run.
+The session's first message is the node's inputs as a JSON envelope; its last reply must be a JSON
+object holding the node's declared outputs, and a reply that is not fails the node and says why. On
+`--timeout` the session is interrupted and the node fails. Sessions are archived when done, never
+deleted, and each carries the run id, spec and node in its metadata.
+
+It costs real money, so it is worth being plain about how much. One session per node is not one
+session per run: research-desk opens ten, each a container billed for its running time as well as
+its tokens, and the run says how many it will open, and on which account, before the first one
+starts. `--session-budget <usd>` puts a hard cap on each session. The run needs `ANTHROPIC_API_KEY`
+or `ANTHROPIC_AUTH_TOKEN` in its environment and exits 2 without one; a saved `ant` profile alone is
+deliberately not enough.
+
+Apply the generated files by name. `ant apply .` walks the whole tree, and in a repository that holds
+other skills it would upload those as well. The details, including the message protocol, are in
+[`packages/runner-managed-agents`](packages/runner-managed-agents).
+
 ## Auditing capability use
 
 A spec says which capabilities a node depends on. A trace says which the runtime had, which it
@@ -615,6 +647,7 @@ Two things worth knowing when reading its output:
 | [`ingest`](packages/ingest) | ts-morph: orchestration code → spec |
 | [`trace`](packages/trace) | The event contract, the JSONL writer, and the fold every reader shares |
 | [`runner`](packages/runner) | Walks the ranks, enforces the guards, emits the trace |
+| [`runner-managed-agents`](packages/runner-managed-agents) | Runs each model step as a Claude Managed Agents session |
 | [`adapter-claude-code`](packages/adapter-claude-code) | Claude Code hooks → a trace of a real session |
 | [`apps/cli`](apps/cli) | `ccg lint · render · codegen · ingest · run · serve` |
 | [`apps/web`](apps/web) | Next.js + JointJS canvas |
