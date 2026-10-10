@@ -49,6 +49,7 @@ export function buildGraph(spec: WorkflowSpec): Graph {
   }
 
   checkBoundaries(spec, nodes);
+  checkEffects(spec);
 
   const graph: Graph = { spec, nodes, edges: spec.edges, inbound, outbound };
   const cycle = findCycle(graph);
@@ -84,6 +85,28 @@ function checkBoundaries(spec: WorkflowSpec, nodes: ReadonlyMap<string, NodeSpec
         );
       }
       owner.set(member, boundary.id);
+    }
+  }
+}
+
+/**
+ * Every effect a guard or a store's `records` names is one some node performs.
+ * A guard on an effect nothing performs guards nothing, and a store recording
+ * one could never be written in order, so both are mistakes in the spec rather
+ * than findings about the workflow.
+ */
+function checkEffects(spec: WorkflowSpec): void {
+  const performed = new Set(spec.nodes.flatMap((node) => node.effects ?? []));
+  for (const node of spec.nodes) {
+    for (const effect of node.guards ?? []) {
+      if (!performed.has(effect)) {
+        throw new SpecError(`node '${node.id}' guards '${effect}', but no node declares it in effects`, node);
+      }
+    }
+  }
+  for (const [id, store] of Object.entries(spec.stores ?? {})) {
+    if (store.records !== undefined && !performed.has(store.records)) {
+      throw new SpecError(`store '${id}' records '${store.records}', but no node declares it in effects`, store);
     }
   }
 }

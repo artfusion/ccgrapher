@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { BoundarySpec, Graph, NodeSpec } from "@ccgrapher/core";
+import type { BoundarySpec, Graph, NodeSpec, StoreSpec } from "@ccgrapher/core";
 
 /** Targets that emit one file. `codegen()` returns it as a string. */
 export const TARGETS = ["claude-code", "plain-ts", "langgraph"] as const;
@@ -65,9 +65,49 @@ export function banner(graph: Graph, options: EmitOptions, target: AnyTarget): s
     "// The graph and the runtime cannot drift: regenerate rather than editing here.",
     `// Spec: ${graph.spec.name}`,
     ...(graph.spec.goal ? [`// Goal: ${graph.spec.goal}`] : []),
+    ...(graph.spec.schedule ? [`// Schedule: ${graph.spec.schedule}`] : []),
+    ...Object.entries(graph.spec.stores ?? {}).map(([id, store]) => storeLine(id, store)),
     ...(graph.spec.boundaries ?? []).map(boundaryLine),
     "",
   ];
+}
+
+/**
+ * `// Store: ledger owner=agent records=post:brief-channel`. Ids hold no
+ * whitespace, so spaces separate the parts. `ingest` reads this line back, so
+ * the format is a contract with it.
+ */
+export function storeLine(id: string, store: StoreSpec): string {
+  return `// Store: ${id} owner=${store.owner}${store.records ? ` records=${store.records}` : ""}`;
+}
+
+/**
+ * For the targets `ingest` cannot read back. The schedule and the stores still
+ * appear in the banner, as comments, and effects and guards appear nowhere, so
+ * nothing in the generated code checks an effect or keeps a store's owner.
+ */
+export function crossRunWarnings(graph: Graph, target: AnyTarget): string[] {
+  const spec = graph.spec;
+  const out: string[] = [];
+  if (spec.schedule !== undefined) {
+    out.push(`the schedule survives only as a banner comment in the ${target} target: nothing in the generated code runs it, and ingest cannot read it back.`);
+  }
+  const stores = Object.keys(spec.stores ?? {});
+  if (stores.length > 0) {
+    out.push(
+      `${stores.length === 1 ? "store" : "stores"} ${stores.map((s) => `'${s}'`).join(", ")} ${stores.length === 1 ? "survives" : "survive"} only as banner comments in the ${target} target: ingest cannot read them back, and nothing in the generated code keeps an owner or an order.`,
+    );
+  }
+  for (const node of spec.nodes) {
+    const claims = [
+      ...(node.effects?.length ? [`effects ${node.effects.join(" ")}`] : []),
+      ...(node.guards?.length ? [`guards ${node.guards.join(" ")}`] : []),
+    ];
+    if (claims.length > 0) {
+      out.push(`'${node.id}' declares ${claims.join(" and ")}, which the ${target} target does not carry.`);
+    }
+  }
+  return out;
 }
 
 /**

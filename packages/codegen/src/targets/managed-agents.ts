@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SpecError, type Graph, type NodeSpec } from "@ccgrapher/core";
 import { modelIdOf } from "../tiers.js";
-import { banner, type DirectoryEmitter, type EmitOptions, type Files } from "../types.js";
+import { banner, crossRunWarnings, type DirectoryEmitter, type EmitOptions, type Files } from "../types.js";
 import { toYaml, type YamlValue } from "../yaml.js";
 
 /**
@@ -52,6 +52,7 @@ export const managedAgentsEmitter: DirectoryEmitter = {
           (boundary) =>
             `boundary '${boundary.id}' is read-only, and nothing on the platform stops an MCP tool one of its members uses from writing.`,
         ),
+      ...crossRunWarnings(graph, "managed-agents"),
     ];
   },
 

@@ -30,7 +30,11 @@ export type FindingMark =
   | { readonly rule: "MISSING_INPUT"; readonly id: string; readonly field: string }
   | { readonly rule: "SELF_GRADING"; readonly id: string }
   | { readonly rule: "CONTEXT_COLLAPSE"; readonly id: string; readonly arriving: number }
-  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string };
+  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
+  | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
 
 /** Mermaid's shape vocabulary, mapped so a kind is legible without a legend. */
 const SHAPE: Record<NodeKind, readonly [string, string]> = {
@@ -162,7 +166,15 @@ function label(node: NodeSpec, arriving: number | undefined, notes: readonly str
 }
 
 /** Rule order, as the linter reports it; the count guard's note always comes last. */
-const NOTE_ORDER = ["MISSING_INPUT", "HIDDEN_EDGE", "SELF_GRADING", "CONTEXT_COLLAPSE"] as const;
+const NOTE_ORDER = [
+  "MISSING_INPUT",
+  "AUTHORITY_BREACH",
+  "HIDDEN_EDGE",
+  "SELF_GRADING",
+  "CONTEXT_COLLAPSE",
+  "DUPLICATE_EFFECT",
+  "EARLY_COMMIT",
+] as const;
 
 function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
   const notes: Array<{ rule: FindingMark["rule"]; text: string }> = [];
@@ -174,11 +186,18 @@ function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
       const other = m.between[0] === id ? m.between[1] : m.between[0];
       notes.push({ rule: m.rule, text: `shares ${m.file} with ${other}` });
     }
+    if (m.rule === "AUTHORITY_BREACH" && m.id === id) notes.push({ rule: m.rule, text: authorityNote(m) });
+    if (m.rule === "DUPLICATE_EFFECT" && m.id === id) notes.push({ rule: m.rule, text: `unguarded ${m.effect}` });
   }
+  const early = marks.flatMap((m) => (m.rule === "EARLY_COMMIT" && m.id === id ? [m.store] : []));
+  if (early.length > 0) notes.push({ rule: "EARLY_COMMIT", text: `writes ${early.join(", ")} too early` });
   return notes
     .sort((a, b) => NOTE_ORDER.indexOf(a.rule) - NOTE_ORDER.indexOf(b.rule))
     .map((n) => n.text);
 }
+
+const authorityNote = (m: Extract<FindingMark, { rule: "AUTHORITY_BREACH" }>) =>
+  "boundary" in m ? `writes in read-only ${m.boundary}` : `writes ${m.store}, a person's`;
 
 /** The tier and the agent, as the SVG draws them: plain code and an unspecified tier say nothing. */
 function whoNote(node: NodeSpec): string {

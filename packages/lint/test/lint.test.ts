@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
-import { buildGraph, rankGraph, type WorkflowSpec } from "@ccgrapher/core";
+import { buildGraph, parseSpec, rankGraph, type Graph, type WorkflowSpec } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { describe, expect, it } from "vitest";
-import { formatReport, lint } from "../src/index.js";
+import {
+  authorityBreaches,
+  duplicateEffects,
+  earlyCommits,
+  formatReport,
+  lint,
+  writeDenial,
+} from "../src/index.js";
 
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
 const fixture = (name: string) => loadGraph(`${examples}${name}.yaml`);
@@ -251,5 +258,154 @@ describe("formatReport", () => {
     const text = formatReport(graph, lint(graph));
     expect(text).toContain("no findings");
     expect(text).toContain("Critical path: 4 layers");
+  });
+});
+
+/**
+ * The three ways a scheduled workflow goes wrong across runs, each one a
+ * variant of daily-brief that differs from it in one place.
+ */
+describe("across runs: daily-brief and its broken variants", () => {
+  const variants = fileURLToPath(new URL("./fixtures/daily-brief/", import.meta.url));
+  const variant = (name: string) => loadGraph(`${variants}${name}.yaml`);
+  const rules = (graph: Graph) => [...new Set(lint(graph).findings.map((f) => f.rule))];
+
+  it("daily-brief lints clean, with nothing to repair", () => {
+    const result = lint(fixture("daily-brief"));
+    expect(result.findings).toEqual([]);
+    expect(result.repairs).toEqual([]);
+  });
+
+  it("without the destination check, the post is unguarded", () => {
+    const { findings, repairs } = lint(variant("unguarded-post"));
+    expect(findings).toEqual([
+      expect.objectContaining({ rule: "DUPLICATE_EFFECT", severity: "warn", phase: "raw", nodes: ["post"], effect: "post:brief-channel" }),
+    ]);
+    // Detect-only: --fix moves edges, and there is no edge to move.
+    expect(repairs).toEqual([]);
+  });
+
+  it("with the commit beside the post, both stores are written too early", () => {
+    const { findings, repairs } = lint(variant("early-commit"));
+    expect(rules(variant("early-commit"))).toEqual(["EARLY_COMMIT"]);
+    expect(findings.map((f) => [f.nodes, f.resource, f.effect, f.severity])).toEqual([
+      [["commit_state", "post"], "bookmarks", "post:brief-channel", "warn"],
+      [["commit_state", "post"], "ledger", "post:brief-channel", "warn"],
+    ]);
+    expect(repairs).toEqual([]);
+  });
+
+  it("with the agent writing the preferences, it breaches a person's authority", () => {
+    const { findings, repairs } = lint(variant("agent-writes-preferences"));
+    expect(findings).toEqual([
+      expect.objectContaining({ rule: "AUTHORITY_BREACH", severity: "error", nodes: ["decide"], resource: "preferences" }),
+    ]);
+    expect(findings[0]!.message).toBe("decide writes 'preferences', which a person owns; only a gate may write it");
+    expect(repairs).toEqual([]);
+  });
+
+  it("an edge that only says 'only then' is dropped by --fix, and the repaired pass says what that costs", () => {
+    const { findings, repairs } = lint(variant("ordering-edge"));
+    expect(repairs).toEqual([expect.objectContaining({ kind: "drop", from: "post", to: "commit_state" })]);
+    expect(findings.filter((f) => f.phase === "raw").map((f) => f.rule)).toEqual(["FAKE_EDGE"]);
+    const early = findings.filter((f) => f.rule === "EARLY_COMMIT");
+    expect(early.map((f) => [f.phase, f.resource])).toEqual([
+      ["repaired", "bookmarks"],
+      ["repaired", "ledger"],
+    ]);
+  });
+});
+
+describe("DUPLICATE_EFFECT", () => {
+  const graph = (top: string, nodes: string, edges = "") =>
+    buildGraph(parseSpec(`version: 1\nname: t\n${top}nodes:\n${nodes}${edges ? `edges:\n${edges}` : ""}`));
+  const POST = '  - { id: post, label: P, kind: worker, effects: ["post:x"], in: { a: string } }\n';
+  const CHECK = '  - { id: check, label: C, kind: worker, guards: ["post:x"], out: { a: string } }\n';
+  const EDGE = "  - { from: check, to: post, carries: [a] }\n";
+
+  it("says nothing without a schedule: a one-off run has a person watching it", () => {
+    expect(duplicateEffects(graph("", POST), "raw")).toEqual([]);
+  });
+
+  it("fires on a scheduled effect nothing guards", () => {
+    expect(duplicateEffects(graph('schedule: daily\n', POST), "raw")).toHaveLength(1);
+  });
+
+  it("accepts a guard on the performer itself, such as an idempotency key", () => {
+    const keyed = '  - { id: post, label: P, kind: worker, effects: ["post:x"], guards: ["post:x"] }\n';
+    expect(duplicateEffects(graph("schedule: daily\n", keyed), "raw")).toEqual([]);
+  });
+
+  it("accepts a guard upstream, and not one beside it", () => {
+    expect(duplicateEffects(graph("schedule: daily\n", CHECK + POST, EDGE), "raw")).toEqual([]);
+    expect(duplicateEffects(graph("schedule: daily\n", CHECK + POST), "raw")).toHaveLength(1);
+  });
+
+  it("checks each effect on its own: a guard on one does not cover another", () => {
+    const two = '  - { id: post, label: P, kind: worker, effects: ["post:x", "send:y"], guards: ["post:x"] }\n';
+    expect(duplicateEffects(graph("schedule: daily\n", two), "raw").map((f) => f.effect)).toEqual(["send:y"]);
+  });
+});
+
+describe("EARLY_COMMIT", () => {
+  const graph = (nodes: string, edges = "", stores = "  ledger: { owner: agent, records: \"post:x\" }\n") =>
+    buildGraph(parseSpec(`version: 1\nname: t\nstores:\n${stores}nodes:\n${nodes}${edges ? `edges:\n${edges}` : ""}`));
+  const POST = '  - { id: post, label: P, kind: worker, effects: ["post:x"], out: { id: string } }\n';
+  const COMMIT = "  - { id: commit, label: C, kind: reduce, writes: [ledger], in: { id: string } }\n";
+
+  it("accepts a writer strictly after the effect", () => {
+    expect(earlyCommits(graph(POST + COMMIT, "  - { from: post, to: commit, carries: [id] }\n"), "raw")).toEqual([]);
+  });
+
+  it("fires on a writer before the effect", () => {
+    const before = earlyCommits(graph(POST + COMMIT, "  - { from: commit, to: post, carries: [] }\n"), "raw");
+    expect(before.map((f) => f.nodes)).toEqual([["commit", "post"]]);
+  });
+
+  it("fires on a step that writes the store and performs the effect itself", () => {
+    const same = '  - { id: post, label: P, kind: worker, effects: ["post:x"], writes: [ledger] }\n';
+    const found = earlyCommits(graph(same), "raw");
+    expect(found.map((f) => f.nodes)).toEqual([["post"]]);
+    expect(found[0]!.message).toContain("in the same step that performs it");
+  });
+
+  it("says nothing of a store that records no effect: claiming before acting is allowed", () => {
+    expect(earlyCommits(graph(POST + COMMIT, "", "  ledger: { owner: agent }\n"), "raw")).toEqual([]);
+  });
+});
+
+describe("AUTHORITY_BREACH", () => {
+  const base = (body: string) => buildGraph(parseSpec(`version: 1\nname: t\n${body}`));
+
+  it("lets a gate write a store a person owns, and nothing else", () => {
+    const graph = base(
+      "stores:\n  prefs: { owner: human }\nnodes:\n  - { id: edit, label: E, kind: gate, writes: [prefs] }\n  - { id: agent, label: A, kind: worker, writes: [prefs] }\n",
+    );
+    expect(authorityBreaches(graph, "raw").map((f) => f.nodes)).toEqual([["agent"]]);
+    expect(writeDenial(graph, graph.nodes.get("edit")!, "prefs")).toBeUndefined();
+  });
+
+  it("lets anything write an agent's store or a plain file", () => {
+    const graph = base("stores:\n  ledger: { owner: agent }\nnodes:\n  - { id: a, label: A, kind: worker, writes: [ledger, notes.md] }\n");
+    expect(authorityBreaches(graph, "raw")).toEqual([]);
+  });
+
+  it("holds a read-only boundary to no writes and no effects, in one finding per member", () => {
+    const graph = base(
+      'boundaries:\n  - { id: look, members: [a, b, c], access: read-only }\nnodes:\n  - { id: a, label: A, kind: worker, writes: [notes.md] }\n  - { id: b, label: B, kind: worker, effects: ["post:x"], writes: [log] }\n  - { id: c, label: C, kind: worker }\n',
+    );
+    const found = authorityBreaches(graph, "raw");
+    expect(found.map((f) => [f.nodes, f.boundary, f.severity])).toEqual([
+      [["a"], "look", "error"],
+      [["b"], "look", "error"],
+    ]);
+    expect(found[1]!.message).toBe("b is in read-only boundary 'look' but writes 'log' and performs 'post:x'");
+  });
+
+  it("says nothing of a read-write boundary, which claims nothing", () => {
+    const graph = base(
+      "boundaries:\n  - { id: rw, members: [a] }\nnodes:\n  - { id: a, label: A, kind: worker, writes: [notes.md] }\n",
+    );
+    expect(authorityBreaches(graph, "raw")).toEqual([]);
   });
 });

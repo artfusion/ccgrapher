@@ -10,8 +10,11 @@ console.log(formatReport(graph, result));
 console.log(result.layersBefore, "->", result.layersAfter);
 ```
 
-Six rules: `FAKE_EDGE`, `MISSING_INPUT`, `HIDDEN_EDGE`, `SELF_GRADING`,
-`CONTEXT_COLLAPSE`, `SILENT_FAILURE`.
+Nine rules: `FAKE_EDGE`, `MISSING_INPUT`, `AUTHORITY_BREACH`, `HIDDEN_EDGE`,
+`SELF_GRADING`, `CONTEXT_COLLAPSE`, `SILENT_FAILURE`, `DUPLICATE_EFFECT`,
+`EARLY_COMMIT`. The last two, and the store form of `AUTHORITY_BREACH`, read
+what a spec says one run hands the next: its schedule, its stores and the
+effects its steps perform. They detect and do not repair.
 
 Lint runs twice. Some problems only become visible after repair — two nodes that
 collide on a file may be a rank apart until the fake edge between them is gone —

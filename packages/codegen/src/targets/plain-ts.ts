@@ -94,6 +94,8 @@ function docComment(node: NodeSpec): string {
   if (node.expects !== undefined) traits.push(`expects ${node.expects}`);
   if (node.writes?.length) traits.push(`writes ${node.writes.join(" ")}`);
   if (node.uses?.length) traits.push(`uses ${node.uses.join(" ")}`);
+  if (node.effects?.length) traits.push(`effects ${node.effects.join(" ")}`);
+  if (node.guards?.length) traits.push(`guards ${node.guards.join(" ")}`);
 
   const fan = node.fanOut
     ? ` Runs once per ${node.fanOut.over}${node.fanOut.cap ? `, capped at ${node.fanOut.cap}` : ""}.`

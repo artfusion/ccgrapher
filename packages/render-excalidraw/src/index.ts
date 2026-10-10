@@ -27,7 +27,11 @@ export type FindingMark =
   | { readonly rule: "MISSING_INPUT"; readonly id: string; readonly field: string }
   | { readonly rule: "SELF_GRADING"; readonly id: string }
   | { readonly rule: "CONTEXT_COLLAPSE"; readonly id: string; readonly arriving: number }
-  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string };
+  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
+  | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
 
 export interface ExcalidrawScene {
   readonly type: "excalidraw";
@@ -340,7 +344,14 @@ function whoNote(node: NodeSpec): string {
 }
 
 /** Rule order, as the linter reports it; the count guard's note always comes last. */
-const NOTE_ORDER = ["MISSING_INPUT", "SELF_GRADING", "CONTEXT_COLLAPSE"] as const;
+const NOTE_ORDER = [
+  "MISSING_INPUT",
+  "AUTHORITY_BREACH",
+  "SELF_GRADING",
+  "CONTEXT_COLLAPSE",
+  "DUPLICATE_EFFECT",
+  "EARLY_COMMIT",
+] as const;
 
 /** Node findings as label notes. Two writers of one file get a line instead (`sharedWrites`). */
 function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
@@ -349,7 +360,13 @@ function findingNotes(id: string, marks: readonly FindingMark[]): string[] {
     if (m.rule === "MISSING_INPUT" && m.id === id) notes.push({ rule: m.rule, text: `no ${m.field}` });
     if (m.rule === "SELF_GRADING" && m.id === id) notes.push({ rule: m.rule, text: "grades own work" });
     if (m.rule === "CONTEXT_COLLAPSE" && m.id === id) notes.push({ rule: m.rule, text: `${m.arriving} in, no reduce` });
+    if (m.rule === "AUTHORITY_BREACH" && m.id === id) {
+      notes.push({ rule: m.rule, text: "boundary" in m ? `writes in read-only ${m.boundary}` : `writes ${m.store}, a person's` });
+    }
+    if (m.rule === "DUPLICATE_EFFECT" && m.id === id) notes.push({ rule: m.rule, text: `unguarded ${m.effect}` });
   }
+  const early = marks.flatMap((m) => (m.rule === "EARLY_COMMIT" && m.id === id ? [m.store] : []));
+  if (early.length > 0) notes.push({ rule: "EARLY_COMMIT", text: `writes ${early.join(", ")} too early` });
   return notes
     .sort((a, b) => NOTE_ORDER.indexOf(a.rule) - NOTE_ORDER.indexOf(b.rule))
     .map((n) => n.text);

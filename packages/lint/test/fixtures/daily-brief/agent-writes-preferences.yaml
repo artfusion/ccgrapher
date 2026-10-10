@@ -1,0 +1,121 @@
+# daily-brief with the agent writing the preferences a person owns.
+# Expected: AUTHORITY_BREACH on decide, and nothing else.
+version: 1
+name: daily-brief
+goal: "one brief a day, posted once, remembering what it already reported"
+
+schedule: "0 7 * * *"
+
+stores:
+  preferences: { owner: human }
+  bookmarks:   { owner: agent, records: "post:brief-channel" }
+  ledger:      { owner: agent, records: "post:brief-channel" }
+
+nodes:
+  - id: wake
+    label: wake on schedule
+    kind: split
+    model: null
+    in:  { tick: "YYYY-MM-DDTHH:MM" }
+    out: { run_date: "YYYY-MM-DD" }
+
+  - id: load_prefs
+    label: read the preferences
+    kind: worker
+    model: null
+    in:  { run_date: "YYYY-MM-DD" }
+    out: { preferences: object }
+
+  - id: load_state
+    label: read bookmarks and ledger
+    kind: worker
+    model: null
+    in:  { run_date: "YYYY-MM-DD" }
+    out: { bookmarks: object, ledger: object }
+
+  - id: check_destination
+    label: is today's post already up?
+    kind: worker
+    model: null
+    uses: ["mcp:channel/read"]
+    guards: ["post:brief-channel"]
+    in:  { run_date: "YYYY-MM-DD" }
+    out: { already_posted: boolean }
+
+  - id: read_sources
+    label: read the sources from their bookmarks
+    kind: worker
+    model: cheap
+    uses: ["mcp:feed/read"]
+    in:  { bookmarks: object }
+    out: { items: "object[]", next_bookmarks: object }
+
+  - id: decide
+    label: decide what matters
+    kind: synthesize
+    model: strong
+    expects: 3
+    writes: [preferences]
+    in:  { items: "object[]", preferences: object, ledger: object }
+    out: { shortlist: "object[]" }
+
+  - id: recheck
+    label: re-check the picks
+    kind: verifier
+    model: cheap
+    freshContext: true
+    uses: ["mcp:feed/read"]
+    in:  { shortlist: "object[]" }
+    out: { confirmed: "object[]" }
+
+  - id: compose
+    label: write the brief
+    kind: synthesize
+    model: strong
+    expects: 2
+    in:  { confirmed: "object[]", preferences: object }
+    out: { brief: markdown }
+
+  - id: post
+    label: post the brief
+    kind: worker
+    model: null
+    expects: 2
+    uses: ["mcp:channel/post"]
+    effects: ["post:brief-channel"]
+    in:  { brief: markdown, already_posted: boolean }
+    out: { post_id: string }
+
+  - id: commit_state
+    label: advance bookmarks and ledger
+    kind: reduce
+    model: null
+    expects: 3
+    writes: [bookmarks, ledger]
+    in:  { next_bookmarks: object, confirmed: "object[]", post_id: string }
+    out: { committed: boolean }
+
+  - id: review
+    label: a person reads it and edits preferences
+    kind: gate
+    writes: [preferences]
+    in:  { post_id: string }
+    out: { edited_preferences: markdown }
+
+edges:
+  - { from: wake,              to: load_prefs,        carries: [run_date] }
+  - { from: wake,              to: load_state,        carries: [run_date] }
+  - { from: wake,              to: check_destination, carries: [run_date] }
+  - { from: load_state,        to: read_sources,      carries: [bookmarks] }
+  - { from: read_sources,      to: decide,            carries: [items] }
+  - { from: load_prefs,        to: decide,            carries: [preferences] }
+  - { from: load_state,        to: decide,            carries: [ledger] }
+  - { from: decide,            to: recheck,           carries: [shortlist] }
+  - { from: recheck,           to: compose,           carries: [confirmed] }
+  - { from: load_prefs,        to: compose,           carries: [preferences] }
+  - { from: compose,           to: post,              carries: [brief] }
+  - { from: check_destination, to: post,              carries: [already_posted] }
+  - { from: read_sources,      to: commit_state,      carries: [next_bookmarks] }
+  - { from: recheck,           to: commit_state,      carries: [confirmed] }
+  - { from: post,              to: commit_state,      carries: [post_id] }
+  - { from: post,              to: review,            carries: [post_id] }

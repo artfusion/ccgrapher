@@ -7,6 +7,8 @@ export {
   EdgeSpec,
   BoundaryAccess,
   BoundarySpec,
+  StoreOwner,
+  StoreSpec,
   WorkflowSpec,
   expectsShortfall,
   renderStyle,

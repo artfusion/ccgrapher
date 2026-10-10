@@ -321,3 +321,57 @@ describe("uses", () => {
     expect(parseSpec(formatSpec(spec))).toEqual(spec);
   });
 });
+
+/**
+ * What a workflow hands its next run: a schedule, stores that outlive a run,
+ * and effects that cannot be taken back. All optional, all additive.
+ */
+describe("effects, guards, stores and schedule", () => {
+  const spec = (extra: string, node = "") =>
+    parseSpec(
+      `version: 1\nname: t\n${extra}nodes:\n  - { id: check, label: C, kind: worker, guards: ["post:x"] }\n  - { id: post, label: P, kind: worker, effects: ["post:x"]${node} }\n`,
+    );
+
+  it("accepts them and keeps every field", () => {
+    const parsed = spec('schedule: "0 7 * * *"\nstores:\n  prefs: { owner: human }\n  ledger: { owner: agent, records: "post:x" }\n');
+    expect(parsed.schedule).toBe("0 7 * * *");
+    expect(parsed.stores).toEqual({ prefs: { owner: "human" }, ledger: { owner: "agent", records: "post:x" } });
+    expect(parsed.nodes[0]?.guards).toEqual(["post:x"]);
+    expect(parsed.nodes[1]?.effects).toEqual(["post:x"]);
+    expect(buildGraph(parsed).nodes.size).toBe(2);
+    expect(parseSpec(formatSpec(parsed))).toEqual(parsed);
+  });
+
+  it("leaves them absent when a spec does not use them", () => {
+    const parsed = fixture("diamond").spec;
+    for (const key of ["schedule", "stores"]) expect(Object.hasOwn(parsed, key)).toBe(false);
+    expect(parsed.nodes.some((n) => "effects" in n || "guards" in n)).toBe(false);
+  });
+
+  it("rejects an effect id with whitespace or a comma, and a store id with whitespace", () => {
+    expect(() => spec("", ', guards: ["post x"]')).toThrow(/nodes\.1\.guards\.0/);
+    expect(() =>
+      parseSpec('version: 1\nname: t\nnodes:\n  - { id: a, label: A, kind: worker, effects: ["a,b"] }\n'),
+    ).toThrow(/nodes\.0\.effects\.0/);
+    expect(() => spec('stores:\n  "my store": { owner: agent }\n')).toThrow(SpecError);
+  });
+
+  it("rejects a schedule over more than one line, a stray space, and an owner it does not know", () => {
+    expect(() => spec('schedule: "0 7 * * *\\nand again"\n')).toThrow(/schedule/);
+    expect(() => spec('schedule: " 0 7 * * *"\n')).toThrow(/schedule/);
+    expect(() => spec("stores:\n  s: { owner: robot }\n")).toThrow(/stores\.s\.owner/);
+  });
+
+  it("rejects a guard on an effect no node performs", () => {
+    const graph = () =>
+      buildGraph(parseSpec('version: 1\nname: t\nnodes:\n  - { id: a, label: A, kind: worker, guards: ["post:x"] }\n'));
+    expect(graph).toThrow(SpecError);
+    expect(graph).toThrow("node 'a' guards 'post:x', but no node declares it in effects");
+  });
+
+  it("rejects a store recording an effect no node performs", () => {
+    expect(() => buildGraph(spec('stores:\n  ledger: { owner: agent, records: "send:y" }\n'))).toThrow(
+      "store 'ledger' records 'send:y', but no node declares it in effects",
+    );
+  });
+});

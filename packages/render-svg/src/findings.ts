@@ -25,10 +25,23 @@ export type FindingMark =
   | { readonly rule: "MISSING_INPUT"; readonly id: string; readonly field: string }
   | { readonly rule: "SELF_GRADING"; readonly id: string }
   | { readonly rule: "CONTEXT_COLLAPSE"; readonly id: string; readonly arriving: number }
-  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string };
+  | { readonly rule: "HIDDEN_EDGE"; readonly between: readonly [string, string]; readonly file: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly store: string }
+  | { readonly rule: "AUTHORITY_BREACH"; readonly id: string; readonly boundary: string }
+  | { readonly rule: "DUPLICATE_EFFECT"; readonly id: string; readonly effect: string }
+  | { readonly rule: "EARLY_COMMIT"; readonly id: string; readonly store: string };
 
 /** The rules a node can carry, in the linter's order. */
-const NODE_RULES = ["MISSING_INPUT", "HIDDEN_EDGE", "SELF_GRADING", "CONTEXT_COLLAPSE", "SILENT_FAILURE"] as const;
+const NODE_RULES = [
+  "MISSING_INPUT",
+  "AUTHORITY_BREACH",
+  "HIDDEN_EDGE",
+  "SELF_GRADING",
+  "CONTEXT_COLLAPSE",
+  "SILENT_FAILURE",
+  "DUPLICATE_EFFECT",
+  "EARLY_COMMIT",
+] as const;
 type NodeRule = (typeof NODE_RULES)[number];
 
 export interface NodeFindings {
@@ -49,6 +62,7 @@ export function findingsOn(
   guard: "missing" | "mismatch" | undefined,
 ): NodeFindings {
   const entries: Array<{ rule: NodeRule; forms?: string[] }> = [];
+  const early: string[] = [];
   for (const m of marks) {
     switch (m.rule) {
       case "MISSING_INPUT":
@@ -63,7 +77,30 @@ export function findingsOn(
       case "HIDDEN_EDGE":
         if (m.between.includes(id)) entries.push({ rule: m.rule });
         break;
+      case "AUTHORITY_BREACH":
+        if (m.id !== id) break;
+        entries.push({
+          rule: m.rule,
+          forms:
+            "boundary" in m
+              ? ["writes in read-only", "read-only"]
+              : [`writes ${shorten(m.store, 14)}`, `writes ${shorten(m.store, 7)}`, `writes ${shorten(m.store, 5)}`, "not its own"],
+        });
+        break;
+      case "DUPLICATE_EFFECT":
+        if (m.id === id) entries.push({ rule: m.rule, forms: [`unguarded ${shorten(m.effect, 14)}`, "unguarded effect", "unguarded"] });
+        break;
+      case "EARLY_COMMIT":
+        if (m.id === id) early.push(m.store);
+        break;
     }
+  }
+  // One step writing several stores too early is one mistake, so one caption.
+  if (early.length > 0) {
+    entries.push({
+      rule: "EARLY_COMMIT",
+      forms: [early.length === 1 ? `${shorten(early[0]!, 14)} too early` : `${early.length} stores too early`, "commits early", "too early"],
+    });
   }
   if (guard) {
     entries.push(guard === "missing" ? { rule: "SILENT_FAILURE", forms: ["no count guard", "no guard"] } : { rule: "SILENT_FAILURE" });

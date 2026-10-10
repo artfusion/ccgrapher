@@ -137,6 +137,8 @@ edges:
 | `model` | `cheap` \| `strong` \| `null` | `null` means plain code — no model, no tokens. |
 | `writes` | string[] | Files or APIs it touches. Two concurrent writers is a hidden edge. |
 | `uses` | string[] | Capabilities it depends on — `mcp:server/tool`, `skill:name`, `plugin:name`, `agent:type`. Audited against what a run reports. |
+| `effects` | string[] | What it does to the world that a later step cannot take back, such as `post:brief-channel`. See [Schedules, stores and effects](#schedules-stores-and-effects). |
+| `guards` | string[] | Effects it makes at-most-once, by checking first or by holding an idempotency key. Each must be an effect some node declares. |
 | `freshContext` | boolean | Set on a verifier. A worker must never grade its own work. |
 | `expects` | number | Fan-in guard. How many results should arrive. |
 | `fanOut` | `{ over, cap? }` | Run once per item. Stays one node, drawn as a stack badged `×N`. |
@@ -191,11 +193,46 @@ carrying the caption. Mermaid draws a subgraph and keeps the members together by
 aside within their row. Nesting and overlapping boundaries are not supported, and a spec that puts a
 node in two boundaries is rejected.
 
-Like `uses`, a boundary is a claim. `read-only` can be checked against each member's `writes`; it
-cannot be checked against what a tool in `uses` does, since a capability id says nothing about
-that. Limits such as a spend cap are expected to attach to a boundary later. Generated plain-ts
-code carries boundaries in its header and `ccg ingest` reads them back; the other targets say in a
-warning that they cannot.
+Like `uses`, a boundary is a claim. `read-only` is checked against each member's `writes` and
+`effects`, and a member with either is an `AUTHORITY_BREACH`; it cannot be checked against what a
+tool in `uses` does, since a capability id says nothing about that. Limits such as a spend cap are
+expected to attach to a boundary later. Generated plain-ts code carries boundaries in its header
+and `ccg ingest` reads them back; the other targets say in a warning that they cannot.
+
+### Schedules, stores and effects
+
+Some workflows run again tomorrow, and what goes wrong with them goes wrong between runs: a post
+made twice, a bookmark moved on before the post it marks, the agent rewriting preferences a person
+keeps. None of that is in the dataflow, so the spec has three optional fields for it.
+
+```yaml
+schedule: "0 7 * * *"
+stores:
+  preferences: { owner: human }
+  ledger:      { owner: agent, records: "post:brief-channel" }
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schedule` | string, one line | When the workflow runs on its own: a cron line or words, read by nothing. What counts is that it is there, since a scheduled run is fired again and retried. |
+| `stores` | map | State that outlives a run, keyed by id (no commas or whitespace). A node writes a store by naming it in `writes`. |
+| `stores.<id>.owner` | `human` \| `agent`, **required** | Who writes it. A gate is the only human actor in a spec, so a store a person owns may be written by a gate and by nothing else. |
+| `stores.<id>.records` | effect id | Marks progress state: the store says this effect has happened, so it may only be written after it. Left off, the store may be written whenever, which is how a design that claims before it acts says so. |
+
+On a node, `effects` names what it does that cannot be taken back, and `guards` names the effects
+it makes at-most-once, whether by looking at the destination first or by holding an idempotency
+key. An effect id is opaque, `<verb>:<target>` by convention, with no commas or whitespace. Every
+`guards` entry and every `records` must name an effect some node declares, or the spec is rejected
+when it loads.
+
+[`examples/daily-brief.yaml`](examples/daily-brief.yaml) uses all of them and lints clean. Three
+rules read them, `AUTHORITY_BREACH`, `DUPLICATE_EFFECT` and `EARLY_COMMIT`, and none of the three
+repairs anything: each fix would add a node, an edge or a field, and `--fix` only moves edges.
+
+Generated plain-ts code carries the schedule and the stores in its header and the node fields in
+each doc comment, and `ccg ingest` reads them back; the other targets say in a warning that they
+cannot. A CLI older than these fields ignores them without a word, so on an old install a spec
+that uses them lints clean whatever it declares.
 
 ### Layers
 
@@ -206,18 +243,21 @@ dependency between them land on the same row automatically. The diamond shape fa
 
 ---
 
-## The six lint rules
+## The nine lint rules
 
 | Rule | Severity | Fires when |
 | --- | --- | --- |
 | `FAKE_EDGE` | error | No carried field lands in the target's declared `in`. |
 | `MISSING_INPUT` | error | A non-root node declares an input nothing supplies. |
+| `AUTHORITY_BREACH` | error | A node that is not a gate writes a store a person owns, or a member of a `read-only` boundary has `writes` or `effects`. |
 | `HIDDEN_EDGE` | warn | Two concurrent nodes share a `writes` entry and neither is isolated. |
 | `SELF_GRADING` | warn | A `verifier` is not marked `freshContext`. |
 | `CONTEXT_COLLAPSE` | warn | More than 30 results arrive with no intermediate `reduce`. |
 | `SILENT_FAILURE` | warn | A real fan-in has no `expects` guard, or the guard is wrong. |
+| `DUPLICATE_EFFECT` | warn | A scheduled workflow performs an effect that neither the node nor any step before it `guards`. |
+| `EARLY_COMMIT` | warn | A node writes a store that `records` an effect without coming strictly after every node that performs it. |
 
-Two things about this that aren't obvious:
+Three things about this that aren't obvious:
 
 **Lint runs twice.** Some problems are invisible in the graph as written. In `linear-chain` the two
 reviewers both write `notes/findings.md`, but one is a rank behind the other, so they never look
@@ -228,6 +268,11 @@ become real. Findings therefore carry `phase: "raw" | "repaired"`.
 before its real dependency has produced anything. So the proposal is always "repoint to the nearest
 ancestor that supplies the missing field", and only when nothing upstream can supply it is the edge
 dropped.
+
+**An edge that only says "after" is still a fake edge.** If the step that records a post waits on
+the post by an edge that carries nothing, `--fix` drops the edge, and the repaired pass then reports
+`EARLY_COMMIT`: that is what dropping it costs. The ordering becomes real when the step takes
+something from the post, such as its id, which is how `daily-brief` says it.
 
 ---
 
@@ -261,6 +306,9 @@ so the picture is the lint report:
 | `SELF_GRADING` | the verifier ringed, "grades own work" |
 | `CONTEXT_COLLAPSE` | the overloaded node ringed, with the count: `200 in, no reduce` |
 | `SILENT_FAILURE` | the fan-in ringed, "no count guard", or `9 ≠ 8` when the guard disagrees |
+| `AUTHORITY_BREACH` | the writer ringed, with the store, `writes preferences`, or "writes in read-only" |
+| `DUPLICATE_EFFECT` | the step performing the effect ringed, with the effect: `unguarded post:brief-channel` |
+| `EARLY_COMMIT` | the early writer ringed, with the store, `ledger too early`, or `2 stores too early` |
 
 A node has room for one caption, so a node with several findings names the first in rule order
 and counts the rest: `no rubric +2`. Dashes are kept for structure (a human gate, an isolated
@@ -490,7 +538,7 @@ Exit code is `0` when clean or only warnings, `1` when there is an error finding
 matching `lint`. Bad usage includes handing it a trace and a spec that have nothing to do with each
 other, on which more below.
 
-These do not join the six lint rules, and the six stay six. An audit finding needs a run as well as
+These do not join the lint rules. An audit finding needs a run as well as
 a spec, so a spec on its own can never produce one — which is why they live behind their own
 command rather than inside the linter.
 
@@ -558,7 +606,7 @@ Two things worth knowing when reading its output:
 | Package | Does |
 | --- | --- |
 | [`core`](packages/core) | Zod schema, YAML parsing, cycle detection, longest-path ranks |
-| [`lint`](packages/lint) | The six rules and the two-pass repair pipeline |
+| [`lint`](packages/lint) | The nine rules and the two-pass repair pipeline |
 | [`layout`](packages/layout) | dagre wrapper → positioned nodes and routed edges |
 | [`render-svg`](packages/render-svg) | rough.js + paper texture + embedded font |
 | [`render-mermaid`](packages/render-mermaid) | `flowchart TD` with `look: handDrawn` |
@@ -602,7 +650,9 @@ you could contribute.
 `diamond`, `research-desk` and `route-auth-audit` are clean — every edge carries real data, so they
 double as the negative controls in the test suite. `linear-chain` is deliberately broken and is the
 linter's fixture. `self-grading` and `wide-fanin` were added because nothing in the original drop
-exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`. `live-demo` is the one that executes: it lints
+exercised `SELF_GRADING` or `CONTEXT_COLLAPSE`. `daily-brief` is clean and is the one that runs
+on a schedule; its broken variants, one per rule about what one run hands the next, sit with the
+linter's tests in `packages/lint/test/fixtures/daily-brief`. `live-demo` is the one that executes: it lints
 clean, sleeps rather than calling a model, fails one node on purpose and stops at a human gate.
 
 `release-session` is the one to read if you want to see why this is worth doing. It is not an agent
