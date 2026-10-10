@@ -6,6 +6,7 @@ import {
   agentTypes,
   buildGraph,
   effectiveInboundCount,
+  expectsShortfall,
   formatSpec,
   parseSpec,
   rankGraph,
@@ -84,6 +85,17 @@ describe("rank assignment", () => {
     expect(layerCount).toBe(7);
     expect(layers[3]).toEqual(["skeptic_correct", "skeptic_current", "skeptic_source"]);
     expect(layers[6]).toEqual(["gate"]);
+  });
+});
+
+describe("expectsShortfall", () => {
+  // The run-time comparison the runner and the audit share. A floor: only too
+  // few is a shortfall, and a surplus is the linter's business.
+  it("is a shortfall only when fewer arrive than expected", () => {
+    expect(expectsShortfall(5, 4)).toBe(true);
+    expect(expectsShortfall(5, 5)).toBe(false);
+    expect(expectsShortfall(5, 6)).toBe(false);
+    expect(expectsShortfall(0, 0)).toBe(false);
   });
 });
 

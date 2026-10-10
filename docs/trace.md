@@ -48,7 +48,9 @@ defines it; fields marked optional may be absent.
 
 `of` on `node_started` is what makes a node fanned. A writer expanding a
 `fanOut` sends it on every instance start, because it is the only place a reader
-learns how many instances to wait for.
+learns how many instances to wait for. `ccg trace audit` reads it that way too: a
+step after a fanned one is in order only once every copy has finished, counting
+the copies that started or the `of` they announced, whichever is more.
 
 **Absent means unknown.** Every token and cost field in `usage` is optional. A
 reader renders an absent number as "n/a", never as 0, and sums only what is

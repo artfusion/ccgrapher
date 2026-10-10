@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { rankGraph, type Graph, type NodeSpec } from "@ccgrapher/core";
+import { expectsShortfall, rankGraph, type Graph, type NodeSpec } from "@ccgrapher/core";
 import { TraceEvent } from "@ccgrapher/trace";
 import {
   ExpectsError,
@@ -304,7 +304,7 @@ export async function execute(
      * Both emitted guards test the same floor; `NodeSpec.expects` in
      * `@ccgrapher/core` is the statement all three answer to.
      */
-    if (node.expects !== undefined && inputs.length < node.expects) {
+    if (node.expects !== undefined && expectsShortfall(node.expects, inputs.length)) {
       stop(new ExpectsError(node.id, node.expects, inputs.length));
       return;
     }

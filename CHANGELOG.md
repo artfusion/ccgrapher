@@ -38,7 +38,19 @@ private web canvas, which has its own train. Full notes accompany each
 - Trace events are unchanged in shape, and `ccg trace audit` finds nothing to report on traces
   from the new scheduler. The committed `examples/traces/live-demo.jsonl` was written by the old
   one; a rerun would differ only in the skip of `count_lines` arriving earlier.
-
+- `ccg trace audit` no longer takes the first copy of a fanned step back as the whole step. A
+  node that starts after one of five research copies has finished is now an `ORDER_VIOLATION`;
+  it is in order once every copy has finished, counting the copies the run started or the `of`
+  it announced, whichever is more. The declared `cap` is not the yardstick, since it is a
+  maximum rather than a promise.
+- A new audit rule, `FAN_IN_SHORTFALL`, an error: a node with `expects: N` that started with
+  fewer than N results recorded upstream. A failed copy delivers nothing and an approved gate
+  delivers one. A surplus is left to the linter, and a trace that never mentions the upstream is
+  not counted as zero.
+- The run-time `expects` comparison is now one function, `expectsShortfall` in
+  `@ccgrapher/core`, and the runner and the audit both call it. The guards that codegen emits
+  are source text for other runtimes and stay held level by tests. The trace contract is
+  unchanged.
 - `ccg render` draws the count guard. Every node that declares `expects` carries the number,
   bottom right, and the node group carries `data-expects`. A repair that adds a guard now shows
   in the picture; before, the picture could not tell a guarded fan-in from an unguarded one.

@@ -8,6 +8,7 @@ export {
   BoundaryAccess,
   BoundarySpec,
   WorkflowSpec,
+  expectsShortfall,
   renderStyle,
   agentTypes,
   agentTag,
