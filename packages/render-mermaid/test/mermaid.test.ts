@@ -144,6 +144,40 @@ describe("edges", () => {
   });
 });
 
+describe("boundaries", () => {
+  it("emits a subgraph per boundary, listing nodes already declared", () => {
+    const out = renderMermaid(fixture("research-desk"));
+    expect(out).toContain(
+      [
+        '  subgraph gather__boundary["gather and check · read-only"]',
+        "    research",
+        "    dedupe",
+        "    skeptic_correct",
+        "    skeptic_current",
+        "    skeptic_source",
+        "    vote",
+        "  end",
+        "  class gather__boundary boundary;",
+      ].join("\n"),
+    );
+    expect(out).toContain(
+      "  classDef boundary fill:none,stroke:#736A63,stroke-width:1.4px,stroke-dasharray:12 6,color:#736A63;",
+    );
+    // Declared before the subgraph, so the subgraph adds no node of its own.
+    expect(out.indexOf("  research[")).toBeLessThan(out.indexOf("subgraph"));
+  });
+
+  it("emits no subgraph for a spec without a boundary", () => {
+    const out = renderMermaid(fixture("diamond"));
+    expect(out).not.toContain("subgraph");
+    expect(out).not.toContain("classDef boundary");
+  });
+
+  it("is deterministic", () => {
+    expect(renderMermaid(fixture("research-desk"))).toBe(renderMermaid(fixture("research-desk")));
+  });
+});
+
 describe("options", () => {
   it("emits the handDrawn config by default and can turn it off", () => {
     expect(renderMermaid(fixture("diamond"))).toContain("look: handDrawn");

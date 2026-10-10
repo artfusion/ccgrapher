@@ -2,10 +2,19 @@
 # The fuller diamond: adds the code-only reduce step and three-lens verification.
 # 7 layers (plan/research/dedupe/skeptics/vote/report/gate -- the original handoff
 # comment said 6, which undercounted the human gate).
-# Exercises: a no-model node, a second fan-out below the first, majority voting.
+# Exercises: a no-model node, a second fan-out below the first, majority voting,
+# and a boundary: everything between the plan and the report only reads.
 version: 1
 name: research-desk
 goal: "decision-grade research on <question>"
+
+# One claim about six steps, said once. Drawn as a dashed region around them;
+# it moves no node, and only `report` below it writes anything.
+boundaries:
+  - id: gather
+    label: gather and check
+    members: [research, dedupe, skeptic_correct, skeptic_current, skeptic_source, vote]
+    access: read-only
 
 nodes:
   - id: plan

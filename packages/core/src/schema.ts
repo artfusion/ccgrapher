@@ -114,6 +114,44 @@ export const EdgeSpec = z.object({
 });
 export type EdgeSpec = z.infer<typeof EdgeSpec>;
 
+/**
+ * What the members of a boundary may do. `read-only` means no member writes
+ * anything: no `writes` entry, and no external effect once effects can be
+ * declared. `read-write` is the default and claims nothing.
+ */
+export const BoundaryAccess = z.enum(["read-only", "read-write"]);
+export type BoundaryAccess = z.infer<typeof BoundaryAccess>;
+
+/**
+ * A named group of nodes that one constraint covers, so the constraint is said
+ * once rather than repeated on every member or left out of the picture. It is
+ * drawn as a region around its members and never becomes a node, and it moves
+ * no node: ranks and positions are what they would be without it.
+ *
+ * Today the only constraint is `access`. Limits such as a spend cap or a token
+ * budget are expected to attach here later, as further optional fields.
+ *
+ * Like `uses`, a boundary is a claim. `access` is decidable from the spec for
+ * declared `writes`, and that is what the linter can check. Whether a tool a
+ * member `uses` is itself read-only is not, because capability ids are opaque.
+ *
+ * A node belongs to at most one boundary. Nesting and overlap are out of scope:
+ * two boundaries that share a member are rejected when the graph is built,
+ * rather than given a precedence rule nothing yet needs.
+ *
+ * The id follows the same rule as a capability id, for the same reason: the
+ * banner line that carries a boundary through codegen and back splits on
+ * whitespace.
+ */
+export const BoundarySpec = z.object({
+  id: z.string().regex(/^[^\s,]+$/, "no commas or whitespace inside a boundary id"),
+  /** A short caption drawn on the region. */
+  label: z.string().min(1).optional(),
+  members: z.array(z.string().min(1)).min(1),
+  access: BoundaryAccess.optional(),
+});
+export type BoundarySpec = z.infer<typeof BoundarySpec>;
+
 export const WorkflowSpec = z.object({
   version: z.literal(1),
   name: z.string().min(1),
@@ -121,6 +159,7 @@ export const WorkflowSpec = z.object({
   goal: z.string().optional(),
   nodes: z.array(NodeSpec).min(1),
   edges: z.array(EdgeSpec).default([]),
+  boundaries: z.array(BoundarySpec).optional(),
 });
 export type WorkflowSpec = z.infer<typeof WorkflowSpec>;
 

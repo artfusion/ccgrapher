@@ -233,6 +233,29 @@ describe("count guards", () => {
   });
 });
 
+describe("boundaries", () => {
+  const scene = renderExcalidraw(fixture("research-desk"));
+  const byId = new Map(scene.elements.map((e) => [e["id"] as string, e]));
+
+  it("draws a dashed rectangle behind the members, before any of them", () => {
+    const region = byId.get("boundary-gather-0")!;
+    expect(region["type"]).toBe("rectangle");
+    expect(region["strokeStyle"]).toBe("dashed");
+    expect(region["backgroundColor"]).toBe("transparent");
+    const ids = scene.elements.map((e) => e["id"]);
+    expect(ids.indexOf("boundary-gather-0")).toBeLessThan(ids.indexOf("research"));
+  });
+
+  it("groups the region, its caption and every member box and label", () => {
+    const grouped = scene.elements.filter((e) => (e["groupIds"] as string[]).includes("boundary-gather")).map((e) => e["id"]);
+    expect(grouped).toEqual(
+      expect.arrayContaining(["boundary-gather-0", "boundary-gather-0-label", "research", "text-research", "vote", "text-vote"]),
+    );
+    expect(grouped).not.toContain("report");
+    expect(byId.get("boundary-gather-0-label")!["text"]).toBe("gather and check · read-only");
+  });
+});
+
 describe("determinism", () => {
   it("produces an identical file for identical input", () => {
     const positioned = fixture("research-desk");

@@ -276,3 +276,37 @@ describe("paper grain", () => {
     expect(flat).toContain(DEFAULT_THEME.paper);
   });
 });
+
+describe("boundaries", () => {
+  it("draws one layer of regions, behind every edge and node", () => {
+    const svg = renderSvg(fixture("research-desk"));
+    const layer = svg.indexOf('<g data-layer="boundaries">');
+    expect(layer).toBeGreaterThan(-1);
+    expect(layer).toBeLessThan(svg.indexOf("<g data-edge="));
+    expect(layer).toBeLessThan(svg.indexOf("<g data-node="));
+    expect(svg).toContain(
+      '<g data-boundary="gather" data-members="research dedupe skeptic_correct skeptic_current skeptic_source vote">',
+    );
+  });
+
+  it("captions the region with its label and its access", () => {
+    expect(renderSvg(fixture("research-desk"))).toContain(">gather and check · read-only</text>");
+  });
+
+  it("is dashed, rounded and muted, and not the worktree halo's dash", () => {
+    const svg = renderSvg(fixture("research-desk"));
+    const rect = /<g data-boundary="gather"[^>]*><rect ([^>]*)\/>/.exec(svg)?.[1] ?? "";
+    expect(rect).toContain('stroke-dasharray="12 6"');
+    expect(rect).toContain('rx="14"');
+    expect(rect).toContain(`stroke="${DEFAULT_THEME.boundary}"`);
+    expect(rect).toContain('fill="none"');
+  });
+
+  it("draws nothing for a spec without one", () => {
+    expect(renderSvg(fixture("diamond"))).not.toContain("data-boundary");
+  });
+
+  it("renders byte-identically every time", () => {
+    expect(renderSvg(fixture("research-desk"))).toBe(renderSvg(fixture("research-desk")));
+  });
+});

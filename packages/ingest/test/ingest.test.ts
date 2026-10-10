@@ -79,6 +79,40 @@ describe("what survives the trip", () => {
     expect(spec.nodes.find((n) => n.id === "worker_1")!.uses).toEqual(["mcp:tavily/search"]);
   });
 
+  it("keeps boundaries, members in order, access and label", () => {
+    expect(roundTrip("research-desk").spec.boundaries).toEqual([
+      {
+        id: "gather",
+        label: "gather and check",
+        members: ["research", "dedupe", "skeptic_correct", "skeptic_current", "skeptic_source", "vote"],
+        access: "read-only",
+      },
+    ]);
+  });
+
+  it("keeps every shape a boundary can take", () => {
+    const base = fixture("diamond").spec;
+    const spec: WorkflowSpec = {
+      ...base,
+      boundaries: [
+        { id: "bare", members: ["split"] },
+        { id: "rw", members: ["worker_1", "worker_2"], access: "read-write" },
+        { id: "ns:odd", label: "odd ones — kept apart (for now)", members: ["worker_3", "worker_5"], access: "read-only" },
+        { id: "end", label: "the end", members: ["checker", "merge"] },
+      ],
+    };
+    const { spec: back, warnings } = ingest(codegen(buildGraph(spec), "plain-ts"));
+    expect(warnings).toEqual([]);
+    expect(back).toEqual(spec);
+  });
+
+  it("drops a member the code no longer has, and says so", () => {
+    const source = codegen(fixture("research-desk"), "plain-ts").replace(" dedupe ", " ghost ");
+    const { spec, warnings } = ingest(source);
+    expect(spec.boundaries?.[0]?.members).not.toContain("ghost");
+    expect(warnings).toEqual(["boundary 'gather' names 'ghost', which is not a node here; dropped"]);
+  });
+
   it("recovers an empty carries — a fake edge stays fake", () => {
     const { spec } = roundTrip("linear-chain");
     const fake = spec.edges.find((e) => e.from === "review_a" && e.to === "review_b")!;

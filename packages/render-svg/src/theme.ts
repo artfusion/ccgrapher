@@ -15,6 +15,11 @@ export interface Theme {
   readonly quiet: string;
   /** Danger as small text: `danger` itself is 4.0:1 on the darker node tints. */
   readonly dangerInk: string;
+  /**
+   * The dashed region around a boundary and its caption. Muted, but dark enough
+   * that the caption reads as text on the paper (4.9:1), which `muted` is not.
+   */
+  readonly boundary: string;
   /** Very light per-kind tint so the roles read apart at a glance. */
   readonly fill: Readonly<Record<NodeKind, string>>;
   readonly fontFamily: string;
@@ -32,6 +37,7 @@ export const DEFAULT_THEME: Theme = {
   danger: "#C4442E",
   quiet: "#675F58",
   dangerInk: "#B03A26",
+  boundary: "#736A63",
   fill: {
     goal: "#FFFFFF",
     split: "#FFFFFF",

@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fileURLToPath } from "node:url";
-import { rankGraph, withEdges, type Graph } from "@ccgrapher/core";
+import { buildGraph, rankGraph, withEdges, type Graph } from "@ccgrapher/core";
 import { loadGraph } from "@ccgrapher/core/node";
 import { describe, expect, it } from "vitest";
-import { layoutGraph, measureNode, wrapLabel } from "../src/index.js";
+import {
+  layoutGraph,
+  measureNode,
+  REGION_PAD_Y,
+  wrapLabel,
+  type PositionedNode,
+  type PositionedRegion,
+} from "../src/index.js";
 
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
 const fixture = (name: string) => loadGraph(`${examples}${name}.yaml`);
@@ -173,5 +180,79 @@ describe("fanOut", () => {
     expect(measureNode(audit).width).toBeGreaterThan(
       measureNode({ ...audit, fanOut: undefined }).width,
     );
+  });
+});
+
+describe("boundary regions", () => {
+  const withBoundaries = (graph: Graph, boundaries: NonNullable<Graph["spec"]["boundaries"]>): Graph =>
+    buildGraph({ ...graph.spec, boundaries });
+  const without = (graph: Graph): Graph => {
+    const { boundaries: _, ...spec } = graph.spec;
+    return buildGraph(spec);
+  };
+  const inside = (r: PositionedRegion, n: PositionedNode) =>
+    n.x >= r.x && n.y >= r.y && n.x + n.width <= r.x + r.width && n.y + n.height <= r.y + r.height;
+  const touches = (r: PositionedRegion, n: PositionedNode) =>
+    n.x < r.x + r.width && r.x < n.x + n.width && n.y < r.y + r.height && r.y < n.y + n.height;
+
+  it("moves, adds and resizes no node, and leaves the canvas size alone", () => {
+    const bounded = layoutGraph(fixture("research-desk"));
+    const plain = layoutGraph(without(fixture("research-desk")));
+    expect(bounded.regions.length).toBeGreaterThan(0);
+    expect(plain.regions).toEqual([]);
+    expect(bounded.nodes.map(({ node: _, ...n }) => n)).toEqual(plain.nodes.map(({ node: _, ...n }) => n));
+    expect(bounded.edges.map((e) => e.points)).toEqual(plain.edges.map((e) => e.points));
+    expect([bounded.width, bounded.height]).toEqual([plain.width, plain.height]);
+  });
+
+  it("draws contiguous members as one padded region holding them all and nothing else", () => {
+    const positioned = layoutGraph(fixture("research-desk"));
+    expect(positioned.regions).toHaveLength(1);
+    const [region] = positioned.regions;
+    const members = new Set(region!.boundary.members);
+    for (const node of positioned.nodes) {
+      if (members.has(node.id)) expect(inside(region!, node), node.id).toBe(true);
+      else expect(touches(region!, node), node.id).toBe(false);
+    }
+    const first = positioned.nodes.find((n) => n.id === "research")!;
+    expect(first.y - region!.y).toBe(REGION_PAD_Y);
+  });
+
+  it("splits a boundary whose rectangle would enclose a non-member, one region per run", () => {
+    const graph = withBoundaries(fixture("diamond"), [
+      { id: "odd", members: ["worker_1", "worker_3", "worker_5"] },
+    ]);
+    const positioned = layoutGraph(graph);
+    expect(positioned.regions.map((r) => r.members)).toEqual([["worker_1"], ["worker_3"], ["worker_5"]]);
+    expect(positioned.regions.map((r) => [r.part, r.parts])).toEqual([[0, 3], [1, 3], [2, 3]]);
+    for (const region of positioned.regions) {
+      for (const node of positioned.nodes.filter((n) => !region.members.includes(n.id))) {
+        expect(touches(region, node), `${region.members[0]} / ${node.id}`).toBe(false);
+      }
+    }
+  });
+
+  it("keeps adjacent members of one row together when it has to split", () => {
+    const graph = withBoundaries(fixture("diamond"), [
+      { id: "mixed", members: ["split", "worker_1", "worker_2", "worker_4"] },
+    ]);
+    const regions = layoutGraph(graph).regions.map((r) => r.members);
+    expect(regions).toContainEqual(["split"]);
+    expect(regions).toContainEqual(["worker_4"]);
+    expect(regions.find((m) => m.includes("worker_1"))).toEqual(["worker_1", "worker_2"]);
+  });
+
+  it("never lets regions of two boundaries overlap", () => {
+    const graph = withBoundaries(fixture("diamond"), [
+      { id: "left", members: ["worker_1", "worker_2"] },
+      { id: "right", members: ["worker_3", "worker_4", "worker_5"] },
+    ]);
+    const [a, b] = layoutGraph(graph).regions;
+    expect(a!.x + a!.width).toBeLessThan(b!.x);
+  });
+
+  it("is deterministic", () => {
+    const graph = withBoundaries(fixture("diamond"), [{ id: "odd", members: ["worker_1", "worker_3"] }]);
+    expect(layoutGraph(graph).regions).toEqual(layoutGraph(graph).regions);
   });
 });

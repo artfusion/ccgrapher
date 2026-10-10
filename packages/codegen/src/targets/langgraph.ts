@@ -2,7 +2,7 @@
 import type { Graph, NodeSpec } from "@ccgrapher/core";
 import { roots } from "@ccgrapher/core";
 import { tsType } from "../fields.js";
-import { banner, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
+import { banner, boundaryWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
 
 /**
  * LangGraph derives its own concurrency from the edge set: a node with several
@@ -13,6 +13,10 @@ import { banner, identifier, quote, type Emitter, type EmitOptions } from "../ty
 export const langgraphEmitter: Emitter = {
   target: "langgraph",
   extension: ".graph.ts",
+
+  warnings(graph: Graph): string[] {
+    return boundaryWarnings(graph, "langgraph");
+  },
 
   emit(graph: Graph, options: EmitOptions): string {
     const lines: string[] = [...banner(graph, options, "langgraph")];

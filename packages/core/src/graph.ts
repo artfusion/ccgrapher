@@ -48,12 +48,44 @@ export function buildGraph(spec: WorkflowSpec): Graph {
     inbound.get(edge.to)!.push(edge);
   }
 
+  checkBoundaries(spec, nodes);
+
   const graph: Graph = { spec, nodes, edges: spec.edges, inbound, outbound };
   const cycle = findCycle(graph);
   if (cycle) {
     throw new SpecError(`graph contains a cycle: ${cycle.join(" -> ")}`, cycle);
   }
   return graph;
+}
+
+/**
+ * Every member names a node, boundary ids are unique, and no node sits in two
+ * boundaries. Nesting is out of scope (see `BoundarySpec`), so a shared member
+ * is an error rather than something to resolve.
+ */
+function checkBoundaries(spec: WorkflowSpec, nodes: ReadonlyMap<string, NodeSpec>): void {
+  const ids = new Set<string>();
+  const owner = new Map<string, string>();
+  for (const boundary of spec.boundaries ?? []) {
+    if (ids.has(boundary.id)) throw new SpecError(`duplicate boundary id: ${boundary.id}`, boundary);
+    ids.add(boundary.id);
+    for (const member of boundary.members) {
+      if (!nodes.has(member)) {
+        throw new SpecError(`boundary '${boundary.id}' names unknown node '${member}'`, boundary);
+      }
+      const already = owner.get(member);
+      if (already === boundary.id) {
+        throw new SpecError(`boundary '${boundary.id}' lists '${member}' twice`, boundary);
+      }
+      if (already !== undefined) {
+        throw new SpecError(
+          `node '${member}' is in boundary '${already}' and boundary '${boundary.id}'; a node belongs to at most one`,
+          boundary,
+        );
+      }
+      owner.set(member, boundary.id);
+    }
+  }
 }
 
 /** Rebuild a graph with a different edge set. Used by the lint repair pass. */

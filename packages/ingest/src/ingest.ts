@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { EdgeSpec, NodeSpec, WorkflowSpec } from "@ccgrapher/core";
+import type { BoundarySpec, EdgeSpec, NodeSpec, WorkflowSpec } from "@ccgrapher/core";
 import {
   Node,
   Project,
@@ -54,12 +54,15 @@ export function ingest(source: string, options: { name?: string } = {}): IngestR
     warnings.push(`spec name not recorded in the source; inferred '${name}'`);
   }
 
+  const boundaries = keepKnownMembers(readBoundaries(source), known, warnings);
+
   const spec: WorkflowSpec = {
     version: 1,
     name,
     ...(banner.goal ? { goal: banner.goal } : {}),
     nodes,
     edges: withCarries(edges, nodes),
+    ...(boundaries.length > 0 ? { boundaries } : {}),
   };
 
   return { spec, warnings };
@@ -480,6 +483,41 @@ function readBanner(source: string): { name?: string; goal?: string } {
   const name = /^\/\/ Spec: (.+)$/m.exec(source)?.[1]?.trim();
   const goal = /^\/\/ Goal: (.+)$/m.exec(source)?.[1]?.trim();
   return { ...(name && { name }), ...(goal && { goal }) };
+}
+
+/**
+ * `// Boundary: <id> (<access>): <member> <member> — <label>`, as codegen's
+ * `boundaryLine` writes it. Access and label are optional; ids and members
+ * hold no whitespace, so the label is everything after the dash.
+ */
+const BOUNDARY_LINE = /^\/\/ Boundary: (\S+?)(?: \((read-only|read-write)\))?: (\S+(?: \S+)*?)(?: — (.+))?$/gm;
+
+function readBoundaries(source: string): BoundarySpec[] {
+  return [...source.matchAll(BOUNDARY_LINE)].map((m) => ({
+    id: m[1]!,
+    ...(m[4] && { label: m[4].trim() }),
+    members: m[3]!.split(" "),
+    ...(m[2] && { access: m[2] as BoundarySpec["access"] }),
+  }));
+}
+
+/**
+ * A hand-edited file can drop a node and keep its banner line. Naming a node
+ * that is not there would fail the spec at load, so the member goes, with a
+ * warning, and a boundary left with none goes too.
+ */
+function keepKnownMembers(
+  boundaries: readonly BoundarySpec[],
+  known: ReadonlySet<string>,
+  warnings: string[],
+): BoundarySpec[] {
+  return boundaries.flatMap((boundary) => {
+    for (const member of boundary.members.filter((m) => !known.has(m))) {
+      warnings.push(`boundary '${boundary.id}' names '${member}', which is not a node here; dropped`);
+    }
+    const members = boundary.members.filter((m) => known.has(m));
+    return members.length > 0 ? [{ ...boundary, members }] : [];
+  });
 }
 
 function runnerName(file: SourceFile): string | undefined {

@@ -184,6 +184,64 @@ describe("validation", () => {
   });
 });
 
+describe("boundaries", () => {
+  const base =
+    "version: 1\nname: t\nnodes:\n  - { id: a, label: A, kind: worker }\n  - { id: b, label: B, kind: worker }\n  - { id: c, label: C, kind: worker }\n";
+  const withBoundaries = (yaml: string) => buildGraph(parseSpec(`${base}boundaries:\n${yaml}`));
+
+  it("accepts a boundary and keeps its fields", () => {
+    const graph = withBoundaries("  - { id: g, label: read the sources, members: [a, b], access: read-only }\n");
+    expect(graph.spec.boundaries).toEqual([
+      { id: "g", label: "read the sources", members: ["a", "b"], access: "read-only" },
+    ]);
+  });
+
+  it("is additive: a spec without one has no key at all", () => {
+    const spec = parseSpec(base);
+    expect(Object.hasOwn(spec, "boundaries")).toBe(false);
+  });
+
+  it("rejects a member that is not a node", () => {
+    expect(() => withBoundaries("  - { id: g, members: [a, ghost] }\n")).toThrow(
+      /boundary 'g' names unknown node 'ghost'/,
+    );
+  });
+
+  it("rejects two boundaries with one id", () => {
+    expect(() => withBoundaries("  - { id: g, members: [a] }\n  - { id: g, members: [b] }\n")).toThrow(
+      /duplicate boundary id: g/,
+    );
+  });
+
+  it("rejects a node in two boundaries, since nesting is out of scope", () => {
+    expect(() => withBoundaries("  - { id: g, members: [a, b] }\n  - { id: h, members: [b, c] }\n")).toThrow(
+      /node 'b' is in boundary 'g' and boundary 'h'/,
+    );
+  });
+
+  it("rejects a member listed twice", () => {
+    expect(() => withBoundaries("  - { id: g, members: [a, a] }\n")).toThrow(/lists 'a' twice/);
+  });
+
+  it("rejects an empty boundary, an unknown access and an id with whitespace", () => {
+    expect(() => withBoundaries("  - { id: g, members: [] }\n")).toThrow(SpecError);
+    expect(() => withBoundaries("  - { id: g, members: [a], access: write-only }\n")).toThrow(SpecError);
+    expect(() => withBoundaries('  - { id: "two words", members: [a] }\n')).toThrow(SpecError);
+  });
+
+  it("survives a round trip through formatSpec", () => {
+    const spec = parseSpec(`${base}boundaries:\n  - { id: g, label: G, members: [a, c], access: read-write }\n`);
+    expect(parseSpec(formatSpec(spec))).toEqual(spec);
+  });
+
+  it("changes no rank", () => {
+    const edges = "edges:\n  - { from: a, to: b, carries: [] }\n";
+    const plain = buildGraph(parseSpec(`${base}${edges}`));
+    const bounded = buildGraph(parseSpec(`${base}${edges}boundaries:\n  - { id: g, members: [a, c] }\n`));
+    expect(rankGraph(bounded)).toEqual(rankGraph(plain));
+  });
+});
+
 /**
  * Capability declarations. The ids are opaque to this package on purpose, but
  * two characters are not: a comma or a space inside one would be shredded by

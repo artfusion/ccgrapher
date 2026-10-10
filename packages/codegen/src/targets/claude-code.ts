@@ -2,7 +2,7 @@
 import type { Graph, NodeSpec } from "@ccgrapher/core";
 import { objectSchema } from "../fields.js";
 import { inputsOf, stages } from "../stages.js";
-import { banner, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
+import { banner, boundaryWarnings, identifier, quote, type Emitter, type EmitOptions } from "../types.js";
 
 /**
  * Emits a Workflow script: `agent()` for one job, `parallel()` for a rank with
@@ -24,12 +24,15 @@ export const claudeCodeEmitter: Emitter = {
    * project exists to catch, sitting in our own emitter.
    */
   warnings(graph: Graph): string[] {
-    return graph.spec.nodes
-      .filter((node) => node.kind === "gate")
-      .map(
-        (node) =>
-          `'${node.id}' is a gate — the claude-code target cannot pause for a human, so the generated step will not wait for approval.`,
-      );
+    return [
+      ...graph.spec.nodes
+        .filter((node) => node.kind === "gate")
+        .map(
+          (node) =>
+            `'${node.id}' is a gate — the claude-code target cannot pause for a human, so the generated step will not wait for approval.`,
+        ),
+      ...boundaryWarnings(graph, "claude-code"),
+    ];
   },
 
   emit(graph: Graph, options: EmitOptions): string {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { renderStyle, type NodeSpec } from "@ccgrapher/core";
-import type { PositionedGraph, PositionedNode } from "@ccgrapher/layout";
+import type { PositionedGraph, PositionedNode, PositionedRegion } from "@ccgrapher/layout";
 
 export interface ExcalidrawOptions {
   /** Mark these edges dashed and red. */
@@ -29,6 +29,7 @@ const INK = "#2b2724";
 const ACCENT = "#e8763a";
 const DANGER = "#c4442e";
 const PAPER = "#fbf7f0";
+const BOUNDARY = "#736a63";
 
 const KIND_FILL: Record<string, string> = {
   agent: "transparent",
@@ -69,12 +70,25 @@ export function renderExcalidraw(
     bind(node.id, { id: textId, type: "text" });
   }
 
+  // A boundary is one Excalidraw group: its regions, their captions and every
+  // member box and label, so dragging the group takes the whole lot. Regions go
+  // first, which puts them behind everything else.
+  const groupOf = new Map<string, string>();
+  for (const boundary of positioned.graph.spec.boundaries ?? []) {
+    for (const member of boundary.members) groupOf.set(member, boundaryGroup(boundary.id));
+  }
+  for (const region of positioned.regions) {
+    elements.push(...regionElements(region));
+  }
+
   for (const node of positioned.nodes) {
     const found = arriving.get(node.id);
+    const group = groupOf.get(node.id);
+    const groupIds = group ? [group] : [];
     // The halo goes in first so it sits behind the box. It is not bound to anything.
-    if (found !== undefined) elements.push(halo(node));
-    elements.push(box(node, bindings.get(node.id) ?? [], found !== undefined));
-    elements.push(text(node, found));
+    if (found !== undefined) elements.push({ ...halo(node), groupIds });
+    elements.push({ ...box(node, bindings.get(node.id) ?? [], found !== undefined), groupIds });
+    elements.push({ ...text(node, found), groupIds });
   }
 
   positioned.edges.forEach((edge, i) => {
@@ -133,6 +147,62 @@ function halo(node: PositionedNode): ExcalidrawElement {
     roundness: null,
     boundElements: [],
   };
+}
+
+const boundaryGroup = (id: string) => `boundary-${id}`;
+
+/** A dashed, rounded rectangle and its caption above the top-left corner. */
+function regionElements(region: PositionedRegion): ExcalidrawElement[] {
+  const { id, label, access } = region.boundary;
+  const caption = access === "read-only" ? `${label ?? id} · read-only` : (label ?? id);
+  const rectId = `boundary-${id}-${region.part}`;
+  const groupIds = [boundaryGroup(id)];
+  const fontSize = 16;
+  return [
+    {
+      ...base(rectId, rectId),
+      type: "rectangle",
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height,
+      strokeColor: BOUNDARY,
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeWidth: 1,
+      strokeStyle: "dashed",
+      roughness: 0,
+      roundness: { type: 3 },
+      boundElements: [],
+      groupIds,
+    },
+    {
+      ...base(`${rectId}-label`, `${rectId}-label`),
+      type: "text",
+      x: region.x + 14,
+      y: region.y - fontSize * 1.25,
+      width: Math.ceil(caption.length * fontSize * 0.5),
+      height: fontSize * 1.25,
+      strokeColor: BOUNDARY,
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeWidth: 1,
+      strokeStyle: "solid",
+      roughness: 1,
+      roundness: null,
+      boundElements: [],
+      groupIds,
+      text: caption,
+      originalText: caption,
+      fontSize,
+      fontFamily: 1,
+      textAlign: "left",
+      verticalAlign: "top",
+      containerId: null,
+      lineHeight: 1.25,
+      autoResize: true,
+    },
+  ];
 }
 
 function box(
