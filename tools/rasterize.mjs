@@ -62,7 +62,10 @@ for (const name of svgs) {
     fitTo: { mode: "width", value: width * SCALE },
     font: {
       fontFiles: [fontPath],
-      loadSystemFonts: false,
+      // Caveat has no "≠", which the wrong-guard badge ("9 ≠ 8") uses. A
+      // browser falls back to a system face for it; so must resvg, or the
+      // glyph arrives as an empty box. Everything else still sets in Caveat.
+      loadSystemFonts: true,
       defaultFontFamily: "Caveat",
     },
   });
