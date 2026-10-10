@@ -1,20 +1,21 @@
 "use client";
 // SPDX-License-Identifier: Apache-2.0
 
-import type { NodeSpec, WorkflowSpec } from "@ccgrapher/core";
-import type { dia } from "@joint/core";
+import type { NodeSpec } from "@ccgrapher/core";
+import { dia, linkTools } from "@joint/core";
 import {
   GraphProvider,
   Paper,
   usePaper,
   useGraph,
+  type CanConnectOptions,
   type CellInput,
-  type ValidateConnection,
 } from "@joint/react";
 import "@joint/react/styles.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { EdgeRef } from "../../lib/edge-gestures";
 import type { CCEdge, CCNode } from "../../lib/view-model";
-import { graphToSpec, specToGraph, validateLinkConnection, type Cell } from "./bridge";
+import { specToGraph, type Cell } from "./bridge";
 import {
   Motion,
   motionDuration,
@@ -36,61 +37,110 @@ import { SpecNode } from "../spec-node";
  * whatever it's handed into JointJS cells.
  *
  * `initialCells` — uncontrolled. JointJS owns the live graph (including drag
- * position, which the picture must never derive from — CLAUDE.md), and this
- * component asks it directly, imperatively, only at the two moments that are
- * legitimate spec edits: a link connecting or disconnecting.
+ * position, which the picture must never derive from — CLAUDE.md). Nothing the
+ * reader does to it is kept as a picture edit: a gesture on an edge (drawing
+ * one, dragging an end, deleting one) is reported as what it means for the
+ * spec (`EdgeGestures`), the drawing is put back as it was, and the spec edit,
+ * if the editor accepts it, moves the drawing to where the new declarations
+ * put it. A step dragged by hand slides straight back.
  *
  * Mounted once per loaded spec (the caller's `key`), and framed then. An edit
  * after that changes the drawing in place (`LayoutSync`): boxes travel to
  * where the new declarations put them, and the pan and zoom stay where the
  * reader left them.
  */
+/**
+ * What a gesture on an edge means, reported to the editor, which turns it into
+ * a spec edit (lib/edge-gestures.ts) or a refusal. The canvas decides none of
+ * it: it only says which steps and which edge the pointer meant.
+ */
+export interface EdgeGestures {
+  readonly selectedEdge: EdgeRef | undefined;
+  readonly onSelectEdge: (edge: EdgeRef) => void;
+  /** A new link drawn from `from`'s handle and dropped on `to`. */
+  readonly onConnect: (from: string, to: string) => void;
+  /** One end of an existing edge dropped on another step. */
+  readonly onRetarget: (edge: EdgeRef, end: "from" | "to", node: string) => void;
+  readonly onDeleteEdge: (edge: EdgeRef) => void;
+  /** A step was dragged and has been sent back to its computed place. */
+  readonly onNodeDrag: () => void;
+}
+
+/**
+ * Every drop on another step reaches the editor, self-loops and duplicates
+ * included, so a wrong gesture is refused there with its reason rather than
+ * the drop silently failing to land. Only a link onto a link is ruled out
+ * here: an edge runs between two steps.
+ */
+const CONNECTIONS: CanConnectOptions = {
+  allowSelfLoops: true,
+  allowLinkToLink: false,
+  linkLimit: "none",
+  allowRootConnection: true,
+};
+
+/** A link's own route and labels are drawn from the spec, never dragged. */
+const INTERACTIVE: dia.CellView.InteractivityOptions = {
+  linkMove: false,
+  labelMove: false,
+};
+
 export function Canvas({
   nodes,
   edges,
   specNodes,
-  baseSpec,
-  onSpecChange,
   onSelect,
+  gestures,
 }: {
   nodes: readonly CCNode[];
   edges: readonly CCEdge[];
   specNodes: readonly NodeSpec[];
-  baseSpec: WorkflowSpec;
-  onSpecChange: (next: WorkflowSpec) => void;
   /** A step clicked (its id) or the blank paper clicked (undefined). Absent in viewer mode. */
   onSelect?: (id: string | undefined) => void;
+  /** Absent in viewer mode, which draws no handles and takes no edge gestures. */
+  gestures?: EdgeGestures;
 }) {
+  const editable = gestures !== undefined;
   const cells = useMemo<Cell[]>(
-    () => specToGraph({ nodes, edges }, specNodes),
-    [nodes, edges, specNodes],
+    () => specToGraph({ nodes, edges }, specNodes, editable),
+    [nodes, edges, specNodes, editable],
   );
   // The seed only: later pictures reach the mounted graph through LayoutSync.
   const [initialCells] = useState(cells);
 
-  const validateConnection = useCallback<ValidateConnection>(
-    ({ source, target }) => validateLinkConnection(source.id, source.port, target.id, target.port),
-    [],
-  );
+  // Read through a ref, so the paper's listeners are bound once and still
+  // call the editor's latest handlers (which close over the latest spec).
+  const latest = useRef(gestures);
+  useEffect(() => {
+    latest.current = gestures;
+  });
 
   return (
     <GraphProvider initialCells={initialCells}>
-      <GraphSync spec={baseSpec} onSpecChange={onSpecChange} />
-      <LayoutSync cells={cells} />
+      <LayoutSync cells={cells} latest={latest} />
       <OverlaySync nodes={nodes} />
       <FitOnMount />
       <FitButton />
       <PanZoom />
       {onSelect && <SelectionSync onSelect={onSelect} />}
+      {editable && <GestureSync latest={latest} />}
+      {editable && <EdgeTools selected={gestures.selectedEdge} cells={cells} latest={latest} />}
       <Paper
         className="jointjs-paper"
         renderElement={SpecNode}
-        validateConnection={validateConnection}
-        defaultLink={{ style: { targetMarker: "arrow" } }}
+        validateConnection={CONNECTIONS}
+        interactive={INTERACTIVE}
+        // A link starts only once the pointer leaves the handle, so a click
+        // on it draws nothing (and so cannot land as a self-loop refusal).
+        magnetThreshold="onleave"
+        linkPinning={false}
+        defaultLink={{ style: { color: "#E8763A", width: 2, targetMarker: "arrow" } }}
       />
     </GraphProvider>
   );
 }
+
+type Latest = { readonly current: EdgeGestures | undefined };
 
 /**
  * The one-time equivalent of React Flow's `fitView`: frame the whole graph
@@ -133,13 +183,12 @@ function FitButton() {
 
 /**
  * Marks every write the canvas makes to bring its drawing up to date with the
- * spec, so `GraphSync` can tell it apart from a person drawing a link. Without
- * it, re-attaching a link after an edit would be read back as a new edit and
- * written over the spec text.
+ * spec. No graph event is read back as an edit any more (edge gestures come
+ * from the paper's pointer events, which these writes never fire), but a
+ * listener added to the graph later can still tell the canvas's own writes
+ * from a person's by this flag.
  */
 const LAYOUT_SYNC = { ccgLayout: true } as const;
-const isLayoutSync = (opt: unknown): boolean =>
-  (opt as { ccgLayout?: unknown } | undefined)?.ccgLayout === true;
 
 const frameClock: Clock = {
   now: () => performance.now(),
@@ -173,9 +222,11 @@ function layoutSignature(cells: readonly Cell[]): string {
  * Reduced motion is read at each sync rather than once, so changing the
  * setting takes effect on the next edit without a reload.
  */
-function LayoutSync({ cells }: { cells: readonly Cell[] }) {
+function LayoutSync({ cells, latest }: { cells: readonly Cell[]; latest: Latest }) {
   const { graph, setCell, removeCells } = useGraph();
+  const { paper } = usePaper();
   const drawn = useRef(layoutSignature(cells));
+  const current = useRef(cells);
 
   const motion = useMemo(
     () => new Motion(frameClock, (id, frame) => drawFrame(graph, id, frame)),
@@ -183,12 +234,8 @@ function LayoutSync({ cells }: { cells: readonly Cell[] }) {
   );
   useEffect(() => () => motion.stop(), [motion]);
 
-  useEffect(() => {
-    const signature = layoutSignature(cells);
-    if (signature === drawn.current) return;
-    drawn.current = signature;
-
-    const target: LayoutTarget = {
+  const target = useMemo<LayoutTarget>(
+    () => ({
       elements: () =>
         graph.getElements().map((el) => ({
           id: String(el.id),
@@ -208,9 +255,43 @@ function LayoutSync({ cells }: { cells: readonly Cell[] }) {
       patch: (id, attributes) => setCell({ id, ...attributes } as CellInput, LAYOUT_SYNC),
       remove: (ids) => removeCells(ids, LAYOUT_SYNC),
       draw: (id, frame) => drawFrame(graph, id, frame),
-    };
+    }),
+    [graph, setCell, removeCells],
+  );
+
+  useEffect(() => {
+    current.current = cells;
+    const signature = layoutSignature(cells);
+    if (signature === drawn.current) return;
+    drawn.current = signature;
     syncLayout(target, cells, motion, motionDuration(prefersReducedMotion()));
-  }, [cells, graph, setCell, removeCells, motion]);
+  }, [cells, target, motion]);
+
+  // A step dragged by hand goes straight back to where its dependencies put
+  // it, on the same tween an edit uses, and the editor is told once so it can
+  // say why (rather than the step snapping back in silence on the next edit).
+  useEffect(() => {
+    if (!paper) return;
+    let pressed: { id: string; x: number; y: number } | undefined;
+    const onDown = (view: dia.ElementView) => {
+      pressed = { id: String(view.model.id), ...view.model.position() };
+    };
+    const onUp = (view: dia.ElementView) => {
+      const start = pressed;
+      pressed = undefined;
+      if (!start || start.id !== String(view.model.id)) return;
+      const { x, y } = view.model.position();
+      if (Math.hypot(x - start.x, y - start.y) < 1) return;
+      syncLayout(target, current.current, motion, motionDuration(prefersReducedMotion()));
+      latest.current?.onNodeDrag();
+    };
+    paper.on("element:pointerdown", onDown);
+    paper.on("element:pointerup", onUp);
+    return () => {
+      paper.off("element:pointerdown", onDown);
+      paper.off("element:pointerup", onUp);
+    };
+  }, [paper, target, motion, latest]);
 
   return null;
 }
@@ -369,88 +450,112 @@ function OverlaySync({ nodes }: { nodes: readonly CCNode[] }) {
   return null;
 }
 
-/**
- * Pulls the live link list straight from `dia.Graph` — not from a React
- * state mirror — so a plain element drag (which touches `position`, not a
- * link's endpoints) never fires this at all. That is how "dragging must not
- * write back" is actually enforced here, not just intended.
- *
- * Two event families, not one. `change:source`/`change:target` fires when an
- * *existing* link's endpoint changes — a disconnect (endpoint goes to null)
- * or a repoint. It does **not** fire for a brand-new link: JointJS sets
- * `source`/`target` at construction, and a model's own constructor setting
- * its own initial attributes is not a "change" for Backbone/JointJS's
- * purposes. A first pass here subscribed only to `change:*` and a live drag
- * test caught it directly: three links really were created in `dia.Graph`
- * (confirmed via `graph.getLinks()`), but none of them ever reached
- * `graphToSpec` — a drawn edge was being silently dropped, not merely
- * unverified. `add`/`remove`, filtered to links, is what a genuine connect
- * or a link being deleted outright actually fires.
- *
- * The `add`/`remove` fix above shipped a second bug of its own, also caught
- * live: `initialCells` seeds the graph one cell at a time, and a fixture
- * switch tears the old graph down the same way, so a single mount or
- * teardown fires a *burst* of `add`/`remove` events. Reading
- * `graph.getLinks()` synchronously from inside the very first handler in
- * that burst catches the graph mid-mutation — a live test wrote `edges: []`
- * to the actual YAML source because the first `add` fired before the rest
- * of the initial seed had landed. `scheduleCommit` collapses a burst into
- * one read, deferred to a microtask so it always runs after the current
- * synchronous batch of graph mutations has fully settled. `cancelled`
- * guards the case where that microtask is still pending when this effect's
- * own cleanup runs (unmounting mid-burst) — without it, a stale commit could
- * fire after the fact against a torn-down graph.
- */
-function GraphSync({
-  spec,
-  onSpecChange,
-}: {
-  spec: WorkflowSpec;
-  onSpecChange: (next: WorkflowSpec) => void;
-}) {
-  const { graph } = useGraph();
+/** The spec edge a drawn link stands for (bridge.ts writes it), or undefined for a link being drawn. */
+function edgeOf(link: dia.Link): EdgeRef | undefined {
+  const data = link.get("data") as { from?: unknown; to?: unknown } | undefined;
+  return typeof data?.from === "string" && typeof data.to === "string"
+    ? { from: data.from, to: data.to }
+    : undefined;
+}
 
-  const commit = useCallback(() => {
-    const links = graph.getLinks().map((link) => {
-      const source = link.source();
-      const target = link.target();
-      return {
-        source: { id: source.id, port: (source.port as string | undefined) ?? null },
-        target: { id: target.id, port: (target.port as string | undefined) ?? null },
-      };
-    });
-    onSpecChange(graphToSpec(links, spec));
-  }, [graph, spec, onSpecChange]);
+/**
+ * Edge gestures, read off the paper and handed to the editor as what they
+ * mean. The drawing itself is never left changed: a newly drawn link is
+ * removed and a dragged end put back where the spec has it, both marked as
+ * the canvas's own writes, before the editor hears of the gesture. If the
+ * editor accepts it, the spec changes and `LayoutSync` moves the drawing to
+ * match; if it refuses, the drawing is already as the spec says.
+ *
+ * Deferred a tick because `link:connect` fires inside JointJS's own pointerup
+ * handling of that very link, which must finish before the link is touched.
+ */
+function GestureSync({ latest }: { latest: Latest }) {
+  const { paper } = usePaper();
 
   useEffect(() => {
-    let cancelled = false;
-    let scheduled = false;
-
-    const scheduleCommit = () => {
-      if (scheduled || cancelled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        scheduled = false;
-        if (!cancelled) commit();
+    if (!paper) return;
+    const onConnect = (
+      linkView: dia.LinkView,
+      _evt: dia.Event,
+      cellView: dia.CellView,
+      _magnet: SVGElement,
+      arrowhead: dia.LinkEnd,
+    ) => {
+      const link = linkView.model;
+      const node = String(cellView.model.id);
+      setTimeout(() => {
+        const edge = edgeOf(link);
+        if (edge) {
+          link.set({ source: { id: edge.from }, target: { id: edge.to } }, LAYOUT_SYNC);
+          latest.current?.onRetarget(edge, arrowhead === "source" ? "from" : "to", node);
+        } else {
+          const from = link.source().id;
+          link.remove(LAYOUT_SYNC);
+          if (from !== undefined) latest.current?.onConnect(String(from), node);
+        }
       });
     };
-
-    // The canvas's own writes (`LAYOUT_SYNC`) are the spec arriving, not an edit.
-    const onEndpoint = (_link: unknown, _value: unknown, opt?: unknown) => {
-      if (!isLayoutSync(opt)) scheduleCommit();
+    const onLinkClick = (linkView: dia.LinkView) => {
+      const edge = edgeOf(linkView.model);
+      if (edge) latest.current?.onSelectEdge(edge);
     };
-    const onAddOrRemove = (cell: { isLink: () => boolean }, _collection: unknown, opt?: unknown) => {
-      if (cell.isLink() && !isLayoutSync(opt)) scheduleCommit();
-    };
-
-    graph.on("change:source change:target", onEndpoint);
-    graph.on("add remove", onAddOrRemove);
+    paper.on("link:connect", onConnect);
+    paper.on("link:pointerclick", onLinkClick);
     return () => {
-      cancelled = true;
-      graph.off("change:source change:target", onEndpoint);
-      graph.off("add remove", onAddOrRemove);
+      paper.off("link:connect", onConnect);
+      paper.off("link:pointerclick", onLinkClick);
     };
-  }, [graph, commit]);
+  }, [paper, latest]);
+
+  return null;
+}
+
+/**
+ * The selected edge wears its tools: a handle at each end to drag onto
+ * another step, and a delete button. Re-applied whenever the picture changes,
+ * because an edit can replace the link the tools were on.
+ */
+function EdgeTools({
+  selected,
+  cells,
+  latest,
+}: {
+  selected: EdgeRef | undefined;
+  cells: readonly Cell[];
+  latest: Latest;
+}) {
+  const { paper } = usePaper();
+  const { graph } = useGraph();
+  const from = selected?.from;
+  const to = selected?.to;
+
+  useEffect(() => {
+    if (!paper || from === undefined || to === undefined) return;
+    const link = graph.getLinks().find((l) => {
+      const edge = edgeOf(l);
+      return edge?.from === from && edge.to === to;
+    });
+    const view = link && (paper.findViewByModel(link) as dia.LinkView | undefined);
+    if (!view) return;
+    view.addTools(
+      new dia.ToolsView({
+        name: "edge-tools",
+        tools: [
+          new linkTools.SourceArrowhead(),
+          new linkTools.TargetArrowhead(),
+          new linkTools.Remove({
+            distance: "30%",
+            action: () => latest.current?.onDeleteEdge({ from, to }),
+          }),
+        ],
+      }),
+    );
+    view.el.classList.add("edge-selected");
+    return () => {
+      view.removeTools();
+      view.el.classList.remove("edge-selected");
+    };
+  }, [paper, graph, from, to, cells, latest]);
 
   return null;
 }

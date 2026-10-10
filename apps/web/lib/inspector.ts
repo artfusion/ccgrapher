@@ -254,8 +254,12 @@ export function describeIssue(issue: IssueLike): string {
   }
 }
 
-/** Validate a whole spec the way the parser and the graph builder would, then format it. */
-function finish(next: WorkflowSpec): Edit {
+/**
+ * Validate a whole spec the way the parser and the graph builder would, then
+ * format it. Every structural edit made from the picture ends here, the edge
+ * gestures (lib/edge-gestures.ts) included.
+ */
+export function finish(next: WorkflowSpec): Edit {
   const whole = WorkflowSpec.safeParse(next);
   if (!whole.success) {
     return {
