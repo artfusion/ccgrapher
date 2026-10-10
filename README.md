@@ -255,6 +255,14 @@ guard wanting, the node is drawn with a solid red ring and a small flag: an ungu
 for structure (a human gate, an isolated worktree, a dead edge), so a finding is never a new dash.
 `--plain` leaves the findings off, fake edges included; the counts stay, since they are declarations.
 
+Each node also says who does the work. The model tier sits top left, `strong` in ink and `cheap`
+a shade lighter; plain code (`model: null`) carries none, since its sharp corners already say it
+costs nothing, and neither does a node with no tier. A node that declares `uses: [agent:reviewer]`
+carries `agent: reviewer` as a quieter line under its label. The box grows to fit both, sized by
+the layout from the declaration. Mermaid and Excalidraw add the same words to the label. The spec
+names a tier, never a model id: a target such as `claude-code` resolves it, so a spec does not go
+stale when model names change.
+
 - **SVG** — rough.js strokes, paper texture, the handwriting face embedded so the file renders
   identically anywhere. Fake edges are red and dashed with a "carries no data" label.
   `--no-grain` drops the paper texture (much smaller once rasterised); `--no-embed-font` references
