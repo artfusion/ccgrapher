@@ -9,6 +9,8 @@ export {
   BoundarySpec,
   WorkflowSpec,
   renderStyle,
+  agentTypes,
+  agentTag,
   type RenderStyle,
 } from "./schema.js";
 

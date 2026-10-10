@@ -2,6 +2,8 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  agentTag,
+  agentTypes,
   buildGraph,
   effectiveInboundCount,
   formatSpec,
@@ -116,6 +118,24 @@ describe("renderStyle", () => {
     expect(renderStyle(graph.nodes.get("vote")!)).toBe("code");
     expect(renderStyle(graph.nodes.get("gate")!)).toBe("human");
     expect(renderStyle(graph.nodes.get("plan")!)).toBe("agent");
+  });
+});
+
+describe("agentTypes", () => {
+  const node = (uses?: string[]) => ({ id: "n", label: "n", kind: "worker" as const, in: {}, out: {}, ...(uses && { uses }) });
+
+  it("reads every agent:<type> in uses, in the order declared, and nothing else", () => {
+    expect(agentTypes(node(["mcp:docs/search", "agent:reviewer", "skill:x", "agent:tester"]))).toEqual([
+      "reviewer",
+      "tester",
+    ]);
+    expect(agentTag(node(["agent:reviewer"]))).toBe("agent: reviewer");
+  });
+
+  it("is empty with no uses, no agent, or a bare `agent:`", () => {
+    expect(agentTypes(node())).toEqual([]);
+    expect(agentTypes(node(["skill:x", "agent:"]))).toEqual([]);
+    expect(agentTag(node(["skill:x"]))).toBeUndefined();
   });
 });
 

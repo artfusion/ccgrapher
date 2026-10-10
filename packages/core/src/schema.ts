@@ -171,3 +171,22 @@ export function renderStyle(node: NodeSpec): RenderStyle {
   if (node.model === null) return "code";
   return "agent";
 }
+
+/**
+ * The agent types a node says it runs as: every `agent:<type>` in `uses`, in the
+ * order declared. What draws the "who runs this step" tag, in every format.
+ */
+export function agentTypes(node: NodeSpec): string[] {
+  return (node.uses ?? [])
+    .filter((id) => id.startsWith("agent:") && id.length > "agent:".length)
+    .map((id) => id.slice("agent:".length));
+}
+
+/**
+ * The agent tag as it is drawn, `agent: reviewer`, or nothing. One string for
+ * every format, so the layout measures exactly what the renderers write.
+ */
+export function agentTag(node: NodeSpec): string | undefined {
+  const types = agentTypes(node);
+  return types.length > 0 ? `agent: ${types.join(", ")}` : undefined;
+}

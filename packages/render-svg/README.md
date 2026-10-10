@@ -18,6 +18,10 @@ is also ringed in solid red: with no `expects` it reads "no count guard", with o
 rough.js strokes, paper texture, per-kind icons. Agent nodes are sketchy; nodes
 with `model: null` get sharp corners to signal "plain code, costs nothing".
 
+A node with a tier names it top left, `strong` or `cheap`, and carries `data-tier`. A node
+that declares `uses: [agent:<type>]` shows `agent: <type>` as a quieter line under its label,
+with `data-agent`. The layout sizes the box for both, so nothing is moved to make room.
+
 The Caveat typeface is embedded as base64 so the file renders identically
 anywhere. That makes every output a redistribution of the font, so each SVG
 carries its SIL OFL attribution inline — see NOTICE. Pass `embedFont: false` for
