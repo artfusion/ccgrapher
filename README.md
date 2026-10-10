@@ -760,6 +760,45 @@ overlays and the findings are unchanged; what's new is the port system above. Ev
 connecting two of them is how an edge gets proposed, and the linter's read on it is immediate rather
 than a save-and-reload away.
 
+### The hopper
+
+A plan in progress keeps collecting ideas. The hopper at the top of the canvas takes them as they
+come, a line or a page, and works out where each one belongs.
+
+```bash
+export ANTHROPIC_API_KEY=...            # read by the server only; the browser never sees it
+ccg serve runs --drafting               # adds POST /draft beside the trace routes
+pnpm --filter @ccgrapher/web dev
+```
+
+Drafting runs in `ccg serve` on your own machine, which holds the key; the canvas posts to it and
+never calls a model itself. The model is sent two things: the brain dump and the spec, as the canvas
+holds it. A second call, in a fresh context, is sent the spec and the steps the first one drafted,
+so the drafter is not the one checking its own work. Nothing else leaves the machine. Without
+`--drafting` the route is a 404, and the hopper says how to turn it on; `--drafting` without
+`ANTHROPIC_API_KEY` refuses to start. The default model is `claude-opus-5-5`, and `--draft-model`
+or `CCG_DRAFT_MODEL` changes it. Each brain dump costs at most two model calls on that key.
+
+What comes back is shown before anything moves:
+
+- **new steps**, each with a label, a kind, a tier, honest `in` and `out`, what it writes, the words
+  it came from, and what the check made of it;
+- **already in the plan**, an idea that repeats a step the spec has, with the step it joins;
+- **waiting on you**, questions and decisions, which are not work and do not become steps;
+- **set aside**, everything else, each with its reason. A draft the spec schema refuses lands here
+  with the schema's own reason.
+
+A drafted step can be shown on the canvas as a ghost, opened in the inspector and corrected, then
+accepted or rejected. Its edges are never drafted: they are read off its `in` and `out`, from the
+steps that give what it takes and to a step that takes what it gives and has nothing supplying it.
+Accepting checks it again against the spec and the run as they are at that moment, writes it as one
+undoable edit, and the boxes travel to where it lands, with a sentence saying where and why:
+"Placed in wave 3, after “Write the stylesheet”, which it reads css from." A rejected draft stays,
+with its reason, until it is dismissed.
+
+With a live run attached, a step that has started or finished is left exactly as it is. A draft may
+read what such a step gives, but one that would give it a new input is refused, with the reason.
+
 ---
 
 ## More on the skill

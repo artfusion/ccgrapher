@@ -30,6 +30,8 @@ import {
 import { Inspector } from "./inspector";
 import { CanvasNotice, DragNote, EdgeChooser } from "./edge-panel";
 import type { EdgeGestures } from "./canvas/canvas";
+import { Hopper, useHopper } from "./hopper";
+import { markGhosts, specForEditing, startedSteps, statusOf, withGhosts } from "../lib/hopper";
 import {
   DEFAULT_SERVER_URL,
   useRunState,
@@ -156,6 +158,42 @@ export function Editor() {
   if (model.ok && (held?.model !== model || held.loaded !== loaded)) setHeld({ model, loaded });
   const drawn = model.ok ? model : held?.loaded === loaded ? held.model : undefined;
 
+  // ── the hopper ──────────────────────────────────────────────────────────
+  // Drafted steps live in the hopper, not in the spec, until one is accepted
+  // (app/hopper.tsx). Steps the live run has started are facts it may not
+  // rewire; a run of some other workflow says nothing about this one.
+  const hopper = useHopper();
+  const started = useMemo(() => {
+    const run = connection?.run;
+    const ranSpec = run?.spec?.name;
+    if (ranSpec !== undefined && model.ok && ranSpec !== model.base.spec.name) return new Set<string>();
+    return startedSteps(run);
+  }, [connection?.run, model]);
+
+  // The drafts as ghosts: the spec with them placed, drawn provisionally. Only
+  // while the reader asks for it, so nothing moves before the parse is read.
+  const ghosted = useMemo(() => {
+    if (!hopper.showGhosts || !model.ok) return undefined;
+    const { spec, ghosts } = withGhosts(model.base.spec, hopper.items, started);
+    if (ghosts.size === 0) return undefined;
+    const built = buildModel(formatSpec(spec), false);
+    return built.ok ? markGhosts(built, ghosts) : undefined;
+  }, [hopper.showGhosts, hopper.items, model, started]);
+  const shown = ghosted ?? drawn;
+
+  // A drafted step opened in the inspector is edited there like any step, in
+  // a spec with it placed; the result goes back to the hopper, not the text.
+  const draft = model.ok
+    ? hopper.items.find((i) => i.node.id === selectedId && statusOf(i, model.base.spec) !== "accepted")
+    : undefined;
+  const draftModel = useMemo(
+    () =>
+      draft && model.ok
+        ? buildModel(formatSpec(specForEditing(model.base.spec, draft, started)), false)
+        : undefined,
+    [draft, model, started],
+  );
+
   // ── canvas -> spec ────────────────────────────────────────────────────────
   // Every gesture on the picture is a gesture on the spec. The canvas reports
   // what a drag or a click on an edge meant (app/canvas/canvas.tsx); here it
@@ -274,17 +312,17 @@ export function Editor() {
   // moment ago and could not find — so it lives in the branch where the run
   // lives, and disappears with it when heat takes the canvas.
   const overlaid = useMemo(() => {
-    if (!drawn) return { nodes: [], edges: [], legend: undefined };
+    if (!shown) return { nodes: [], edges: [], legend: undefined };
     if (heat) {
-      const { nodes, legend } = applyHeat(drawn.nodes, heat);
+      const { nodes, legend } = applyHeat(shown.nodes, heat);
       // Heat is keyed by node; it has nothing to say about an edge.
-      return { nodes, edges: drawn.edges, legend };
+      return { nodes, edges: shown.edges, legend };
     }
-    const overlaid = applyRunState(drawn.nodes, drawn.edges, connection?.run);
+    const overlaid = applyRunState(shown.nodes, shown.edges, connection?.run);
     // Capabilities are keyed by node too, so the edges pass straight through.
     const nodes = applyCapabilityState(overlaid.nodes, connection?.run);
     return { nodes, edges: overlaid.edges, legend: undefined };
-  }, [drawn, connection?.run, heat]);
+  }, [shown, connection?.run, heat]);
 
   // The inspected step is marked on its card. Like every overlay, a flag in
   // `data` and nothing else: selecting a step moves nothing.
@@ -326,6 +364,12 @@ export function Editor() {
   };
 
   const repairCount = model.ok ? model.result.repairs.length : 0;
+
+  const refuseDraftGesture = () =>
+    setNotice({
+      tone: "refused",
+      text: "A drafted step's edges follow from its in and out. Change those, or accept it first.",
+    });
 
   return (
     <div className={viewerMode ? "app viewer" : "app"}>
@@ -443,7 +487,18 @@ export function Editor() {
             void loadHeat([...e.dataTransfer.files]);
           }}
         >
-          {drawn && (
+          {!viewerMode && (
+            <Hopper
+              hopper={hopper}
+              serverUrl={serverUrl}
+              spec={model.ok ? model.base.spec : undefined}
+              specSource={source}
+              started={started}
+              onWrite={editSource}
+              onEditDraft={selectFromCanvas}
+            />
+          )}
+          {shown && (
             <div className={model.ok ? "canvas-host" : "canvas-host held"} inert={!model.ok}>
               <Canvas
                 // Remounted only when a spec is loaded. An edit reaches the
@@ -451,9 +506,11 @@ export function Editor() {
                 key={loaded}
                 nodes={view.nodes}
                 edges={view.edges}
-                specNodes={drawn.graph.spec.nodes}
+                specNodes={shown.graph.spec.nodes}
                 onSelect={viewerMode ? undefined : selectFromCanvas}
-                gestures={model.ok ? gestures : undefined}
+                // While ghosts are shown the picture is a preview: a gesture
+                // made on it would be made on drafts that are not in the spec.
+                gestures={model.ok && !ghosted ? gestures : undefined}
               />
             </div>
           )}
@@ -484,10 +541,10 @@ export function Editor() {
 
         {!viewerMode && (
           <Inspector
-            model={model}
+            model={draftModel ?? model}
             selectedId={selectedId}
             onSelect={setSelectedId}
-            onEdit={editSource}
+            onEdit={draft ? (next) => hopper.editFromSource(draft.node.id, next) : editSource}
             canUndo={history.past.length > 0}
             canRedo={history.future.length > 0}
             onUndo={() => {
@@ -504,8 +561,10 @@ export function Editor() {
               setSelectedEdge(edge);
               if (edge) setEdgeFocusToken((n) => n + 1);
             }}
-            onGesture={onGesture}
-            onConnect={onConnect}
+            // A draft's edges are read off its `in` and `out`, never drawn, and a
+            // gesture here would write the draft into the spec before it is accepted.
+            onGesture={draft ? refuseDraftGesture : onGesture}
+            onConnect={draft ? refuseDraftGesture : onConnect}
             edgeFocusToken={edgeFocusToken}
           />
         )}

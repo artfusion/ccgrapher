@@ -44,6 +44,8 @@ export interface SpecNodeData {
   capability?: CapabilityState;
   /** The step the inspector is showing. Drawn as an outline, which occupies no space. */
   selected?: boolean;
+  /** A drafted step shown from the hopper, not yet in the spec. Drawn in pencil. */
+  ghost?: boolean;
   /**
    * `CCNode.className`/`CCNode.style`, carried in under these names by
    * `bridge.ts`'s `specToGraph` — heat.ts and capability.ts write the wash,
@@ -116,7 +118,9 @@ export function SpecNode(d: SpecNodeData) {
       <div
         className={`spec-node style-${d.style}${d.worktree ? " worktree" : ""}${
           hasProblem ? " flagged" : ""
-        }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${d.selected ? " selected" : ""}`}
+        }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${d.selected ? " selected" : ""}${
+          d.ghost ? " ghost" : ""
+        }`}
         style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
         title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
         data-run-status={run ? status : undefined}

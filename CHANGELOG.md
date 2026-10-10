@@ -18,6 +18,24 @@ private web canvas, which has its own train. Full notes accompany each
 - `@ccgrapher/codegen` exports `describeFiles`, the files a target writes with a line on each;
   `@ccgrapher/render-svg` exports `explainHtml`, the page itself; `@ccgrapher/lint` exports
   `describeRepair`, one repair as the report prints it.
+- `ccg serve --drafting` answers `POST /draft`. A brain dump and the spec go in; the work in it comes
+  back as candidate steps, each with a label, a kind, a tier, `in` and `out`, what it writes, and
+  why. An idea the spec already has comes back as a duplicate of that step, questions and decisions
+  come back as a list waiting on the person, and the rest is set aside with a reason. Nothing is
+  written; the canvas decides.
+- Each candidate is checked before anyone sees it. A second model call, in a fresh context that
+  never saw the drafting, reads its `in` and `out` against the spec and may correct them, and the
+  linter runs on the spec with the candidate placed. Its findings, its wave and one sentence on why
+  it lands there come back with it. A draft the core schema refuses is set aside with the schema's
+  reason, and a candidate that would give a started step a new input is refused.
+- The model is sent the brain dump and the spec, and the check the spec and the drafted steps;
+  nothing else. The key comes from `ANTHROPIC_API_KEY`, stays in the server, and is kept out of
+  every response and log line. Without `--drafting` the route is a 404 that says how to turn it on,
+  and `--drafting` without a key refuses to start. The default model is `claude-opus-5-5`, with
+  `--draft-model` or `CCG_DRAFT_MODEL` to change it. Tests use a fake client only.
+- `@ccgrapher/lint` exports what the server and the canvas share: `checkCandidate`, `deriveEdges`,
+  `placeCandidate`, `describePlacement`, `startedConflict` and `candidateId`. A candidate's edges
+  are read off its declarations, never drafted, so where it lands follows from what it reads.
 
 - `ccg diff before.yaml after.yaml` says what changed between two specs: steps added and removed,
   edges added, removed, repointed or carrying something else, count guards added, removed or
@@ -221,6 +239,20 @@ private web canvas, which has its own train. Full notes accompany each
   rules as an edge. It passes with no new allowances.
 
 Web canvas (`apps/web`, its own train; not in the published packages):
+
+- A hopper at the top of the canvas. A brain dump typed there goes to the local
+  `ccg serve --drafting`, and the canvas never holds a key. The parse is shown first: new steps,
+  what is already in the plan, what is waiting on you and what was set aside, each with its reason.
+  Nothing on the canvas moves until a step is accepted.
+- A drafted step can be drawn on the canvas as a ghost, in pencil, opened in the inspector and
+  corrected there, then accepted or rejected. Accepting checks it once more against the spec and
+  the run as they are now, writes it into the spec as one undoable edit, and the boxes travel to
+  where it lands. One sentence says where it went and why. A rejected draft keeps its reason until
+  it is dismissed.
+- With a run attached, a step that has started is left as it is: a draft that would give it a new
+  input is refused, with the reason.
+- The hopper works from the keyboard. Ctrl or Cmd and Enter sends, focus moves to the parse when it
+  arrives and to the card after an accept or a reject, and each placement is announced.
 
 - A node inspector. Click a step, or pick it from the list in the new right-hand panel, and its
   fields can be edited there: tier, kind, label, `in` and `out`, `writes`, `uses`, `effects`,
