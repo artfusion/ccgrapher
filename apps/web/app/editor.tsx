@@ -16,6 +16,8 @@ import {
 } from "../lib/heat";
 import { DEFAULT_FIXTURE, FIXTURES } from "../lib/fixtures";
 import { decodeSpecFragment, isViewerHash } from "../lib/viewer-link";
+import { edit, redo, startHistory, undo, type SpecHistory } from "../lib/spec-history";
+import { Inspector } from "./inspector";
 import {
   DEFAULT_SERVER_URL,
   useRunState,
@@ -33,8 +35,30 @@ const Canvas = dynamic(() => import("./canvas/canvas").then((m) => m.Canvas), { 
 const SPEC_WRITE_DEBOUNCE_MS = 75;
 
 export function Editor() {
-  const [source, setSource] = useState(FIXTURES[DEFAULT_FIXTURE]!);
+  // The spec text, with the undo history of edits made from the inspector.
+  // `setSource` replaces the text and starts the history afresh (see
+  // lib/spec-history.ts for why typing does not join it); `editSource` is a
+  // recorded edit, one undo step each.
+  const [history, setHistory] = useState<SpecHistory>(() =>
+    startHistory(FIXTURES[DEFAULT_FIXTURE]!),
+  );
+  const source = history.source;
+  const setSource = useCallback((next: string) => setHistory(startHistory(next)), []);
+  const editSource = useCallback((next: string) => {
+    setHistory((current) => edit(current, next));
+    setRepaired(false);
+  }, []);
   const [repaired, setRepaired] = useState(false);
+
+  // The step the inspector is showing. Kept by id, so a step that briefly
+  // disappears while its id is being retyped comes back selected.
+  const [selectedId, setSelectedId] = useState<string>();
+  const [focusToken, setFocusToken] = useState(0);
+  const selectFromCanvas = useCallback((id: string | undefined) => {
+    setSelectedId(id);
+    // A step picked on the canvas takes keyboard focus to its fields.
+    if (id !== undefined) setFocusToken((n) => n + 1);
+  }, []);
 
   // A spec carried in the URL fragment (see lib/viewer-link.ts) — read once,
   // client-side only, so a static export needs no server route to answer it.
@@ -91,13 +115,16 @@ export function Editor() {
   // of its own. Only the debounce is needed, so a user drawing a link across
   // several ports in quick succession writes the YAML once.
   const writeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const onCanvasSpecChange = useCallback((next: WorkflowSpec) => {
-    clearTimeout(writeTimer.current);
-    writeTimer.current = setTimeout(() => {
-      setSource(formatSpec(next));
-      setRepaired(false);
-    }, SPEC_WRITE_DEBOUNCE_MS);
-  }, []);
+  const onCanvasSpecChange = useCallback(
+    (next: WorkflowSpec) => {
+      clearTimeout(writeTimer.current);
+      writeTimer.current = setTimeout(() => {
+        setSource(formatSpec(next));
+        setRepaired(false);
+      }, SPEC_WRITE_DEBOUNCE_MS);
+    },
+    [setSource],
+  );
 
   // ── the overlay seam ──────────────────────────────────────────────────────
   // Layout has already run at this point and its output is not touched below.
@@ -125,7 +152,7 @@ export function Editor() {
   // reason: it is a present-tense reading of the run — what a step reached for a
   // moment ago and could not find — so it lives in the branch where the run
   // lives, and disappears with it when heat takes the canvas.
-  const view = useMemo(() => {
+  const overlaid = useMemo(() => {
     if (!model.ok) return { nodes: [], edges: [], legend: undefined };
     if (heat) {
       const { nodes, legend } = applyHeat(model.nodes, heat);
@@ -137,6 +164,38 @@ export function Editor() {
     const nodes = applyCapabilityState(overlaid.nodes, connection?.run);
     return { nodes, edges: overlaid.edges, legend: undefined };
   }, [model, connection?.run, heat]);
+
+  // The inspected step is marked on its card. Like every overlay, a flag in
+  // `data` and nothing else: selecting a step moves nothing.
+  const view = useMemo(
+    () =>
+      selectedId === undefined || viewerMode
+        ? overlaid
+        : {
+            ...overlaid,
+            nodes: overlaid.nodes.map((n) =>
+              n.id === selectedId ? { ...n, data: { ...n.data, selected: true } } : n,
+            ),
+          },
+    [overlaid, selectedId, viewerMode],
+  );
+
+  // The canvas is uncontrolled (see app/canvas/canvas.tsx), so a laid-out
+  // picture that differs from the mounted one needs a fresh mount to be seen.
+  // Keyed on what layout decided (every box, its size and ports, every edge
+  // and what it carries) and on nothing an overlay decides, so a run's frames
+  // and a heat file never remount it, while an edit that moves a step does.
+  const layoutKey = useMemo(() => {
+    if (!model.ok) return "";
+    const ports = new Map(
+      model.base.spec.nodes.map((n) => [n.id, [Object.keys(n.in), Object.keys(n.out)]]),
+    );
+    return JSON.stringify([
+      repaired,
+      model.nodes.map((n) => [n.id, n.position, n.width, n.height, ports.get(n.id)]),
+      model.edges.map((e) => [e.id, e.label]),
+    ]);
+  }, [model, repaired]);
 
   const loadHeat = async (files: readonly File[]) => {
     const loaded: Record<string, HeatData> = {};
@@ -288,23 +347,44 @@ export function Editor() {
             <pre className="error">{model.error}</pre>
           ) : (
             <Canvas
-              // Remounted only when the shape of the graph changes, so the
-              // fresh canvas reframes to a new spec. Run state is
-              // deliberately not in this key: it changes on every event, and
-              // a key that moved with it would remount the whole canvas
-              // several times a second.
-              key={`${model.nodes.length}-${repaired}`}
+              // Remounted only when the laid-out picture changes (see
+              // `layoutKey`), so the fresh canvas draws where the new
+              // declarations put each step. Run state is deliberately not in
+              // this key: it changes on every event, and a key that moved
+              // with it would remount the whole canvas several times a second.
+              key={layoutKey}
               nodes={view.nodes}
               edges={view.edges}
               specNodes={model.graph.spec.nodes}
               baseSpec={model.graph.spec}
               onSpecChange={onCanvasSpecChange}
+              onSelect={viewerMode ? undefined : selectFromCanvas}
             />
           )}
 
           {view.legend && <HeatLegend legend={view.legend} />}
           {dropping && <div className="drop-hint">drop a heat file to tint the graph</div>}
         </section>
+
+        {!viewerMode && (
+          <Inspector
+            model={model}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onEdit={editSource}
+            canUndo={history.past.length > 0}
+            canRedo={history.future.length > 0}
+            onUndo={() => {
+              setHistory(undo);
+              setRepaired(false);
+            }}
+            onRedo={() => {
+              setHistory(redo);
+              setRepaired(false);
+            }}
+            focusToken={focusToken}
+          />
+        )}
       </main>
 
       <footer>

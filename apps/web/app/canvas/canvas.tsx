@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { NodeSpec, WorkflowSpec } from "@ccgrapher/core";
+import type { dia } from "@joint/core";
 import { GraphProvider, Paper, usePaper, useGraph, type ValidateConnection } from "@joint/react";
 import "@joint/react/styles.css";
 import { useCallback, useEffect, useMemo } from "react";
@@ -24,10 +25,9 @@ import { SpecNode } from "../spec-node";
  * component asks it directly, imperatively, only at the two moments that are
  * legitimate spec edits: a link connecting or disconnecting.
  *
- * Remounted (via `key`, set by the caller) whenever the shape of the graph
- * changes, the same way the React Flow canvas was, so a spec swap gets a
- * fresh layout instead of JointJS trying to tween between two unrelated
- * graphs.
+ * Remounted (via `key`, set by the caller) whenever the laid-out picture
+ * changes, so a spec edit gets a fresh layout instead of JointJS trying to
+ * tween between two unrelated graphs.
  */
 export function Canvas({
   nodes,
@@ -35,12 +35,15 @@ export function Canvas({
   specNodes,
   baseSpec,
   onSpecChange,
+  onSelect,
 }: {
   nodes: readonly CCNode[];
   edges: readonly CCEdge[];
   specNodes: readonly NodeSpec[];
   baseSpec: WorkflowSpec;
   onSpecChange: (next: WorkflowSpec) => void;
+  /** A step clicked (its id) or the blank paper clicked (undefined). Absent in viewer mode. */
+  onSelect?: (id: string | undefined) => void;
 }) {
   const cells = useMemo<Cell[]>(
     () => specToGraph({ nodes, edges }, specNodes),
@@ -58,6 +61,7 @@ export function Canvas({
       <OverlaySync nodes={nodes} />
       <FitOnMount />
       <PanZoom />
+      {onSelect && <SelectionSync onSelect={onSelect} />}
       <Paper
         className="jointjs-paper"
         renderElement={SpecNode}
@@ -163,6 +167,31 @@ function PanZoom() {
       paper.off("blank:pointermove", onBlankPointerMove);
     };
   }, [paper]);
+
+  return null;
+}
+
+/**
+ * A click on a step selects it for the inspector; a click on blank paper
+ * clears the selection. JointJS's `pointerclick` events fire only for a press
+ * that did not travel, so dragging a step or panning the paper selects
+ * nothing. Selection is read here and written nowhere on the graph: the card
+ * learns it is selected the way it learns everything else, through `data`.
+ */
+function SelectionSync({ onSelect }: { onSelect: (id: string | undefined) => void }) {
+  const { paper } = usePaper();
+
+  useEffect(() => {
+    if (!paper) return;
+    const onElement = (view: dia.ElementView) => onSelect(String(view.model.id));
+    const onBlank = () => onSelect(undefined);
+    paper.on("element:pointerclick", onElement);
+    paper.on("blank:pointerclick", onBlank);
+    return () => {
+      paper.off("element:pointerclick", onElement);
+      paper.off("blank:pointerclick", onBlank);
+    };
+  }, [paper, onSelect]);
 
   return null;
 }

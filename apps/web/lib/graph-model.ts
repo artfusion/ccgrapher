@@ -6,6 +6,9 @@ import type { CCEdge as Edge, CCNode as Node } from "./view-model.js";
 
 export interface Model {
   readonly ok: true;
+  /** The spec as written. Edits are made to this one, never to a previewed repair. */
+  readonly base: Graph;
+  /** What is drawn: `base`, or `base` with the repairs applied while previewing them. */
   readonly graph: Graph;
   readonly result: LintResult;
   readonly nodes: Node[];
@@ -112,5 +115,5 @@ export function buildModel(yaml: string, repaired: boolean): ModelState {
     };
   });
 
-  return { ok: true, graph, result, nodes, edges };
+  return { ok: true, base, graph, result, nodes, edges };
 }
