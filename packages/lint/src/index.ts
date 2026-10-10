@@ -4,6 +4,17 @@ export { renderMarksFor, type FindingMark, type RenderMarks } from "./marks.js";
 export { describeRepair, formatReport, type ReportOptions } from "./report.js";
 export { proposeRepairs, applyRepairs, type IndexedRepair } from "./repair.js";
 export {
+  candidateId,
+  checkCandidate,
+  deriveEdges,
+  describePlacement,
+  placeCandidate,
+  startedConflict,
+  type CandidateCheck,
+  type Placement,
+  type Started,
+} from "./intake.js";
+export {
   effectiveCarries,
   unsatisfiedInputs,
   fakeEdges,

@@ -100,6 +100,10 @@ Serve options:
   --port <n>        0 asks the OS for a free port (default 3211)
   --host <host>     interface to bind (default 127.0.0.1)
   --origin <origin> the one origin CORS allows to read the trace
+  --drafting        answer the canvas's hopper (POST /draft): a brain dump becomes checked
+                    candidate steps; needs ANTHROPIC_API_KEY, sends the brain dump and the
+                    spec to the Anthropic API, and spends on that account
+  --draft-model <m> the model drafting uses (default claude-opus-5-5, or CCG_DRAFT_MODEL)
 
 Trace stats options:
   --json            machine-readable RunStats output
