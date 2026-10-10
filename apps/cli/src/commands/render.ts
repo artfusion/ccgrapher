@@ -31,10 +31,12 @@ export function renderCommand(args: string[]): number {
       format: { type: "string", short: "f" },
       /** Render the repaired graph instead of the graph as written. */
       fix: { type: "boolean", default: false },
+      /** Write a before and an after: two specs, or one spec and its repair. */
+      pair: { type: "boolean", default: false },
       header: { type: "boolean", default: true },
       "embed-font": { type: "boolean", default: true },
       grain: { type: "boolean", default: true },
-      /** Do not mark fake edges. */
+      /** Do not mark lint findings: fake edges, missing or wrong count guards. */
       plain: { type: "boolean", default: false },
     },
     allowPositionals: true,
@@ -57,33 +59,114 @@ export function renderCommand(args: string[]): number {
     return 2;
   }
 
-  const original = loadGraph(spec);
-  const result = lint(original);
-  const graph = values.fix ? withEdges(original, result.repairedEdges) : original;
-
-  const fakeEdges =
-    values.plain || values.fix
-      ? []
-      : result.findings.filter((f) => f.rule === "FAKE_EDGE" && f.edge).map((f) => f.edge!);
-
-  const text = emit(format, graph, original, fakeEdges, {
-    fix: values.fix,
+  const style = {
+    plain: values.plain,
     header: values.header,
     embedFont: values["embed-font"],
-    fenced: extname(out ?? "") === ".md",
     grain: values.grain,
-  });
+  };
 
+  if (values.pair) {
+    if (values.fix) {
+      process.stderr.write(
+        "ccg render: --pair already draws the repair for one spec, so it cannot be combined with --fix\n",
+      );
+      return 2;
+    }
+    if (positionals.length > 2) {
+      process.stderr.write("ccg render: --pair takes one spec, or two (before, then after)\n");
+      return 2;
+    }
+    if (!out) {
+      process.stderr.write("ccg render: --pair writes two files, so it needs -o to name them\n");
+      return 2;
+    }
+
+    // One spec is drawn as written and then repaired. Two are drawn as written,
+    // which is how a hand revision (a guard added, say) shows up: --fix only
+    // moves edges, it never adds an `expects`.
+    const revised = positionals[1];
+    const fenced = extname(out) === ".md";
+    const before = draw(spec, format, { ...style, fix: false }, fenced);
+    const after = draw(revised ?? spec, format, { ...style, fix: revised === undefined }, fenced);
+
+    // Both are drawn before either is written, so a bad second spec leaves nothing behind.
+    for (const [which, drawing] of [
+      ["before", before],
+      ["after", after],
+    ] as const) {
+      const file = pairPath(out, which);
+      writeFileSync(file, drawing.text, "utf8");
+      report(file, format, drawing);
+    }
+    return 0;
+  }
+
+  const drawing = draw(spec, format, { ...style, fix: values.fix }, extname(out ?? "") === ".md");
   if (out) {
-    writeFileSync(out, text, "utf8");
-    const layers = values.fix ? result.layersAfter : result.layersBefore;
-    process.stderr.write(
-      `wrote ${out} — ${format}, ${layers} layers, ${graph.nodes.size} nodes\n`,
-    );
+    writeFileSync(out, drawing.text, "utf8");
+    report(out, format, drawing);
   } else {
-    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+    process.stdout.write(drawing.text.endsWith("\n") ? drawing.text : `${drawing.text}\n`);
   }
   return 0;
+}
+
+interface Style {
+  plain: boolean;
+  fix: boolean;
+  header: boolean;
+  embedFont: boolean;
+  grain: boolean;
+}
+
+interface Drawing {
+  text: string;
+  layers: number;
+  nodes: number;
+}
+
+function draw(path: string, format: Format, style: Style, fenced = false): Drawing {
+  const original = loadGraph(path);
+  const result = lint(original);
+  const graph = style.fix ? withEdges(original, result.repairedEdges) : original;
+
+  // Findings are read from the graph on the page. Repairing moves edges, which
+  // changes how many results reach a node, so the as-written findings would
+  // describe a picture that is no longer drawn.
+  const shown = style.fix ? lint(graph) : result;
+  const raw = shown.findings.filter((f) => f.phase === "raw");
+
+  const fakeEdges =
+    style.plain || style.fix
+      ? []
+      : raw.filter((f) => f.rule === "FAKE_EDGE" && f.edge).map((f) => f.edge!);
+
+  const guardFindings = style.plain
+    ? []
+    : raw.flatMap((f) =>
+        f.rule === "SILENT_FAILURE" && f.arriving !== undefined && f.nodes[0] !== undefined
+          ? [{ id: f.nodes[0], arriving: f.arriving }]
+          : [],
+      );
+
+  return {
+    text: emit(format, graph, original, fakeEdges, guardFindings, { ...style, fenced }),
+    layers: style.fix ? result.layersAfter : result.layersBefore,
+    nodes: graph.nodes.size,
+  };
+}
+
+function report(file: string, format: Format, drawing: Drawing): void {
+  process.stderr.write(
+    `wrote ${file} — ${format}, ${drawing.layers} layers, ${drawing.nodes} nodes\n`,
+  );
+}
+
+/** `out.svg` becomes `out-before.svg`. */
+function pairPath(out: string, which: "before" | "after"): string {
+  const ext = extname(out);
+  return `${out.slice(0, out.length - ext.length)}-${which}${ext}`;
 }
 
 function emit(
@@ -91,21 +174,29 @@ function emit(
   graph: Graph,
   original: Graph,
   fakeEdges: Array<{ from: string; to: string }>,
-  options: { fix: boolean; header: boolean; embedFont: boolean; fenced: boolean; grain: boolean },
+  guardFindings: Array<{ id: string; arriving: number }>,
+  options: {
+    fix: boolean;
+    header: boolean;
+    embedFont: boolean;
+    fenced: boolean;
+    grain: boolean;
+  },
 ): string {
   const title = options.fix ? `${original.spec.name} (repaired)` : original.spec.name;
 
   switch (format) {
     case "mermaid":
-      return renderMermaid(graph, { fakeEdges, fenced: options.fenced });
+      return renderMermaid(graph, { fakeEdges, guardFindings, fenced: options.fenced });
     case "excalidraw":
-      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), { fakeEdges }), null, 2)}\n`;
+      return `${JSON.stringify(renderExcalidraw(layoutGraph(graph), { fakeEdges, guardFindings }), null, 2)}\n`;
     case "svg":
       return renderSvg(layoutGraph(graph), {
         header: options.header,
         embedFont: options.embedFont,
         grain: options.grain,
         fakeEdges,
+        guardFindings,
         title,
       });
     case "html":
@@ -115,6 +206,7 @@ function emit(
           embedFont: options.embedFont,
           grain: options.grain,
           fakeEdges,
+          guardFindings,
           title,
         }),
         { title },

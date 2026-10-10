@@ -17,6 +17,8 @@ const USAGE = `ccg — graph engineering for agent workflows
 Usage:
   ccg lint <spec.yaml>...            find fake edges and wasted sequencing
   ccg render <spec.yaml> -o out.svg  draw the layered graph (svg, html, mermaid, excalidraw)
+  ccg render <spec.yaml> --pair -o out.svg                  as written, then repaired
+  ccg render --pair <before.yaml> <after.yaml> -o out.svg   two specs, before then after
   ccg codegen <spec.yaml> -t <target>  emit the matching orchestration code
   ccg ingest <orchestration.ts>        reconstruct a spec from existing code
   ccg plan <spec.yaml>                 what can run at once, wave by wave
@@ -35,7 +37,9 @@ Render options:
   -o, --out <file>  write here instead of stdout
   -f, --format <f>  svg | html | mermaid | excalidraw (default: from the -o extension)
   --fix             render the repaired graph rather than the graph as written
-  --plain           do not mark fake edges in red
+  --pair            write out-before and out-after (needs -o; not with --fix): one spec
+                    as written then repaired, or two specs as written
+  --plain           do not mark lint findings (fake edges, missing or wrong count guards)
   --no-header       omit the name/goal caption
   --no-embed-font   reference the handwriting font instead of inlining it
   --no-grain        omit the paper texture (much smaller when rasterised)
