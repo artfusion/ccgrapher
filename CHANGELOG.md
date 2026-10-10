@@ -124,8 +124,8 @@ private web canvas, which has its own train. Full notes accompany each
 Web canvas (`apps/web`, its own train; not in the published packages):
 
 - A node inspector. Click a step, or pick it from the list in the new right-hand panel, and its
-  fields can be edited there: tier, kind, label, `in` and `out`, `writes`, `uses`, `expects`,
-  `fanOut`, `worktree`, `freshContext`. An edit rewrites the spec text, and the picture and the
+  fields can be edited there: tier, kind, label, `in` and `out`, `writes`, `uses`, `effects`,
+  `guards`, `expects`, `fanOut`, `worktree`, `freshContext`. An edit rewrites the spec text, and the picture and the
   findings follow, as they do for typing. The text area stays; the two are views of one spec.
 - The controls are read off the spec schema rather than written per field, so a field the schema
   gains appears in the panel without UI work. A shape the panel has no control for is edited as

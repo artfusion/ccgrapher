@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { buildGraph, parseSpec } from "@ccgrapher/core";
+import { buildGraph, NodeSpec, parseSpec } from "@ccgrapher/core";
 import { lint } from "@ccgrapher/lint";
 import { describe, expect, it } from "vitest";
 import { FIXTURES } from "../lib/fixtures";
@@ -20,21 +20,15 @@ const chain = () => parseSpec(FIXTURES["linear-chain"]!);
 const field = (key: string) => NODE_FIELDS.find((f) => f.key === key)!;
 
 describe("the field table, read off the schema", () => {
-  it("covers every field of a node, in schema order", () => {
-    expect(NODE_FIELDS.map((f) => f.key)).toEqual([
-      "id",
-      "label",
-      "kind",
-      "model",
-      "in",
-      "out",
-      "writes",
-      "uses",
-      "freshContext",
-      "expects",
-      "fanOut",
-      "worktree",
-    ]);
+  it("covers every field of a node, in schema order, with nothing written per field", () => {
+    // Not a pinned list: a field the schema gains must appear here on its own.
+    expect(NODE_FIELDS.map((f) => f.key)).toEqual(Object.keys(NodeSpec.shape));
+    for (const key of ["label", "kind", "model", "in", "out", "writes", "uses", "expects"]) {
+      expect(NODE_FIELDS.some((f) => f.key === key)).toBe(true);
+    }
+    // The cross-run fields arrived after the panel was written, and still get chips.
+    expect(field("effects")?.control.type).toBe("chips");
+    expect(field("guards")?.control.type).toBe("chips");
   });
 
   it("gives each zod type its control", () => {

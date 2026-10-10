@@ -97,6 +97,8 @@ const HINTS: Readonly<Record<string, string>> = {
   out: "the fields this step produces",
   writes: "files or APIs it touches; two concurrent steps sharing one is a hidden edge",
   uses: "capabilities it needs: agent:<type>, skill:<name>, mcp:<server>/<tool>",
+  effects: "what it does that cannot be taken back, as <verb>:<target>",
+  guards: "effects it makes at most once, checking first whether they already happened",
   freshContext: "a verifier that shares the worker's context is grading itself",
   expects: "how many results must arrive before it runs",
   fanOut: "run once per item in `over`, up to `cap` at a time",
