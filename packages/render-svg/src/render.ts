@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { agentTag, agentTypes, renderStyle } from "@ccgrapher/core";
+import { agentTag, agentTypes, effectivePriorities, priorityCaption, renderStyle, type EffectivePriority } from "@ccgrapher/core";
 import { DEFAULT_METRICS, type Point, type PositionedEdge, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 // The `bin/` ESM build uses extensionless relative imports, which Node's
 // resolver rejects outside a bundler. The bundled build is a single file with
@@ -10,7 +10,14 @@ import type { Drawable, OpSet } from "roughjs/bin/core.js";
 import { CAVEAT_NOTICE, caveatFontFace } from "./font.js";
 import { iconPath, iconTransform } from "./icons.js";
 import { findingsOn, fitCaption, renderSharedWrites, type FindingMark } from "./findings.js";
-import { bottomLeftRoom, renderFindingHalo, renderMarks, type Mark } from "./marks.js";
+import {
+  bottomLeftRoom,
+  renderFindingHalo,
+  renderMarks,
+  renderPriorityMark,
+  renderPriorityWash,
+  type Mark,
+} from "./marks.js";
 import { DEFAULT_THEME, type Theme } from "./theme.js";
 
 export interface RenderOptions {
@@ -58,6 +65,7 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   const fake = new Set((options.fakeEdges ?? []).map((e) => `${e.from}->${e.to}`));
   const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
   const findingMarks = options.findingMarks ?? [];
+  const priorities = effectivePriorities(positioned.graph);
   const offsetY = showHeader ? HEADER_HEIGHT : 0;
 
   // A long goal line can be wider than the graph it captions, so the canvas
@@ -72,7 +80,7 @@ export function renderSvg(positioned: PositionedGraph, options: RenderOptions = 
   const body = [
     ...renderRegions(positioned.regions, theme),
     ...positioned.edges.map((edge) => renderEdge(gen, edge, theme, fake.has(`${edge.from}->${edge.to}`))),
-    ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id), findingMarks)),
+    ...positioned.nodes.map((node) => renderNode(gen, node, theme, arriving.get(node.node.id), findingMarks, priorities.get(node.node.id))),
     ...renderSharedWrites(positioned, findingMarks, theme),
   ].join("\n    ");
 
@@ -210,12 +218,23 @@ function renderNode(
   theme: Theme,
   arriving: number | undefined,
   findingMarks: readonly FindingMark[],
+  priority: EffectivePriority | undefined,
 ): string {
   const { node, x, y, width, height, lines } = positioned;
   const style = renderStyle(node);
   const fill = theme.fill[node.kind];
   const seed = seedOf(node.id);
   const parts: string[] = [];
+
+  // Everything the node draws: the box, and the fan-out stack up and to its right.
+  const extent = node.fanOut ? { x, y: y - 10, width, height } : { x, y, width, height };
+
+  // First, so it sits behind the stack, the halos and the box. Who set it, or
+  // which step needs it, is the node's title: it shows on hover.
+  if (priority) {
+    parts.push(`<title>${escapeText(priorityCaption(priority))}</title>`);
+    parts.push(renderPriorityWash(extent, theme.urgentWash));
+  }
 
   // A fanOut node is one node that runs many times, so it draws as a stack.
   if (node.fanOut) {
@@ -318,13 +337,20 @@ function renderNode(
   const caption = fitCaption(found.captions, bottomLeftRoom(box, marks));
   if (caption) marks.push({ slot: "bottom-left", text: caption, fill: theme.dangerInk });
   parts.push(renderMarks(marks, box));
+  // Last, so the mark sits over the wash and any finding ring at that corner.
+  if (priority && priority.inheritedFrom === undefined) {
+    parts.push(renderPriorityMark(extent, priority.priority, theme.urgent, theme.paper));
+  }
 
   const declared = node.expects !== undefined ? ` data-expects="${node.expects}"` : "";
   const flagged = guard ? ` data-guard="${guard}"` : "";
   const tier = node.model ? ` data-tier="${node.model}"` : "";
   const agent = tag ? ` data-agent="${escapeAttr(agentTypes(node).join(" "))}"` : "";
   const rules = found.rules.length > 0 ? ` data-findings="${found.rules.join(" ")}"` : "";
-  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}${tier}${agent}${rules}>${parts.join("")}</g>`;
+  const urgency = priority
+    ? ` data-priority="${priority.priority}"${priority.inheritedFrom !== undefined ? ` data-priority-from="${escapeAttr(priority.inheritedFrom)}"` : ""}${priority.setBy !== undefined ? ` data-priority-set-by="${escapeAttr(priority.setBy)}"` : ""}`
+    : "";
+  return `<g data-node="${escapeAttr(node.id)}" data-kind="${node.kind}" data-rank="${positioned.rank}"${declared}${flagged}${tier}${agent}${rules}${urgency}>${parts.join("")}</g>`;
 }
 
 function renderEdge(

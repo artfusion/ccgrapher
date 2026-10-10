@@ -133,4 +133,18 @@ export function boundaryWarnings(graph: Graph, target: AnyTarget): string[] {
   );
 }
 
+/**
+ * For the targets that do not carry `priority`. One line for every raised one,
+ * since a spec that marks one step urgent is usually saying the same thing
+ * about a few. `normal` is the default and is not mentioned.
+ */
+export function priorityWarnings(graph: Graph, target: AnyTarget, note = ""): string[] {
+  const raised = graph.spec.nodes.filter((node) => node.priority === "urgent" || node.priority === "high");
+  if (raised.length === 0) return [];
+  const list = raised.map((node) => `'${node.id}' (${node.priority})`).join(", ");
+  return [
+    `${list} ${raised.length === 1 ? "carries a priority" : "carry priorities"} the ${target} target does not: the generated code has no ready queue for urgency to reorder${note}.`,
+  ];
+}
+
 export const quote = (text: string) => JSON.stringify(text);

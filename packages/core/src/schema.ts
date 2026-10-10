@@ -46,6 +46,16 @@ export type FanOut = z.infer<typeof FanOut>;
  */
 const ID = /^[^\s,]+$/;
 
+/** One line of text, with no leading or trailing space. */
+const ONE_LINE = /^\S(?:[^\r\n]*\S)?$/;
+
+/**
+ * How soon a step should get a slot once it is ready. Absent and `normal` mean
+ * the same thing. A scheduling hint, never a dependency: see `NodeSpec.priority`.
+ */
+export const Priority = z.enum(["urgent", "high", "normal"]);
+export type Priority = z.infer<typeof Priority>;
+
 /** Field name -> freeform type descriptor ("string", "url", "YYYY-MM-DD", "string[]"). */
 const FieldMap = z.record(z.string(), z.string());
 
@@ -119,6 +129,30 @@ export const NodeSpec = z.object({
   fanOut: FanOut.optional(),
   /** Isolated worktree per instance, so parallel workers cannot collide on disk. */
   worktree: z.boolean().optional(),
+  /**
+   * Urgency: which ready step gets the next free slot.
+   *
+   * It changes order among ready work and nothing else. It is not an edge and
+   * moves no node: ranks, waves, `effectiveInboundCount` and every lint rule
+   * read the graph exactly as they would without it. An urgent step still
+   * waits for its real inputs, and a step already running is never stopped to
+   * make room for it.
+   *
+   * What it does do is pass upstream. Every step an urgent step waits on,
+   * directly or not, inherits its urgency while it has not started, or the
+   * urgent step would sit behind the very work it needs. `effectivePriorities`
+   * is the one place that rule is computed.
+   *
+   * It only matters when a concurrency limit leaves more ready steps than
+   * slots. Without a limit everything ready starts at once and order is moot.
+   */
+  priority: Priority.optional(),
+  /**
+   * Who asked for the priority: a role, a team, a rota. One line of free text,
+   * shown wherever the priority is, so a reader can see whose call it was. Says
+   * nothing on a node without a raised `priority`.
+   */
+  prioritySetBy: z.string().regex(ONE_LINE, "one line, with no leading or trailing space").optional(),
 });
 export type NodeSpec = z.infer<typeof NodeSpec>;
 

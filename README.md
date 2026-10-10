@@ -143,6 +143,8 @@ edges:
 | `expects` | number | Fan-in guard. How many results should arrive. |
 | `fanOut` | `{ over, cap? }` | Run once per item. Stays one node, drawn as a stack badged `×N`. |
 | `worktree` | boolean | Isolated space per run, so parallel workers can't collide on disk. |
+| `priority` | `urgent` \| `high` \| `normal` | Which ready step gets the next free slot. Never a dependency. See [Urgency](#urgency). |
+| `prioritySetBy` | string, one line | Who asked for the priority: a role, a team, a rota. Shown wherever the priority is. |
 
 **Kinds.** `split` fans work out · `worker` does a unit of it · `verifier` checks someone else's ·
 `reduce` combines (usually plain code) · `synthesize` writes the final answer · `gate` is a human
@@ -233,6 +235,35 @@ Generated plain-ts code carries the schedule and the stores in its header and th
 each doc comment, and `ccg ingest` reads them back; the other targets say in a warning that they
 cannot. A CLI older than these fields ignores them without a word, so on an old install a spec
 that uses them lints clean whatever it declares.
+
+### Urgency
+
+A step can be marked urgent, and the graph still has to tell the truth about it.
+
+```yaml
+- id: patch
+  label: patch the hole
+  kind: worker
+  priority: urgent
+  prioritySetBy: on-call
+```
+
+Urgency changes the order of work that is ready, and nothing else. An urgent step still waits for
+its inputs, it never stops a step that is already running, and it moves no node: the waves, the
+ranks and every lint rule read the graph as they would without it. What it does do is pass
+upstream. Every step the urgent one waits on, directly or not, inherits its priority while it has
+not started, so the urgent step is not left queuing behind the very work it needs. `high` sits
+between `urgent` and `normal`, and `normal` is the same as leaving the field out.
+
+In the picture the waves stay where they were. The urgent step carries a small mark on its top right
+corner, two chevrons for `urgent` and one for `high`, and the steps it pulls forward sit on a pale
+blue wash, so the chain from the top of the graph to the marked step reads as one path. Hover over
+any of them for who set it, or which step needs it. Mermaid and Excalidraw say the same in the
+label: `urgent, set by on-call` on the step, `urgent, needed by patch` above it.
+
+Generated plain-ts code carries both fields in its doc comments and `ccg ingest` reads them back.
+The claude-code, langgraph and managed-agents targets say in a warning that they do not, since the
+code they generate has no queue of ready work to reorder.
 
 ### Layers
 
@@ -509,6 +540,16 @@ a gate waiting on a human and a skipped node take none), and when more is ready 
 slots, the lower rank goes first, then the order of the spec. That order is also how steps that
 become ready together are started, so a run's trace comes out the same each time. A node's
 timeout runs from the moment it gets its slot, not from when it became ready.
+
+**Urgency.** A step's [`priority`](#urgency) comes before rank in that order: urgent, then high,
+then the rest. Each step an urgent one waits on carries the same priority, so with one slot free
+and three steps ready, the one the urgent step needs goes first, however late it comes in the
+spec. A running step is never interrupted to make room, and a step is never started before its
+inputs exist. So urgency only shows when `--concurrency` leaves more ready than there are slots;
+without a limit, everything ready starts at once and only the order of the trace lines changes.
+Each step that starts at a raised priority says so in its `node_started` event, with the step it
+inherited from and who set it, so a run can be read afterwards for why work moved. A spec with no
+priority runs, and writes its trace, exactly as before.
 
 **When a step fails.** Its descendants are skipped, each with a `node_failed` that names the input
 that never arrived, and they are skipped the moment the failure is known. Branches that do not

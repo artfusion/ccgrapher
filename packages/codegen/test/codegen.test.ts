@@ -315,6 +315,48 @@ describe("schedule, stores, effects and guards: carried by plain-ts, declared lo
   });
 });
 
+describe("priority: carried by plain-ts, declared lossy elsewhere", () => {
+  const urgent = () => {
+    const graph = fixture("diamond");
+    return buildGraph({
+      ...graph.spec,
+      nodes: graph.spec.nodes.map((n) =>
+        n.id === "worker_3"
+          ? { ...n, priority: "urgent" as const, prioritySetBy: "on-call, payments" }
+          : n.id === "worker_5"
+            ? { ...n, priority: "high" as const }
+            : n.id === "merge"
+              ? { ...n, priority: "normal" as const }
+              : n,
+      ),
+    });
+  };
+
+  it("writes the priority as a trait, and who set it as a quoted sentence of its own", () => {
+    const code = codegen(urgent(), "plain-ts");
+    expect(code).toMatch(/\/\*\* [^\n]*, priority: urgent\. Priority set by "on-call, payments"\. \*\//);
+    expect(code).toMatch(/\/\*\* [^\n]*, priority: high\. \*\//);
+    expect(codegenWarnings(urgent(), "plain-ts")).toEqual([]);
+  });
+
+  it("keeps a comment shut when who set it says */", () => {
+    const graph = buildGraph({
+      ...fixture("diamond").spec,
+      nodes: fixture("diamond").spec.nodes.map((n) => (n.id === "split" ? { ...n, prioritySetBy: "a */ b" } : n)),
+    });
+    expect(codegen(graph, "plain-ts")).toContain('Priority set by "a *\\/ b". */');
+  });
+
+  it.each(["claude-code", "langgraph", "managed-agents"] as const)("%s says it cannot carry it", (target) => {
+    const warnings = codegenWarnings(urgent(), target).filter((w) => w.includes("priorit"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(
+      new RegExp(`^'worker_3' \\(urgent\\), 'worker_5' \\(high\\) carry priorities the ${target} target does not: the generated code has no ready queue for urgency to reorder`),
+    );
+    expect(codegenWarnings(fixture("diamond"), target).filter((w) => w.includes("priorit"))).toEqual([]);
+  });
+});
+
 describe("plain-ts", () => {
   const code = codegen(fixture("diamond"), "plain-ts");
 

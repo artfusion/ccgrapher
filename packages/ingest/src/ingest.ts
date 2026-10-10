@@ -170,6 +170,8 @@ function collectNodes(
       ...(traits.expects !== undefined ? { expects: traits.expects } : {}),
       ...(traits.fanOut ? { fanOut: traits.fanOut } : {}),
       ...(traits.worktree ? { worktree: traits.worktree } : {}),
+      ...(traits.priority ? { priority: traits.priority } : {}),
+      ...(traits.prioritySetBy !== undefined ? { prioritySetBy: traits.prioritySetBy } : {}),
     } as NodeSpec);
   }
 

@@ -329,3 +329,23 @@ describe("finding marks", () => {
     expect(JSON.stringify(scene())).toBe(JSON.stringify(scene()));
   });
 });
+
+describe("urgency", () => {
+  it("notes it in the label, on the urgent step and each step it pulls forward", () => {
+    const graph = loadGraph(`${examples}research-desk.yaml`);
+    const scene = renderExcalidraw(
+      layoutGraph(
+        buildGraph({
+          ...graph.spec,
+          nodes: graph.spec.nodes.map((n) =>
+            n.id === "skeptic_source" ? { ...n, priority: "urgent" as const, prioritySetBy: "on-call" } : n,
+          ),
+        }),
+      ),
+    );
+    const text = (id: string) => scene.elements.find((e) => e["id"] === `text-${id}`)!["text"];
+    expect(text("skeptic_source")).toBe("is the source real? · strong · urgent, set by on-call");
+    expect(text("dedupe")).toBe("dedupe by source · urgent, needed by skeptic_source · expects 5");
+    expect(text("skeptic_correct")).toBe("is it correct? · strong");
+  });
+});

@@ -103,6 +103,8 @@ const HINTS: Readonly<Record<string, string>> = {
   expects: "how many results must arrive before it runs",
   fanOut: "run once per item in `over`, up to `cap` at a time",
   worktree: "an isolated checkout per instance, so parallel copies cannot collide",
+  priority: "which ready step gets the next free slot; what it waits on goes first with it",
+  prioritySetBy: "who asked for it, a role or a rota, shown wherever the priority is",
 };
 
 /** Sentinels a select uses for the two values that are not strings. */

@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { agentTag, renderStyle, type NodeSpec } from "@ccgrapher/core";
+import {
+  agentTag,
+  effectivePriorities,
+  priorityCaption,
+  renderStyle,
+  type EffectivePriority,
+  type NodeSpec,
+} from "@ccgrapher/core";
 import { routeLinks, type PositionedGraph, type PositionedNode, type PositionedRegion } from "@ccgrapher/layout";
 
 export interface ExcalidrawOptions {
@@ -75,6 +82,7 @@ export function renderExcalidraw(
   const arriving = new Map((options.guardFindings ?? []).map((g) => [g.id, g.arriving]));
   const findingMarks = options.findingMarks ?? [];
   const writers = new Set(findingMarks.flatMap((m) => (m.rule === "HIDDEN_EDGE" ? m.between : [])));
+  const priorities = effectivePriorities(positioned.graph);
   const elements: ExcalidrawElement[] = [];
 
   // Arrows are collected per node so each box can declare what it is bound to.
@@ -114,7 +122,7 @@ export function renderExcalidraw(
     // The halo goes in first so it sits behind the box. It is not bound to anything.
     if (flagged) elements.push({ ...halo(node), groupIds });
     elements.push({ ...box(node, bindings.get(node.id) ?? [], flagged), groupIds });
-    elements.push({ ...text(node, found, notes), groupIds });
+    elements.push({ ...text(node, found, notes, priorities.get(node.id)), groupIds });
   }
 
   positioned.edges.forEach((edge, i) => {
@@ -258,8 +266,13 @@ function box(
   };
 }
 
-function text(node: PositionedNode, arriving: number | undefined, notes: readonly string[]): ExcalidrawElement {
-  const label = labelOf(node.node, arriving, notes);
+function text(
+  node: PositionedNode,
+  arriving: number | undefined,
+  notes: readonly string[],
+  priority: EffectivePriority | undefined,
+): ExcalidrawElement {
+  const label = labelOf(node.node, arriving, notes, priority);
   const fontSize = 20;
   const lineHeight = 1.25;
   return {
@@ -335,9 +348,15 @@ function fallbackPoints(positioned: PositionedGraph, edge: PositionedGraph["edge
   ];
 }
 
-function labelOf(node: NodeSpec, arriving: number | undefined, notes: readonly string[]): string {
+function labelOf(
+  node: NodeSpec,
+  arriving: number | undefined,
+  notes: readonly string[],
+  priority: EffectivePriority | undefined,
+): string {
   const fan = node.fanOut ? ` ×${node.fanOut.cap ?? "n"}` : "";
-  return `${node.label}${fan}${whoNote(node)}${notes.map((n) => ` · ${n}`).join("")}${guardNote(node, arriving)}`;
+  const urgency = priority ? ` · ${priorityCaption(priority)}` : "";
+  return `${node.label}${fan}${whoNote(node)}${urgency}${notes.map((n) => ` · ${n}`).join("")}${guardNote(node, arriving)}`;
 }
 
 /** The tier and the agent, as the SVG draws them: plain code and an unspecified tier say nothing. */

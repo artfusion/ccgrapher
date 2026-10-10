@@ -49,6 +49,13 @@ describe("the field table, read off the schema", () => {
     expect(field("in").control.type).toBe("record");
     expect(field("in").optional).toBe(false);
     expect(field("id").readOnly).toBe(true);
+    // Urgency arrived after the panel too: a select with a way back to unset, and a line of text.
+    expect(field("priority")).toMatchObject({
+      control: { type: "select", options: ["urgent", "high", "normal"] },
+      optional: true,
+      nullable: false,
+    });
+    expect(field("prioritySetBy")).toMatchObject({ control: { type: "text" }, optional: true });
 
     const fanOut = field("fanOut").control;
     expect(fanOut.type).toBe("group");
@@ -99,6 +106,18 @@ describe("an edit from the panel", () => {
     expect(toCode.ok && parseSpec(toCode.source).nodes.at(-1)!.model).toBeNull();
     const unset = editNode(chain(), "write_report", "model", undefined);
     expect(unset.ok && "model" in parseSpec(unset.source).nodes.at(-1)!).toBe(false);
+  });
+
+  it("marks a step urgent and says who asked, and the lint does not move", () => {
+    const urgent = editNode(chain(), "write_report", "priority", "urgent");
+    expect(urgent.ok).toBe(true);
+    if (!urgent.ok) return;
+    const who = editNode(urgent.spec, "write_report", "prioritySetBy", "on-call");
+    expect(who.ok).toBe(true);
+    if (!who.ok) return;
+    expect(parseSpec(who.source).nodes.at(-1)).toMatchObject({ priority: "urgent", prioritySetBy: "on-call" });
+    expect(lint(buildGraph(who.spec)).findings).toEqual(lint(buildGraph(chain())).findings);
+    expect(editNode(chain(), "write_report", "priority", "asap").ok).toBe(false);
   });
 
   it("changes what the linter says when expects stops matching the graph", () => {
