@@ -7,7 +7,7 @@ import {
   createPortal,
 } from "react-dom";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { INK, KIND_TINT } from "../lib/graph-model";
+import { KIND_TINT } from "../lib/graph-model";
 import {
   instanceRows,
   summariseInstances,
@@ -44,6 +44,8 @@ export interface SpecNodeData {
   capability?: CapabilityState;
   /** The step the inspector is showing. Drawn as an outline, which occupies no space. */
   selected?: boolean;
+  /** The kind-tint layer is off (lib/layers.ts): painted as plain paper. */
+  untinted?: boolean;
   /** A drafted step shown from the hopper, not yet in the spec. Drawn in pencil. */
   ghost?: boolean;
   /**
@@ -121,7 +123,14 @@ export function SpecNode(d: SpecNodeData) {
         }${run ? ` run-${status}` : ""}${open ? " opened" : ""}${d.selected ? " selected" : ""}${
           d.ghost ? " ghost" : ""
         }`}
-        style={{ background: KIND_TINT[d.kind] ?? "#fff", borderColor: INK }}
+        style={{
+          // The tint is a custom property so a theme can swap it; the hex is
+          // the light value and the fallback for a kind the stylesheet lacks.
+          background: d.untinted
+            ? "var(--surface)"
+            : `var(--tint-${d.kind}, ${KIND_TINT[d.kind] ?? "#fff"})`,
+          borderColor: "var(--ink)",
+        }}
         title={[...d.problems, ...runTitle(run)].join("\n") || undefined}
         data-run-status={run ? status : undefined}
       >
@@ -526,6 +535,12 @@ export function placement(
   else if (align === "start") style.top = top;
   else if (align === "end") style.top = bottom - NOTE_H;
   else style.top = (top + bottom) / 2 - NOTE_H / 2;
+
+  // A note beside a step in the first rank used to start above the visible area.
+  // Clamp it into the viewport; a viewport shorter than the note keeps its top.
+  if (position === "left" || position === "right") {
+    style.top = Math.max(8, Math.min(style.top as number, view.paneH - NOTE_H - 8));
+  }
 
   return { position, align, style };
 }

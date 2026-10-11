@@ -15,6 +15,109 @@
   --waiting: #b07d21;
   --hand: "Caveat", "Patrick Hand", cursive;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* Surfaces and the one grey the SVG labels share. Named so a theme can swap them. */
+  --surface: #fff;
+  --surface-warm: #fffdf9;
+  --surface-sunk: #f6f1e8;
+  --surface-danger: #fdf6f4;
+  --canvas: #e4ebf1;
+  --muted-strong: #6f6660;
+  /* The kind tints, mirrored from lib/graph-model.ts KIND_TINT so a theme can swap them. */
+  --tint-goal: #ffffff;
+  --tint-split: #ffffff;
+  --tint-worker: #ffffff;
+  --tint-verifier: #fdefe6;
+  --tint-reduce: #f1eee9;
+  --tint-synthesize: #fbe3d3;
+  --tint-gate: #f6f0dc;
+  /* Density scales the spacing of the inspector, the panels and the bars. It never
+     reaches the graph: boxes and edges are placed by layout, in pixels of their own. */
+  --d: 1;
+  color-scheme: light;
+}
+
+/* Ink: the same drawing on dark paper. Chosen by the system unless the reader has
+   picked one (data-theme, set from lib/preferences.ts). The values are written
+   twice because a media query and an attribute cannot share one selector. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1d1a18;
+    --ink: #ece4d8;
+    --accent: #ee8650;
+    --muted: #9a9088;
+    --danger: #e0715c;
+    --rule: #3a3531;
+    --done: #5fb283;
+    --waiting: #d1a24a;
+    --surface: #26221f;
+    --surface-warm: #211e1b;
+    --surface-sunk: #2d2926;
+    --surface-danger: #2e1f1c;
+    --canvas: #161311;
+    --muted-strong: #b0a69c;
+    --tint-goal: #2a2623;
+    --tint-split: #2a2623;
+    --tint-worker: #2a2623;
+    --tint-verifier: #3a2a22;
+    --tint-reduce: #302c28;
+    --tint-synthesize: #44302a;
+    --tint-gate: #38331f;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1d1a18;
+  --ink: #ece4d8;
+  --accent: #ee8650;
+  --muted: #9a9088;
+  --danger: #e0715c;
+  --rule: #3a3531;
+  --done: #5fb283;
+  --waiting: #d1a24a;
+  --surface: #26221f;
+  --surface-warm: #211e1b;
+  --surface-sunk: #2d2926;
+  --surface-danger: #2e1f1c;
+  --canvas: #161311;
+  --muted-strong: #b0a69c;
+  --tint-goal: #2a2623;
+  --tint-split: #2a2623;
+  --tint-worker: #2a2623;
+  --tint-verifier: #3a2a22;
+  --tint-reduce: #302c28;
+  --tint-synthesize: #44302a;
+  --tint-gate: #38331f;
+  color-scheme: dark;
+}
+
+:root[data-density="compact"] {
+  --d: 0.62;
+}
+
+/* Heat washes are light whatever the theme, so their text stays dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .node-host.heat-node .spec-node {
+    color: #2b2724;
+  }
+}
+:root[data-theme="dark"] .node-host.heat-node .spec-node {
+  color: #2b2724;
+}
+
+.controls.view {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted-strong);
+}
+
+.controls.view .view-label {
+  font: 600 18px/1 var(--hand);
+  color: var(--muted);
+}
+
+.controls.view .view-spacer {
+  flex: 1;
 }
 
 * {
@@ -37,7 +140,7 @@ body {
 }
 
 header {
-  padding: 14px 20px 10px;
+  padding: calc(14px * var(--d)) 20px calc(10px * var(--d));
   border-bottom: 1px solid var(--rule);
 }
 
@@ -47,7 +150,7 @@ header h1 {
 }
 
 header p {
-  margin: 2px 0 10px;
+  margin: 2px 0 calc(10px * var(--d));
   color: var(--muted);
   max-width: 68ch;
 }
@@ -65,7 +168,7 @@ header p {
   padding: 5px 10px;
   border: 1px solid var(--ink);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   cursor: pointer;
 }
@@ -117,7 +220,7 @@ main {
   border: 0;
   resize: none;
   padding: 14px 16px;
-  background: #fffdf9;
+  background: var(--surface-warm);
   color: var(--ink);
   font: 12px/1.6 var(--mono);
   tab-size: 2;
@@ -523,8 +626,8 @@ main {
   max-height: 380px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px 13px 12px;
-  background: #fffdf9;
+  padding: calc(10px * var(--d)) calc(13px * var(--d)) calc(12px * var(--d));
+  background: var(--surface-warm);
   border: 1.5px solid var(--ink);
   border-radius: 2px 10px 3px 9px / 9px 3px 10px 2px;
   box-shadow: 2px 3px 0 rgba(43, 39, 36, 0.14);
@@ -650,7 +753,7 @@ main {
   max-height: 150px;
   overflow: auto;
   overscroll-behavior: contain;
-  background: #f6f1e8;
+  background: var(--surface-sunk);
   border-left: 2px solid var(--rule);
   font: 11.5px/1.5 var(--mono);
   white-space: pre-wrap;
@@ -689,12 +792,12 @@ main {
   width: 22ch;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
 }
 
 .controls.live button.ghost {
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   border-color: var(--rule);
   font-weight: 400;
@@ -742,7 +845,7 @@ main {
    this hatch appears nowhere else in the drawing. */
 .node-host.heat-unmeasured .spec-node {
   border-style: dotted;
-  color: #6f6660;
+  color: var(--muted-strong);
 }
 
 .node-host.heat-node .spec-node::after {
@@ -777,7 +880,7 @@ main {
   padding: 5px 10px;
   border: 1px solid var(--ink);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -994,10 +1097,10 @@ main {
 
 footer {
   border-top: 1px solid var(--rule);
-  padding: 10px 20px 12px;
+  padding: calc(10px * var(--d)) 20px calc(12px * var(--d));
   max-height: 30vh;
   overflow: auto;
-  background: #fffdf9;
+  background: var(--surface-warm);
 }
 
 .path {
@@ -1062,9 +1165,9 @@ footer {
 .pane.inspector {
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 14px 18px;
+  padding: calc(12px * var(--d)) calc(14px * var(--d)) calc(18px * var(--d));
   border-left: 1px solid var(--rule);
-  background: #fffdf9;
+  background: var(--surface-warm);
 }
 
 .inspector-head {
@@ -1107,7 +1210,7 @@ footer {
 }
 
 .pane.inspector button.ghost {
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   border-color: var(--rule);
   font-weight: 400;
@@ -1142,7 +1245,7 @@ footer {
   padding: 4px 7px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   min-width: 0;
 }
@@ -1201,7 +1304,7 @@ footer {
   align-items: flex-start;
   gap: 8px;
   padding: 4px 6px;
-  background: #f6f1e8;
+  background: var(--surface-sunk);
   border-left: 2px solid var(--accent);
 }
 
@@ -1211,13 +1314,13 @@ footer {
 
 .inspector-fields {
   display: grid;
-  gap: 11px;
-  margin-top: 10px;
+  gap: calc(11px * var(--d));
+  margin-top: calc(10px * var(--d));
 }
 
 .field {
   display: grid;
-  gap: 3px;
+  gap: calc(3px * var(--d));
   margin: 0;
   padding: 0;
   border: 0;
@@ -1308,7 +1411,7 @@ footer {
   border: 1px solid var(--ink);
   border-radius: 255px 12px 225px 15px / 15px 225px 12px 255px;
   font: 11.5px/1.5 var(--mono);
-  background: #fff;
+  background: var(--surface);
 }
 
 .pane.inspector .chip button,
@@ -1448,7 +1551,7 @@ footer {
   padding: 3px 10px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
   cursor: pointer;
@@ -1499,7 +1602,7 @@ footer {
 }
 
 .edge-chooser li button:disabled {
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
   border-color: var(--rule);
   cursor: not-allowed;
@@ -1580,7 +1683,7 @@ footer {
 .edge-fake {
   margin: 0 0 8px;
   padding: 6px 8px;
-  background: #f6f1e8;
+  background: var(--surface-sunk);
   border-left: 2px solid var(--danger);
   font-size: 12px;
 }
@@ -1671,7 +1774,7 @@ footer {
   flex-direction: column;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fffdf9;
+  background: var(--surface-warm);
   box-shadow: 0 2px 10px rgba(43, 39, 36, 0.08);
 }
 
@@ -1701,7 +1804,7 @@ footer {
 
 .hopper button.ghost,
 .hopper .hopper-toggle {
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   border-color: var(--rule);
   font-weight: 400;
@@ -1760,7 +1863,7 @@ footer {
   padding: 8px 10px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font: 13px/1.5 ui-sans-serif, system-ui, sans-serif;
   resize: vertical;
@@ -1829,7 +1932,7 @@ footer {
   padding: 8px 10px;
   border: 1.5px dashed var(--muted);
   border-radius: 4px;
-  background: #fff;
+  background: var(--surface);
   font-size: 12px;
 }
 
@@ -1840,7 +1943,7 @@ footer {
 
 .hopper-card.status-rejected {
   border-color: var(--danger);
-  background: #fdf6f4;
+  background: var(--surface-danger);
 }
 
 .hopper-card h4 {
@@ -1925,4 +2028,14 @@ footer {
 
 .hopper-list .why {
   color: var(--muted);
+}
+
+/* The drawing ground. Light keeps the library pale ground; ink gets one darker than
+   the panels around it. The edge label chips follow the page. */
+.pane.canvas .jointjs-paper {
+  background-color: var(--canvas);
+}
+
+.jj-link-label-bg {
+  fill: var(--paper) !important;
 }

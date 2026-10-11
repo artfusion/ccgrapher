@@ -149,6 +149,15 @@ describe("where the note goes", () => {
     const low = placement({ ...box, y: 700 }, view);
     expect(low.align).toBe("end");
   });
+
+  it("keeps the note inside the viewport when the node sits at or above the top edge", () => {
+    for (const y of [-120, 0, 3]) {
+      const top = placement({ ...box, y }, view).style.top as number;
+      expect(top).toBeGreaterThanOrEqual(8);
+    }
+    const bottom = placement({ ...box, y: 790 }, view).style.top as number;
+    expect(bottom + 380).toBeLessThanOrEqual(800 - 8);
+  });
 });
 
 function fold(...events: TraceEvent[]) {
