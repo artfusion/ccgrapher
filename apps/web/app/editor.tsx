@@ -28,6 +28,8 @@ import {
   type GestureResult,
 } from "../lib/edge-gestures";
 import { Inspector } from "./inspector";
+import { ViewBar, usePreferences } from "./view-bar";
+import { applyLayers } from "../lib/layers";
 import { CanvasNotice, DragNote, EdgeChooser } from "./edge-panel";
 import type { EdgeGestures } from "./canvas/canvas";
 import { Hopper, useHopper } from "./hopper";
@@ -119,6 +121,13 @@ export function Editor() {
     setViewerMode(isViewerHash(hash));
     const fromUrl = decodeSpecFragment(hash);
     if (fromUrl !== undefined) loadSource(fromUrl);
+    // `?trace=http://host:port` points the live bar at a server that is not on the
+    // default port, and shows the bar, which otherwise waits for a server to answer.
+    const trace = new URLSearchParams(window.location.search).get("trace");
+    if (trace && /^https?:\/\//.test(trace)) {
+      setServerUrl(trace.replace(/\/+$/, ""));
+      setEverSeen(true);
+    }
     // Intentionally once: the fragment is how a link *arrives*, not a value
     // this page ever writes back to, so there is nothing to keep in sync.
   }, []);
@@ -326,7 +335,7 @@ export function Editor() {
 
   // The inspected step is marked on its card. Like every overlay, a flag in
   // `data` and nothing else: selecting a step moves nothing.
-  const view = useMemo(
+  const selectedView = useMemo(
     () =>
       selectedId === undefined || viewerMode
         ? overlaid
@@ -338,6 +347,15 @@ export function Editor() {
           },
     [overlaid, selectedId, viewerMode],
   );
+
+  // What the reader has chosen to look at. Applied last and to the drawing only:
+  // the model, the spec text and the lint result above are not touched, and
+  // nothing here is kept in the spec or put in a link (lib/preferences.ts).
+  const [prefs, setPrefs] = usePreferences();
+  const view = useMemo(() => {
+    const layered = applyLayers(selectedView, prefs.layers);
+    return { ...selectedView, nodes: layered.nodes, edges: layered.edges };
+  }, [selectedView, prefs.layers]);
 
   const loadHeat = async (files: readonly File[]) => {
     const loaded: Record<string, HeatData> = {};
@@ -428,6 +446,8 @@ export function Editor() {
             apply {repairCount} repair{repairCount === 1 ? "" : "s"}
           </button>
         </div>
+
+        <ViewBar prefs={prefs} onChange={setPrefs} />
 
         {everSeen && (
           <LiveBar

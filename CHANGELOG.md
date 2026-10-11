@@ -7,6 +7,15 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- Web canvas: a view bar with layers, theme and density. Layers switch the marks the canvas draws
+  (lint findings, kind tint, the fan-out badge and worktree card, the field names on edges). Theme
+  follows the system, with a paper and an ink choice to override it, and the page has an ink theme
+  for the first time. Density tightens the inspector, the panels and the bars, and leaves the graph
+  alone. None of it touches the spec, the layout or the lint result, and none of it is written to
+  an export or a share link; the choice is kept in the browser's local storage, and the page works
+  without it. A note opened on a step in the top row now stays inside the window, and
+  `?trace=http://host:port` points the live bar at a server that is not on the default port.
+
 - Every step is drawn on the row of its wave. Layout handed the ranking to dagre's own
   `longest-path` ranker, which counts from the bottom, so a step nothing waits on for a while sank
   to sit just above whatever reads it: in `daily-brief`, `check_destination` runs in wave 2 and was
