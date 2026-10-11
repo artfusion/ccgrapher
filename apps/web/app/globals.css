@@ -1724,9 +1724,15 @@ footer {
 }
 
 @media (max-width: 860px) {
+  /* One column: the page scrolls rather than squeezing the drawing to nothing. */
+  .app {
+    height: auto;
+    min-height: 100vh;
+  }
+
   main {
     grid-template-columns: 1fr;
-    grid-template-rows: 200px 1fr auto;
+    grid-template-rows: 200px minmax(480px, 75vh) auto;
   }
 
   .pane.source {
@@ -1760,22 +1766,30 @@ footer {
 }
 
 /*
- * The panel sits over the top left of the canvas, folded to one line until it
- * is opened, so the drawing keeps its room. The fit button keeps the top right.
+ * The centre column: the hopper docked above the drawing, the drawing below.
+ * The hopper is in the page layout, never over the canvas, so the canvas
+ * element is exactly the room the drawing has. Folded it is one slim bar;
+ * opened it is a drawer that pushes the canvas down.
  */
-.hopper {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 6;
-  width: min(560px, calc(100% - 96px));
-  max-height: calc(100% - 24px);
+.stage {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--rule);
-  border-radius: 3px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.stage > .pane.canvas {
+  flex: 1 1 0;
+  height: auto;
+}
+
+.hopper {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 45%;
+  border-bottom: 1px solid var(--rule);
   background: var(--surface-warm);
-  box-shadow: 0 2px 10px rgba(43, 39, 36, 0.08);
 }
 
 .hopper-head {
@@ -1841,6 +1855,8 @@ footer {
 }
 
 .hopper-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 4px 10px 12px;

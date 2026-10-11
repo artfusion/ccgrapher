@@ -7,6 +7,17 @@ private web canvas, which has its own train. Full notes accompany each
 
 ## Unreleased
 
+- Web canvas: the hopper no longer floats over the drawing. It is docked in the page above the
+  canvas: one slim bar when folded, and a drawer that pushes the canvas down when opened, with the
+  parse and the drafted steps inside it. The canvas measures its own box, so framing the graph,
+  the fit button and the notes opened on a step all use the room that is left. Opening or folding
+  the drawer frames the graph again only while it has not been panned or zoomed; once it has, it
+  stays where the reader put it. The first framing now waits for the boxes to be drawn, so a graph
+  is no longer left at full size with its top cut off. On a narrow window the page scrolls instead
+  of squeezing the drawing away. `tools/web-layout-check.mjs` opens the built canvas in headless
+  Chrome and checks that the hopper's box never meets the canvas's, folded, open and with a parse
+  shown, at desktop and narrow widths, in the paper and ink themes and in compact density.
+
 - Web canvas: a view bar with layers, theme and density. Layers switch the marks the canvas draws
   (lint findings, kind tint, the fan-out badge and worktree card, the field names on edges). Theme
   follows the system, with a paper and an ink choice to override it, and the page has an ink theme

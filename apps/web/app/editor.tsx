@@ -488,25 +488,10 @@ export function Editor() {
           </section>
         )}
 
-        <section
-          className={`pane canvas${dropping ? " dropping" : ""}`}
-          onDragOver={(e) => {
-            // Only a file drag. Dragging a node around the canvas is React Flow's.
-            if (!e.dataTransfer.types.includes("Files")) return;
-            e.preventDefault();
-            setDropping(true);
-          }}
-          onDragLeave={(e) => {
-            if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return;
-            setDropping(false);
-          }}
-          onDrop={(e) => {
-            if (!e.dataTransfer.types.includes("Files")) return;
-            e.preventDefault();
-            setDropping(false);
-            void loadHeat([...e.dataTransfer.files]);
-          }}
-        >
+        {/* The hopper is docked above the drawing, in the page layout and not over it: the
+            canvas section below measures its own box, so everything it frames or pops open
+            is placed in the room that is left. */}
+        <div className="stage">
           {!viewerMode && (
             <Hopper
               hopper={hopper}
@@ -518,46 +503,66 @@ export function Editor() {
               onEditDraft={selectFromCanvas}
             />
           )}
-          {shown && (
-            <div className={model.ok ? "canvas-host" : "canvas-host held"} inert={!model.ok}>
-              <Canvas
-                // Remounted only when a spec is loaded. An edit reaches the
-                // mounted canvas as new props and moves its boxes in place.
-                key={loaded}
-                nodes={view.nodes}
-                edges={view.edges}
-                specNodes={shown.graph.spec.nodes}
-                onSelect={viewerMode ? undefined : selectFromCanvas}
-                // While ghosts are shown the picture is a preview: a gesture
-                // made on it would be made on drafts that are not in the spec.
-                gestures={model.ok && !ghosted ? gestures : undefined}
+          <section
+            className={`pane canvas${dropping ? " dropping" : ""}`}
+            onDragOver={(e) => {
+              // Only a file drag. Dragging a node around the canvas is React Flow's.
+              if (!e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return;
+              setDropping(false);
+            }}
+            onDrop={(e) => {
+              if (!e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setDropping(false);
+              void loadHeat([...e.dataTransfer.files]);
+            }}
+          >
+            {shown && (
+              <div className={model.ok ? "canvas-host" : "canvas-host held"} inert={!model.ok}>
+                <Canvas
+                  // Remounted only when a spec is loaded. An edit reaches the
+                  // mounted canvas as new props and moves its boxes in place.
+                  key={loaded}
+                  nodes={view.nodes}
+                  edges={view.edges}
+                  specNodes={shown.graph.spec.nodes}
+                  onSelect={viewerMode ? undefined : selectFromCanvas}
+                  // While ghosts are shown the picture is a preview: a gesture
+                  // made on it would be made on drafts that are not in the spec.
+                  gestures={model.ok && !ghosted ? gestures : undefined}
+                />
+              </div>
+            )}
+            {!viewerMode && (
+              <CanvasNotice notice={notice} onDismiss={() => setNotice(undefined)} />
+            )}
+            {choosing && spec && (
+              <EdgeChooser
+                key={`${choosing.from}->${choosing.to}`}
+                from={choosing.from}
+                to={choosing.to}
+                choices={fieldChoices(spec, choosing.from, choosing.to)}
+                onChoose={(field) => {
+                  setChoosing(undefined);
+                  onGesture(addEdge(spec, choosing.from, choosing.to, field));
+                }}
+                onCancel={() => setChoosing(undefined)}
               />
-            </div>
-          )}
-          {!viewerMode && (
-            <CanvasNotice notice={notice} onDismiss={() => setNotice(undefined)} />
-          )}
-          {choosing && spec && (
-            <EdgeChooser
-              key={`${choosing.from}->${choosing.to}`}
-              from={choosing.from}
-              to={choosing.to}
-              choices={fieldChoices(spec, choosing.from, choosing.to)}
-              onChoose={(field) => {
-                setChoosing(undefined);
-                onGesture(addEdge(spec, choosing.from, choosing.to, field));
-              }}
-              onCancel={() => setChoosing(undefined)}
-            />
-          )}
-          {dragNote === "showing" && <DragNote onDismiss={() => setDragNote("seen")} />}
-          {!model.ok && (
-            <pre className={drawn ? "error over" : "error"}>{model.error}</pre>
-          )}
+            )}
+            {dragNote === "showing" && <DragNote onDismiss={() => setDragNote("seen")} />}
+            {!model.ok && (
+              <pre className={drawn ? "error over" : "error"}>{model.error}</pre>
+            )}
 
-          {view.legend && <HeatLegend legend={view.legend} />}
-          {dropping && <div className="drop-hint">drop a heat file to tint the graph</div>}
-        </section>
+            {view.legend && <HeatLegend legend={view.legend} />}
+            {dropping && <div className="drop-hint">drop a heat file to tint the graph</div>}
+          </section>
+        </div>
 
         {!viewerMode && (
           <Inspector
