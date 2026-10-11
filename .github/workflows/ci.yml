@@ -41,6 +41,9 @@ jobs:
       - name: Build the web canvas
         run: pnpm --filter @ccgrapher/web build
 
+      - name: The hopper never covers the drawing
+        run: node tools/web-layout-check.mjs
+
       - name: Acceptance criteria
         run: |
           set -euo pipefail

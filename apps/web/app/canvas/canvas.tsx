@@ -115,13 +115,18 @@ export function Canvas({
     latest.current = gestures;
   });
 
+  // Whether the reader has panned or zoomed since the last framing. While they
+  // have not, the canvas keeps the whole graph framed as its own box changes.
+  const framing = useRef({ moved: false });
+
   return (
     <GraphProvider initialCells={initialCells}>
       <LayoutSync cells={cells} latest={latest} />
       <OverlaySync nodes={nodes} />
-      <FitOnMount />
-      <FitButton />
-      <PanZoom />
+      <FitOnMount framing={framing} />
+      <FitOnResize framing={framing} />
+      <FitButton framing={framing} />
+      <PanZoom framing={framing} />
       {onSelect && <SelectionSync onSelect={onSelect} />}
       {editable && <GestureSync latest={latest} />}
       {editable && <EdgeTools selected={gestures.selectedEdge} cells={cells} latest={latest} />}
@@ -150,30 +155,89 @@ type Latest = { readonly current: EdgeGestures | undefined };
  * with a paid API this repo cannot actually call. The dot-grid look survives
  * as a plain CSS background on `.jointjs-paper` instead (globals.css).
  */
-function FitOnMount() {
+function FitOnMount({ framing }: { framing: Framing }) {
   const { paper } = usePaper();
   useEffect(() => {
-    if (paper) fit(paper);
-  }, [paper]);
+    if (!paper) return;
+    fit(paper);
+    // The boxes are measured a moment after the paper mounts and each one
+    // that settles at its real size changes what "the whole graph" is. Keep
+    // framing it through that settling, until the reader takes the framing
+    // over or the first second is out.
+    const settling = performance.now() + 1000;
+    let frame: number | undefined;
+    const refit = () => {
+      if (frame !== undefined || framing.current.moved || performance.now() > settling) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        if (!framing.current.moved) fit(paper);
+      });
+    };
+    paper.model.on("change:size", refit);
+    paper.on("render:done", refit);
+    paper.on("resize", refit);
+    return () => {
+      paper.model.off("change:size", refit);
+      paper.off("render:done", refit);
+      paper.off("resize", refit);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [paper, framing]);
   return null;
 }
 
 function fit(paper: dia.Paper) {
-  paper.transformToFitContent({ padding: 24, minScale: 0.2, maxScale: 1.5 });
+  // Before the views have rendered the paper's own content area is empty, and
+  // fitting to nothing frames nothing; the graph's boxes are known from the start.
+  const rendered = paper.getContentArea();
+  const contentArea = rendered.width > 0 && rendered.height > 0 ? rendered : paper.model.getBBox();
+  if (!contentArea) return;
+  paper.transformToFitContent({ contentArea, padding: 24, minScale: 0.2, maxScale: 1.5 });
+}
+
+type Framing = { readonly current: { moved: boolean } };
+
+/**
+ * The canvas frames itself against its own box, so when that box changes (the
+ * hopper drawer opening above it, the window resizing) the graph is framed
+ * again, but only while the reader has not panned or zoomed. Once they have,
+ * the framing is theirs and a resize leaves it where it is. The first
+ * observation is the mount, which `FitOnMount` has already framed.
+ */
+function FitOnResize({ framing }: { framing: Framing }) {
+  const { paper } = usePaper();
+  useEffect(() => {
+    if (!paper || typeof ResizeObserver === "undefined") return;
+    let first = true;
+    const observer = new ResizeObserver(() => {
+      if (first) {
+        first = false;
+        return;
+      }
+      if (!framing.current.moved) fit(paper);
+    });
+    observer.observe(paper.el);
+    return () => observer.disconnect();
+  }, [paper, framing]);
+  return null;
 }
 
 /**
  * Framing is the reader's after the first look: an edit never reframes, so
  * this is how to bring the whole graph back into view after panning away.
  */
-function FitButton() {
+function FitButton({ framing }: { framing: Framing }) {
   const { paper } = usePaper();
   return (
     <button
       type="button"
       className="canvas-fit"
       disabled={!paper}
-      onClick={() => paper && fit(paper)}
+      onClick={() => {
+        if (!paper) return;
+        framing.current.moved = false;
+        fit(paper);
+      }}
       title="Fit the whole graph in view"
     >
       fit
@@ -337,7 +401,7 @@ const MAX_SCALE = 3;
  * scale, in already-rendered pixel space — so no scale correction is needed
  * here the way it is for the zoom anchor above.
  */
-function PanZoom() {
+function PanZoom({ framing }: { framing: Framing }) {
   const { paper } = usePaper();
 
   useEffect(() => {
@@ -349,6 +413,7 @@ function PanZoom() {
       const current = paper.scale().sx;
       const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, current * factor));
       if (next === current) return;
+      framing.current.moved = true;
 
       const clientPoint = { x: evt.clientX, y: evt.clientY };
       const localPoint = paper.clientToLocalPoint(clientPoint.x, clientPoint.y);
@@ -375,6 +440,7 @@ function PanZoom() {
         | { startClientX: number; startClientY: number; startTranslate: { tx: number; ty: number } }
         | undefined;
       if (!data) return;
+      framing.current.moved = true;
       paper.translate(
         data.startTranslate.tx + (evt.clientX - data.startClientX),
         data.startTranslate.ty + (evt.clientY - data.startClientY),
@@ -389,7 +455,7 @@ function PanZoom() {
       paper.off("blank:pointerdown", onBlankPointerDown);
       paper.off("blank:pointermove", onBlankPointerMove);
     };
-  }, [paper]);
+  }, [paper, framing]);
 
   return null;
 }

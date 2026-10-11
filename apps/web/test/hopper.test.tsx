@@ -133,6 +133,20 @@ async function openAndParse(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("the hopper", () => {
+  it("is docked above the canvas in the page layout, not inside it", async () => {
+    render(<Editor />);
+    await screen.findByTestId("canvas-mock");
+    const hopper = document.querySelector(".hopper")!;
+    const canvas = document.querySelector(".pane.canvas")!;
+    // A sibling in the same column, before the drawing, and never a descendant of it.
+    expect(canvas.contains(hopper)).toBe(false);
+    expect(hopper.parentElement).toBe(canvas.parentElement);
+    expect(hopper.nextElementSibling).toBe(canvas);
+    // Opening the drawer does not move it into the drawing either.
+    await userEvent.setup().click(screen.getByRole("button", { name: "drop in ideas" }));
+    expect(canvas.contains(hopper)).toBe(false);
+  });
+
   it("shows the parse, with reasons, before anything moves", async () => {
     const calls = stubServer({ status: 200, body: PARSE });
     const user = userEvent.setup();
