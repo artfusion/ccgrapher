@@ -38,3 +38,8 @@ CLAUDE.local.md
 # The marketing site for the managed service. Deployed from a working copy, not
 # from this repository, which carries the toolkit and its public docs only.
 /apps/site/
+
+# Local configuration for other coding agents. AGENTS.md is a working copy of
+# CLAUDE.md kept for Codex; .codex/ holds its settings. Neither is published.
+AGENTS.md
+.codex/
